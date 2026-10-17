@@ -180,7 +180,7 @@ server.listen(PORT, '0.0.0.0', () => {
     } else if (process.platform === 'darwin') {
       exec(`open http://localhost:${PORT}`);
     } else {
-      exec(`(which chromium >/dev/null 2>&1 && chromium --app=http://localhost:${PORT}) || xdg-open http://localhost:${PORT}`);
+      exec(`(chromium --app=http://localhost:${PORT} || xdg-open http://localhost:${PORT}) >/dev/null 2>&1 &`);
     }
   }
 });
