@@ -28,6 +28,7 @@
       ? localStorage.getItem('pain_phone_url') 
       : 'http://192.168.1.2:8865',
     stats: { plays: [], slices: [] },
+    cachedTracks: new Set(),
     devices: [],
     hasAutoSynced: false,
     lastVolume: 1.0,
@@ -122,9 +123,21 @@
     statTodayTime: document.getElementById('statTodayTime'),
     statUnique: document.getElementById('statUnique'),
     statPlays: document.getElementById('statPlays'),
-    statObsession: document.getElementById('statObsession'),
-    statObsessionPlays: document.getElementById('statObsessionPlays'),
+    statPeakHour: document.getElementById('statPeakHour'),
+    statPeakDesc: document.getElementById('statPeakDesc'),
+    statStreak: document.getElementById('statStreak'),
+    statLongestStreak: document.getElementById('statLongestStreak'),
+    statStreakBadge: document.getElementById('statStreakBadge'),
+    statStreakText: document.getElementById('statStreakText'),
+    statCompletionRate: document.getElementById('statCompletionRate'),
+    statEarlySkips: document.getElementById('statEarlySkips'),
+    statDiscoveryRate: document.getElementById('statDiscoveryRate'),
+    statReplayRate: document.getElementById('statReplayRate'),
     weekBars: document.getElementById('weekBars'),
+    weekTotalLabel: document.getElementById('weekTotalLabel'),
+    hourlyBars: document.getElementById('hourlyBars'),
+    topTracksList: document.getElementById('topTracksList'),
+    topArtistsList: document.getElementById('topArtistsList'),
 
     // Sync View
     phoneIpInput: document.getElementById('phoneIpInput'),
@@ -132,6 +145,8 @@
     deviceInfoText: document.getElementById('deviceInfoText'),
     syncAllBtn: document.getElementById('syncAllBtn'),
     downloadAllAudioBtn: document.getElementById('downloadAllAudioBtn'),
+    clearAllCacheBtn: document.getElementById('clearAllCacheBtn'),
+    cacheStatsDesc: document.getElementById('cacheStatsDesc'),
     progressBanner: document.getElementById('progressBanner'),
     progressTaskTitle: document.getElementById('progressTaskTitle'),
     progressPercent: document.getElementById('progressPercent'),
@@ -186,6 +201,114 @@
 
   let pendingAddToPlaylistTrackId = null;
 
+  // --- TOAST NOTIFICATIONS ---
+  function showToast(message, icon = '✓') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `<span style="font-size:14px;">${icon}</span> <span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('hiding');
+      setTimeout(() => toast.remove(), 250);
+    }, 2800);
+  }
+
+  // --- TIME-OF-DAY GREETING ---
+  function updateGreeting() {
+    const hour = new Date().getHours();
+    let textRu, textEn, icon;
+    if (hour >= 5 && hour < 12) {
+      textRu = 'Доброе утро';
+      textEn = 'Good morning';
+      icon = '☕';
+    } else if (hour >= 12 && hour < 18) {
+      textRu = 'Добрый день';
+      textEn = 'Good afternoon';
+      icon = '☀️';
+    } else if (hour >= 18 && hour < 23) {
+      textRu = 'Добрый вечер';
+      textEn = 'Good evening';
+      icon = '🌙';
+    } else {
+      textRu = 'Доброй ночи';
+      textEn = 'Good night';
+      icon = '✨';
+    }
+    const greetingEl = document.getElementById('viewGreeting');
+    if (greetingEl) {
+      const isRu = state.lang === 'ru';
+      greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${isRu ? textRu : textEn}</span>`;
+    }
+  }
+
+  // --- CACHE MANAGEMENT ---
+  async function loadCachedTracksList() {
+    try {
+      const res = await fetch('/api/cached-tracks');
+      if (res.ok) {
+        const data = await res.json();
+        state.cachedTracks = new Set(data.cached || []);
+        if (DOM.cacheStatsDesc) {
+          DOM.cacheStatsDesc.textContent = state.lang === 'ru'
+            ? `${state.cachedTracks.size} файлов сохранено на диске`
+            : `${state.cachedTracks.size} audio files cached on disk`;
+        }
+      }
+    } catch (e) {}
+  }
+
+  async function deleteTrackFromCache(trackId, trackTitle) {
+    try {
+      const res = await fetch('/api/delete-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackId })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+        state.cachedTracks.delete(safeId);
+        const msg = state.lang === 'ru' 
+          ? `«${trackTitle || 'Трек'}» удалён из кэша` 
+          : `"${trackTitle || 'Track'}" removed from cache`;
+        showToast(msg, '🗑️');
+        renderCurrentView();
+      }
+    } catch (e) {
+      console.warn('Delete cache error:', e);
+    }
+  }
+
+  async function clearAllCache() {
+    const confirmMsg = state.lang === 'ru' 
+      ? 'Очистить весь локальный кэш аудио на ПК?' 
+      : 'Clear all local audio cache on PC?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      const res = await fetch('/api/delete-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearAll: true })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        state.cachedTracks.clear();
+        const msg = state.lang === 'ru' 
+          ? `Удалено ${data.cleared} файлов из кэша` 
+          : `Cleared ${data.cleared} files from cache`;
+        showToast(msg, '🗑️');
+        if (DOM.cacheStatsDesc) {
+          DOM.cacheStatsDesc.textContent = state.lang === 'ru' ? '0 файлов в кэше' : '0 files cached';
+        }
+        renderCurrentView();
+      }
+    } catch (e) {
+      console.warn('Clear all cache error:', e);
+    }
+  }
+
   // --- INITIALIZATION ---
   async function init() {
     applyTheme(state.theme);
@@ -196,6 +319,8 @@
     initEqualizerUI();
 
     await loadLocalData();
+    await loadCachedTracksList();
+    updateGreeting();
     setupEventListeners();
     startDiscoveryPolling();
 
@@ -628,11 +753,14 @@
         <td class="col-plays">${plays}</td>
         <td class="col-time">${formatTime(durationSec)}</td>
         <td class="col-actions">
-          <button class="row-fav-btn ${track.favorite ? 'active' : ''}" title="Favorite">
+          <button class="row-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
             <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
           </button>
-          <button class="row-more-btn" title="Add to Playlist">
+          <button class="row-more-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="row-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           </button>
         </td>
       `;
@@ -665,6 +793,13 @@
       moreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openAddToPlaylistModal(track.id);
+      });
+
+      // Uncache button
+      const uncacheBtn = tr.querySelector('.row-uncache-btn');
+      uncacheBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteTrackFromCache(track.id, track.title);
       });
 
       // Drag and drop reordering
@@ -718,10 +853,13 @@
         <div class="track-card-footer">
           <span class="track-card-duration">${formatTime(durationSec)}</span>
           <div style="display: flex; gap: 4px; align-items: center;">
-            <button class="card-add-btn" title="Add to Playlist">
+            <button class="card-add-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            <button class="card-fav-btn ${track.favorite ? 'active' : ''}" title="Favorite">
+            <button class="card-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+            <button class="card-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="${track.favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
             </button>
           </div>
@@ -759,6 +897,12 @@
       addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openAddToPlaylistModal(track.id);
+      });
+
+      const uncacheBtn = card.querySelector('.card-uncache-btn');
+      uncacheBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteTrackFromCache(track.id, track.title);
       });
 
       container.appendChild(card);
@@ -1020,7 +1164,10 @@
   function renderInsights() {
     const plays = state.stats.plays || [];
     const slices = state.stats.slices || [];
+    const now = new Date();
+    const isRu = state.lang === 'ru';
 
+    // 1. Total Listening Time
     let totalMs = slices.reduce((acc, s) => acc + (s.ms || 0), 0);
     if (totalMs === 0 && plays.length > 0) {
       totalMs = plays.reduce((acc, p) => acc + (p.heard || 0), 0);
@@ -1028,52 +1175,253 @@
     const totalMinutes = Math.floor(totalMs / 60000);
     const totalHours = Math.floor(totalMinutes / 60);
 
-    DOM.statTotalTime.textContent = totalHours > 0 
-      ? (state.lang === 'ru' ? `${totalHours} ч ${totalMinutes % 60} мин` : `${totalHours} h ${totalMinutes % 60} m`)
-      : (state.lang === 'ru' ? `${totalMinutes} мин` : `${totalMinutes} m`);
+    if (DOM.statTotalTime) {
+      DOM.statTotalTime.textContent = totalHours > 0 
+        ? (isRu ? `${totalHours} ч ${totalMinutes % 60} мин` : `${totalHours} h ${totalMinutes % 60} m`)
+        : (isRu ? `${totalMinutes} мин` : `${totalMinutes} m`);
+    }
 
+    // 2. Today's Listening Time
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    let todayMs = 0;
+    slices.forEach(s => { if (s.at >= todayStart) todayMs += (s.ms || 0); });
+    if (todayMs === 0) {
+      plays.forEach(p => {
+        const ts = p.started || p.timestamp || 0;
+        if (ts >= todayStart) todayMs += (p.heard || 0);
+      });
+    }
+    const todayMinutes = Math.round(todayMs / 60000);
+    if (DOM.statTodayTime) {
+      DOM.statTodayTime.textContent = isRu ? `Сегодня: ${todayMinutes} мин` : `Today: ${todayMinutes} min`;
+    }
+
+    // 3. Unique Tracks & Total Plays
     const uniqueTracks = new Set(plays.map(p => p.track)).size;
-    DOM.statUnique.textContent = uniqueTracks;
-    DOM.statPlays.textContent = state.lang === 'ru' ? `${plays.length} прослушиваний` : `${plays.length} plays recorded`;
+    if (DOM.statUnique) DOM.statUnique.textContent = uniqueTracks;
+    if (DOM.statPlays) DOM.statPlays.textContent = isRu ? `${plays.length} прослушиваний` : `${plays.length} plays recorded`;
 
-    // Obsession calculation
-    const counts = {};
-    plays.forEach(p => counts[p.track] = (counts[p.track] || 0) + 1);
-    let topTrackId = null, maxCount = 0;
-    for (const [id, count] of Object.entries(counts)) {
-      if (count > maxCount) {
-        maxCount = count;
-        topTrackId = id;
+    // 4. 24-Hour Listening Distribution & Peak Hour
+    const hours = new Array(24).fill(0);
+    slices.forEach(s => {
+      const h = new Date(s.at).getHours();
+      hours[h] += (s.ms || 0);
+    });
+    if (slices.length === 0) {
+      plays.forEach(p => {
+        const ts = p.started || p.timestamp || Date.now();
+        const h = new Date(ts).getHours();
+        hours[h] += (p.heard || 60000);
+      });
+    }
+
+    let peakHour = -1, maxHourMs = 0;
+    hours.forEach((ms, h) => {
+      if (ms > maxHourMs) {
+        maxHourMs = ms;
+        peakHour = h;
+      }
+    });
+
+    if (DOM.statPeakHour) {
+      DOM.statPeakHour.textContent = peakHour >= 0 && maxHourMs > 0 ? `${String(peakHour).padStart(2, '0')}:00` : '—';
+    }
+    if (DOM.statPeakDesc) {
+      DOM.statPeakDesc.textContent = peakHour >= 0 && maxHourMs > 0
+        ? (isRu ? `Пик: ${Math.round(maxHourMs / 60000)} мин активности` : `Peak: ${Math.round(maxHourMs / 60000)}m active`)
+        : (isRu ? 'Пока нет данных' : 'No data yet');
+    }
+
+    if (DOM.hourlyBars) {
+      DOM.hourlyBars.innerHTML = '';
+      const maxH = Math.max(...hours, 60000);
+      hours.forEach((ms, h) => {
+        const pct = Math.max(4, Math.round((ms / maxH) * 85));
+        const isPeak = h === peakHour && ms > 0;
+        const col = document.createElement('div');
+        col.className = 'hour-col';
+        col.title = `${String(h).padStart(2, '0')}:00 — ${Math.round(ms / 60000)} min`;
+        col.innerHTML = `
+          <div class="hour-pill ${isPeak ? 'peak' : ''}" style="height: ${pct}px;"></div>
+          <div class="hour-label">${h % 4 === 0 ? String(h).padStart(2, '0') : ''}</div>
+        `;
+        DOM.hourlyBars.appendChild(col);
+      });
+    }
+
+    // 5. Streaks (Current & Longest Active Days)
+    const activeDays = new Set();
+    slices.forEach(s => {
+      const d = new Date(s.at);
+      activeDays.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    });
+    plays.forEach(p => {
+      const ts = p.started || p.timestamp || 0;
+      if (ts > 0) {
+        const d = new Date(ts);
+        activeDays.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+      }
+    });
+
+    const sortedDays = Array.from(activeDays).sort();
+    let currentStreak = 0, longestStreak = 0, streakCount = 0;
+    if (sortedDays.length > 0) {
+      longestStreak = 1;
+      streakCount = 1;
+      for (let i = 1; i < sortedDays.length; i++) {
+        const prev = new Date(sortedDays[i-1]);
+        const curr = new Date(sortedDays[i]);
+        const diffDays = Math.round((curr - prev) / 86400000);
+        if (diffDays === 1) {
+          streakCount++;
+          if (streakCount > longestStreak) longestStreak = streakCount;
+        } else if (diffDays > 1) {
+          streakCount = 1;
+        }
+      }
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+      const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+      if (activeDays.has(todayStr) || activeDays.has(yesterdayStr)) {
+        currentStreak = streakCount;
       }
     }
 
-    if (topTrackId) {
-      const t = state.tracks.find(x => x.id === topTrackId);
-      DOM.statObsession.textContent = t ? t.title : topTrackId;
-      DOM.statObsessionPlays.textContent = `${maxCount} ${state.lang === 'ru' ? 'воспроизведений' : 'plays'}`;
-    } else {
-      DOM.statObsession.textContent = '—';
-      DOM.statObsessionPlays.textContent = '0 plays';
+    if (DOM.statStreak) DOM.statStreak.textContent = isRu ? `${currentStreak} дн` : `${currentStreak} days`;
+    if (DOM.statLongestStreak) DOM.statLongestStreak.textContent = isRu ? `Рекорд: ${longestStreak} дн` : `Best: ${longestStreak} days`;
+    if (DOM.statStreakText) DOM.statStreakText.textContent = isRu ? `${currentStreak} дн подряд` : `${currentStreak} day streak`;
+
+    // 6. Behavioral Habits & Completion Ratios
+    let completed = 0, early = 0, totalPlays = plays.length;
+    plays.forEach(p => {
+      if (p.finished === 1 || p.finished === true) completed++;
+      else if (p.skipped === 1 || (p.duration > 0 && p.heard < p.duration * 0.5)) early++;
+    });
+    const compPct = totalPlays > 0 ? Math.round((completed / totalPlays) * 100) : 0;
+    const earlyPct = totalPlays > 0 ? Math.round((early / totalPlays) * 100) : 0;
+    if (DOM.statCompletionRate) DOM.statCompletionRate.textContent = `${compPct}%`;
+    if (DOM.statEarlySkips) DOM.statEarlySkips.textContent = `${earlyPct}%`;
+
+    const trackCounts = {};
+    plays.forEach(p => trackCounts[p.track] = (trackCounts[p.track] || 0) + 1);
+    const replayed = Object.values(trackCounts).filter(c => c > 1).length;
+    const uniqueCount = Object.keys(trackCounts).length;
+    const replayPct = uniqueCount > 0 ? Math.round((replayed / uniqueCount) * 100) : 0;
+    const discoveryPct = totalPlays > 0 ? Math.round((uniqueCount / totalPlays) * 100) : 0;
+    if (DOM.statReplayRate) DOM.statReplayRate.textContent = `${replayPct}%`;
+    if (DOM.statDiscoveryRate) DOM.statDiscoveryRate.textContent = `${discoveryPct}%`;
+
+    // 7. Real 7-Day Activity Pulse
+    const dayNamesEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayNamesRu = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const past7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      past7Days.push(d);
+    }
+    const dayTotalsMs = past7Days.map(d => {
+      const dayStart = d.getTime();
+      const dayEnd = dayStart + 86400000;
+      let ms = 0;
+      slices.forEach(s => {
+        if (s.at >= dayStart && s.at < dayEnd) ms += (s.ms || 0);
+      });
+      if (ms === 0) {
+        plays.forEach(p => {
+          const ts = p.started || p.timestamp || 0;
+          if (ts >= dayStart && ts < dayEnd) ms += (p.heard || 0);
+        });
+      }
+      return ms;
+    });
+
+    const maxDayMs = Math.max(...dayTotalsMs, 60000);
+    const weekTotalMinutes = Math.round(dayTotalsMs.reduce((a, b) => a + b, 0) / 60000);
+    if (DOM.weekTotalLabel) {
+      DOM.weekTotalLabel.textContent = isRu 
+        ? `Всего за неделю: ${weekTotalMinutes} мин`
+        : `${weekTotalMinutes} min total this week`;
     }
 
-    // 7-day activity bars
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const daysRu = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-    DOM.weekBars.innerHTML = '';
-    const dayCounts = [35, 50, 25, 70, 95, 120, 90];
-    const maxVal = Math.max(...dayCounts, 10);
+    if (DOM.weekBars) {
+      DOM.weekBars.innerHTML = '';
+      past7Days.forEach((d, idx) => {
+        const ms = dayTotalsMs[idx];
+        const h = Math.max(6, Math.round((ms / maxDayMs) * 90));
+        const col = document.createElement('div');
+        col.className = 'bar-col';
+        col.title = `${d.toLocaleDateString()}: ${Math.round(ms / 60000)} min`;
+        col.innerHTML = `
+          <div class="bar-pill" style="height: ${h}px;"></div>
+          <div class="bar-label">${isRu ? dayNamesRu[d.getDay()] : dayNamesEn[d.getDay()]}</div>
+        `;
+        DOM.weekBars.appendChild(col);
+      });
+    }
 
-    days.forEach((day, idx) => {
-      const val = dayCounts[idx];
-      const h = Math.round((val / maxVal) * 90);
-      const col = document.createElement('div');
-      col.className = 'bar-col';
-      col.innerHTML = `
-        <div class="bar-pill" style="height: ${Math.max(6, h)}px;"></div>
-        <div class="bar-label">${state.lang === 'ru' ? daysRu[idx] : day}</div>
-      `;
-      DOM.weekBars.appendChild(col);
-    });
+    // 8. Top 5 Tracks & Obsessions
+    if (DOM.topTracksList) {
+      const sortedTracks = Object.entries(trackCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      DOM.topTracksList.innerHTML = '';
+      if (sortedTracks.length === 0) {
+        DOM.topTracksList.innerHTML = `<div style="color:var(--ink-secondary); font-size:12px; padding:8px 0;">${isRu ? 'Пока нет прослушиваний' : 'No listening history yet'}</div>`;
+      } else {
+        sortedTracks.forEach(([trackId, count], idx) => {
+          const track = state.tracks.find(t => t.id === trackId) || { id: trackId, title: trackId, artist: '—' };
+          const item = document.createElement('div');
+          item.className = 'leaderboard-item';
+          item.innerHTML = `
+            <div class="leaderboard-item-left">
+              <span class="leaderboard-rank">#${idx + 1}</span>
+              <img class="leaderboard-thumb" src="${getCoverUrl(track)}" alt="" onerror="this.src='${getProceduralCoverSvg(track)}'">
+              <div class="leaderboard-text">
+                <div class="leaderboard-title">${escapeHtml(track.title || 'Untitled')}</div>
+                <div class="leaderboard-sub">${escapeHtml(track.artist || 'Unknown')}</div>
+              </div>
+            </div>
+            <div class="leaderboard-stat">${count} ${isRu ? 'воспр.' : 'plays'}</div>
+          `;
+          item.addEventListener('click', () => playTrackById(track.id));
+          DOM.topTracksList.appendChild(item);
+        });
+      }
+    }
+
+    // 9. Top 5 Artists
+    if (DOM.topArtistsList) {
+      const artistTimes = {};
+      plays.forEach(p => {
+        const t = state.tracks.find(x => x.id === p.track);
+        const artist = (t && t.artist) || 'Unknown Artist';
+        artistTimes[artist] = (artistTimes[artist] || 0) + (p.heard || 60000);
+      });
+      const sortedArtists = Object.entries(artistTimes)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      DOM.topArtistsList.innerHTML = '';
+      if (sortedArtists.length === 0) {
+        DOM.topArtistsList.innerHTML = `<div style="color:var(--ink-secondary); font-size:12px; padding:8px 0;">${isRu ? 'Пока нет данных' : 'No listening history yet'}</div>`;
+      } else {
+        sortedArtists.forEach(([artist, ms], idx) => {
+          const m = Math.round(ms / 60000);
+          const item = document.createElement('div');
+          item.className = 'leaderboard-item';
+          item.innerHTML = `
+            <div class="leaderboard-item-left">
+              <span class="leaderboard-rank">#${idx + 1}</span>
+              <div class="leaderboard-text">
+                <div class="leaderboard-title">${escapeHtml(artist)}</div>
+                <div class="leaderboard-sub">${isRu ? 'Исполнитель' : 'Artist'}</div>
+              </div>
+            </div>
+            <div class="leaderboard-stat">${m} ${isRu ? 'мин' : 'min'}</div>
+          `;
+          DOM.topArtistsList.appendChild(item);
+        });
+      }
+    }
   }
 
   // --- AUDIO PLAYBACK ENGINE & SLEEP-RESISTANT BUFFERING ---
@@ -1416,12 +1764,15 @@
       el.placeholder = lang === 'ru' ? (el.dataset.ruPlaceholder || el.dataset.enPlaceholder) : el.dataset.enPlaceholder;
     });
 
-    DOM.langToggle.textContent = lang === 'ru' ? 'RU / EN' : 'EN / RU';
+    const langSpan = DOM.langToggle.querySelector('span');
+    if (langSpan) langSpan.textContent = lang === 'ru' ? 'RU / EN' : 'EN / RU';
+    else DOM.langToggle.textContent = lang === 'ru' ? 'RU / EN' : 'EN / RU';
 
-    if (state.eq) {
+    if (state.eq && DOM.eqStateLabel) {
       DOM.eqStateLabel.textContent = state.eq.enabled ? (lang === 'ru' ? 'ВКЛ' : 'ON') : (lang === 'ru' ? 'ВЫКЛ' : 'OFF');
     }
 
+    updateGreeting();
     renderCurrentView();
   }
 
@@ -1944,6 +2295,7 @@
     DOM.connectBtn.addEventListener('click', checkConnection);
     DOM.syncAllBtn.addEventListener('click', syncAll);
     DOM.downloadAllAudioBtn.addEventListener('click', downloadAllAudio);
+    if (DOM.clearAllCacheBtn) DOM.clearAllCacheBtn.addEventListener('click', clearAllCache);
   }
 
   // Run on DOM ready

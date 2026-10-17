@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pain — Minimalist Audio Player</title>
+  <link rel="icon" type="image/x-icon" href="/assets/app-icon.ico">
+  <link rel="shortcut icon" href="/assets/app-icon.ico">
   <link rel="icon" type="image/png" href="/assets/app-icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -85,8 +87,14 @@
         </div>
 
         <div class="bottom-controls">
-          <button class="lang-btn" id="langToggle">EN / RU</button>
-          <button class="theme-btn" id="themeToggle">Theme</button>
+          <button class="lang-btn" id="langToggle">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>EN / RU</span>
+          </button>
+          <button class="theme-btn" id="themeToggle">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span data-en="Theme" data-ru="Тема">Theme</span>
+          </button>
         </div>
       </div>
     </aside>
@@ -103,12 +111,24 @@
             <button class="search-clear-btn" id="searchClearBtn" style="display:none;">✕</button>
           </div>
 
-          <!-- Category Chips -->
+          <!-- Category Chips with Icons -->
           <div class="filter-chips">
-            <button class="filter-chip active" data-filter="all" data-en="All" data-ru="Все">All</button>
-            <button class="filter-chip" data-filter="favorites" data-en="Favorites" data-ru="Избранное">Favorites</button>
-            <button class="filter-chip" data-filter="albums" data-en="Albums" data-ru="Альбомы">Albums</button>
-            <button class="filter-chip" data-filter="artists" data-en="Artists" data-ru="Артисты">Artists</button>
+            <button class="filter-chip active" data-filter="all">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              <span data-en="All" data-ru="Все">All</span>
+            </button>
+            <button class="filter-chip" data-filter="favorites">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              <span data-en="Favorites" data-ru="Избранное">Favorites</span>
+            </button>
+            <button class="filter-chip" data-filter="albums">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+              <span data-en="Albums" data-ru="Альбомы">Albums</span>
+            </button>
+            <button class="filter-chip" data-filter="artists">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Artists" data-ru="Артисты">Artists</span>
+            </button>
           </div>
         </div>
 
@@ -154,6 +174,10 @@
         <section class="view-pane active" id="view-library">
           <div class="view-hero-header">
             <div>
+              <div class="view-greeting" id="viewGreeting">
+                <span class="greeting-icon" id="greetingIcon">☕</span>
+                <span class="greeting-text" id="greetingText">Good morning</span>
+              </div>
               <h1 class="view-heading" data-en="Library" data-ru="Фонотека">Library</h1>
               <div class="view-subheading" id="libraryCountSub">0 tracks · synced & local</div>
             </div>
@@ -313,14 +337,21 @@
           <div class="view-hero-header">
             <div>
               <h1 class="view-heading" data-en="Insights" data-ru="Инсайты">Insights</h1>
-              <div class="view-subheading" data-en="Listening history, habits and obsessions." data-ru="История прослушиваний, привычки и любимые треки.">Listening history, habits and obsessions.</div>
+              <div class="view-subheading" data-en="Complete listening metrics, habits, and charts synchronized across PC & Android." data-ru="Полная статистика прослушиваний, привычки и графики, синхронизированные с телефоном.">Complete listening metrics, habits, and charts synchronized across PC & Android.</div>
+            </div>
+            <div class="view-hero-actions">
+              <span class="insights-streak-badge" id="statStreakBadge">
+                <span class="streak-flame">🔥</span>
+                <span id="statStreakText">0 day streak</span>
+              </span>
             </div>
           </div>
 
-          <div class="stats-grid">
+          <!-- Primary Metric Cards (4 cards) -->
+          <div class="stats-grid primary-stats-grid">
             <div class="stat-card">
               <div class="stat-label" data-en="Total Listening" data-ru="Всего прослушано">Total Listening</div>
-              <div class="stat-value" id="statTotalTime">0 ч</div>
+              <div class="stat-value" id="statTotalTime">0 ч 0 мин</div>
               <div class="stat-sub" id="statTodayTime">Today: 0 min</div>
             </div>
             <div class="stat-card">
@@ -329,15 +360,85 @@
               <div class="stat-sub" id="statPlays">0 plays recorded</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label" data-en="Top Obsession" data-ru="Главный трек">Top Obsession</div>
-              <div class="stat-value" style="font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="statObsession">—</div>
-              <div class="stat-sub" id="statObsessionPlays">0 plays</div>
+              <div class="stat-label" data-en="Peak Hour" data-ru="Пиковое время">Peak Hour</div>
+              <div class="stat-value" id="statPeakHour">—</div>
+              <div class="stat-sub" id="statPeakDesc" data-en="Most active listening period" data-ru="Самое активное время">Most active listening period</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label" data-en="Listening Streak" data-ru="Серия прослушиваний">Listening Streak</div>
+              <div class="stat-value" id="statStreak">0 дн</div>
+              <div class="stat-sub" id="statLongestStreak">Best: 0 days</div>
             </div>
           </div>
 
-          <div class="chart-card">
-            <div class="stat-label" data-en="7-Day Activity" data-ru="Активность за 7 дней">7-Day Activity</div>
-            <div class="chart-bars" id="weekBars"></div>
+          <!-- Secondary Behavioral Ratios (4 compact cards) -->
+          <div class="stats-grid secondary-stats-grid">
+            <div class="stat-card mini">
+              <div class="stat-label" data-en="Completion Rate" data-ru="Завершаемость">Completion Rate</div>
+              <div class="stat-value mini" id="statCompletionRate">0%</div>
+              <div class="stat-sub" id="statCompletionSub" data-en="Heard to the end" data-ru="Дослушано до конца">Heard to the end</div>
+            </div>
+            <div class="stat-card mini">
+              <div class="stat-label" data-en="Early Skips" data-ru="Ранние пропуски">Early Skips</div>
+              <div class="stat-value mini" id="statEarlySkips">0%</div>
+              <div class="stat-sub" id="statEarlySub" data-en="Skipped before halfway" data-ru="Пропуск до середины">Skipped before halfway</div>
+            </div>
+            <div class="stat-card mini">
+              <div class="stat-label" data-en="Discovery Rate" data-ru="Открытие нового">Discovery Rate</div>
+              <div class="stat-value mini" id="statDiscoveryRate">0%</div>
+              <div class="stat-sub" id="statDiscoverySub" data-en="First-time listens" data-ru="Новые треки">First-time listens</div>
+            </div>
+            <div class="stat-card mini">
+              <div class="stat-label" data-en="On Repeat" data-ru="На повторе">On Repeat</div>
+              <div class="stat-value mini" id="statReplayRate">0%</div>
+              <div class="stat-sub" id="statReplaySub" data-en="Played multiple times" data-ru="Повторные прослушивания">Played multiple times</div>
+            </div>
+          </div>
+
+          <!-- Charts Grid: 7-Day Pulse & 24-Hour Clock -->
+          <div class="insights-charts-grid">
+            <div class="chart-card">
+              <div class="chart-header">
+                <div>
+                  <div class="stat-label" data-en="7-Day Activity Pulse" data-ru="Пульс за 7 дней">7-Day Activity Pulse</div>
+                  <div class="chart-sub" id="weekTotalLabel">0 min total this week</div>
+                </div>
+              </div>
+              <div class="chart-bars" id="weekBars"></div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <div>
+                  <div class="stat-label" data-en="24-Hour Listening Distribution" data-ru="Активность по часам (24ч)">24-Hour Listening Distribution</div>
+                  <div class="chart-sub" data-en="When you listen during day and night" data-ru="Распределение активности по времени суток">When you listen during day and night</div>
+                </div>
+              </div>
+              <div class="chart-bars-hourly" id="hourlyBars"></div>
+            </div>
+          </div>
+
+          <!-- Leaderboards: Top Obsessions & Top Artists -->
+          <div class="insights-leaderboards-grid">
+            <div class="leaderboard-card">
+              <div class="leaderboard-header">
+                <div class="stat-label" data-en="Top Tracks & Obsessions" data-ru="Главные треки и одержимости">Top Tracks & Obsessions</div>
+                <div class="chart-sub" data-en="Most played across all sessions" data-ru="Самые прослушиваемые треки">Most played across all sessions</div>
+              </div>
+              <div class="top-tracks-list" id="topTracksList">
+                <!-- Dynamically populated top 5 tracks -->
+              </div>
+            </div>
+
+            <div class="leaderboard-card">
+              <div class="leaderboard-header">
+                <div class="stat-label" data-en="Top Artists" data-ru="Любимые исполнители">Top Artists</div>
+                <div class="chart-sub" data-en="Artists with highest listening time" data-ru="По общему времени прослушивания">Artists with highest listening time</div>
+              </div>
+              <div class="top-artists-list" id="topArtistsList">
+                <!-- Dynamically populated top 5 artists -->
+              </div>
+            </div>
           </div>
         </section>
 
@@ -384,6 +485,14 @@
                     <span data-en="Batch Cache Audio" data-ru="Кэшировать все треки">Batch Cache Audio</span>
                   </div>
                   <div class="sync-action-desc" data-en="Save all tracks to local disk for offline play" data-ru="Сохранить треки на ПК для игры без сети">Save all tracks to local disk for offline play</div>
+                </button>
+
+                <button class="sync-action-btn" id="clearAllCacheBtn">
+                  <div class="sync-action-title">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    <span data-en="Clear Cache" data-ru="Очистить кэш">Clear Cache</span>
+                  </div>
+                  <div class="sync-action-desc" id="cacheStatsDesc" data-en="Delete cached audio files from PC disk" data-ru="Удалить сохранённые аудиофайлы с диска ПК">Delete cached audio files from PC disk</div>
                 </button>
               </div>
 
@@ -620,6 +729,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <!-- Audio Element -->
   <audio id="audioEngine" crossorigin="anonymous"></audio>

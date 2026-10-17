@@ -591,6 +591,73 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // List cached tracks on disk
+  if (pathname === '/api/cached-tracks' && req.method === 'GET') {
+    try {
+      const files = fs.readdirSync(CACHE_DIR);
+      const cached = files.filter(f => f.endsWith('.mp3')).map(f => f.replace(/\.mp3$/, ''));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ cached }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ cached: [] }));
+    }
+    return;
+  }
+
+  // Delete specific track or all tracks from local cache
+  if (pathname === '/api/delete-cache' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const { trackId, clearAll } = parsed;
+
+        if (clearAll) {
+          const files = fs.readdirSync(CACHE_DIR);
+          let count = 0;
+          for (const f of files) {
+            if (f !== '.gitkeep') {
+              try {
+                fs.unlinkSync(path.join(CACHE_DIR, f));
+                count++;
+              } catch (ignored) {}
+            }
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', cleared: count }));
+          return;
+        }
+
+        if (trackId) {
+          const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+          const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
+          const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
+          let removed = false;
+          if (fs.existsSync(cachedFile)) {
+            fs.unlinkSync(cachedFile);
+            removed = true;
+          }
+          if (fs.existsSync(tmpFile)) {
+            fs.unlinkSync(tmpFile);
+            removed = true;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', removed, trackId }));
+          return;
+        }
+
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing trackId or clearAll' }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
 function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
   let hash = 0;
   const str = String(title || 'Pain') + String(artist || 'Audio');
