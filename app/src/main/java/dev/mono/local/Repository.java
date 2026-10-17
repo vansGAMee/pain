@@ -537,4 +537,127 @@ public final class Repository extends SQLiteOpenHelper {
     }
     return root.toString(2);
   }
+
+  public int importJson(String json) throws Exception {
+    org.json.JSONObject root = new org.json.JSONObject(json);
+    SQLiteDatabase d = getWritableDatabase();
+    int count = 0;
+    d.beginTransaction();
+    try {
+      if (root.has("tracks")) {
+        org.json.JSONArray tracksArr = root.getJSONArray("tracks");
+        for (int i = 0; i < tracksArr.length(); i++) {
+          org.json.JSONObject tr = tracksArr.getJSONObject(i);
+          ContentValues v = new ContentValues();
+          v.put("id", tr.optString("id"));
+          v.put("uri", tr.optString("uri"));
+          v.put("title", tr.optString("title"));
+          v.put("artist", tr.optString("artist"));
+          v.put("album", tr.optString("album"));
+          v.put("folder", tr.optString("folder"));
+          v.put("mime", tr.optString("mime", "audio/*"));
+          v.put("duration", tr.optLong("duration", 0));
+          v.put("bytes", tr.optLong("bytes", 0));
+          v.put("added", tr.optLong("added", System.currentTimeMillis()));
+          v.put("album_id", tr.optLong("album_id", 0));
+          v.put("number", tr.optInt("number", 0));
+          v.put("favorite", tr.optInt("favorite", 0));
+          v.put("available", tr.optInt("available", 1));
+          if (d.update("tracks", v, "id=?", new String[] {tr.optString("id")}) == 0) {
+            d.insert("tracks", null, v);
+          }
+          count++;
+        }
+      }
+      if (root.has("plays")) {
+        org.json.JSONArray playsArr = root.getJSONArray("plays");
+        for (int i = 0; i < playsArr.length(); i++) {
+          org.json.JSONObject pl = playsArr.getJSONObject(i);
+          ContentValues v = new ContentValues();
+          v.put("id", pl.optString("id"));
+          v.put("track", pl.optString("track"));
+          v.put("session", pl.optString("session"));
+          v.put("started", pl.optLong("started", 0));
+          v.put("heard", pl.optLong("heard", 0));
+          v.put("media_heard", pl.optLong("media_heard", 0));
+          v.put("duration", pl.optLong("duration", 0));
+          v.put("finished", pl.optInt("finished", 0));
+          v.put("skipped", pl.optInt("skipped", 0));
+          d.insertWithOnConflict("plays", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+          count++;
+        }
+      }
+      if (root.has("slices")) {
+        org.json.JSONArray slicesArr = root.getJSONArray("slices");
+        for (int i = 0; i < slicesArr.length(); i++) {
+          org.json.JSONObject sl = slicesArr.getJSONObject(i);
+          ContentValues v = new ContentValues();
+          v.put("play", sl.optString("play"));
+          v.put("at", sl.optLong("at", 0));
+          v.put("ms", sl.optLong("ms", 0));
+          d.insertWithOnConflict("slices", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+          count++;
+        }
+      }
+      if (root.has("lyrics")) {
+        org.json.JSONArray lyricsArr = root.getJSONArray("lyrics");
+        for (int i = 0; i < lyricsArr.length(); i++) {
+          org.json.JSONObject ly = lyricsArr.getJSONObject(i);
+          ContentValues v = new ContentValues();
+          v.put("track", ly.optString("track"));
+          v.put("body", ly.optString("body"));
+          v.put("offset", ly.optInt("offset", 0));
+          d.insertWithOnConflict("lyrics", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+        }
+      }
+      d.setTransactionSuccessful();
+    } finally {
+      d.endTransaction();
+    }
+    return count;
+  }
+
+  public String exportLibraryJson() throws Exception {
+    org.json.JSONObject root = new org.json.JSONObject();
+    root.put("schema", 1);
+    root.put("type", "library");
+    root.put("exportedAt", Instant.now().toString());
+    org.json.JSONArray arr = new org.json.JSONArray();
+    try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM tracks WHERE available=1", null)) {
+      while (c.moveToNext()) {
+        org.json.JSONObject row = new org.json.JSONObject();
+        for (int i = 0; i < c.getColumnCount(); i++) {
+          if (c.getType(i) == Cursor.FIELD_TYPE_INTEGER)
+            row.put(c.getColumnName(i), c.getLong(i));
+          else row.put(c.getColumnName(i), c.getString(i));
+        }
+        arr.put(row);
+      }
+    }
+    root.put("tracks", arr);
+    return root.toString();
+  }
+
+  public String exportStatsJson() throws Exception {
+    org.json.JSONObject root = new org.json.JSONObject();
+    root.put("schema", 1);
+    root.put("type", "stats");
+    root.put("exportedAt", Instant.now().toString());
+    for (String table : new String[] {"plays", "slices"}) {
+      org.json.JSONArray arr = new org.json.JSONArray();
+      try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM " + table, null)) {
+        while (c.moveToNext()) {
+          org.json.JSONObject row = new org.json.JSONObject();
+          for (int i = 0; i < c.getColumnCount(); i++) {
+            if (c.getType(i) == Cursor.FIELD_TYPE_INTEGER)
+              row.put(c.getColumnName(i), c.getLong(i));
+            else row.put(c.getColumnName(i), c.getString(i));
+          }
+          arr.put(row);
+        }
+      }
+      root.put(table, arr);
+    }
+    return root.toString();
+  }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "pain-desktop",
+  "version": "1.0.0",
+  "description": "Pain — Minimalist Audio Player & Sync Companion for Windows",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "node src/server.js",
+    "build:win": "electron-builder --win"
+  },
+  "keywords": ["audio", "player", "minimalist", "pain", "sync", "windows"],
+  "author": "Ivan",
+  "license": "ISC"
+}

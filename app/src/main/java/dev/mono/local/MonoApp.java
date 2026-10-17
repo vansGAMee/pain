@@ -19,6 +19,7 @@ public final class MonoApp extends Application {
   public PlaybackService service;
   public boolean scanning, ready;
   public String scanMessage = "";
+  public SyncServer syncServer;
   private ContentObserver observer;
   private final Runnable autoScan =
       () -> {
@@ -30,6 +31,8 @@ public final class MonoApp extends Application {
     super.onCreate();
     repo = new Repository(this);
     prefs = getSharedPreferences("mono", MODE_PRIVATE);
+    syncServer = new SyncServer(this);
+    syncServer.start();
     refresh();
     observer =
         new ContentObserver(main) {

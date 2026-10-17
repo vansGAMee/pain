@@ -469,18 +469,7 @@ public final class MainActivity extends Activity {
         break;
       case 4:
         scene.action("Текущее устройство", 24, 224, 342, 136, () -> scanOptions());
-        scene.action(
-            "Синхронизация: следующий этап",
-            24,
-            382,
-            342,
-            136,
-            () ->
-                info(
-                    "Devices & sync",
-                    "Синхронизация с Linux и Windows запланирована. В MVP библиотека, история и"
-                        + " тексты хранятся на этом телефоне. Экспорт данных доступен в"
-                        + " настройках."));
+        scene.action("Синхронизация", 24, 382, 342, 136, this::syncOptions);
         scene.action("Настройки хранилища", 24, 558, 342, 132, this::scanOptions);
         break;
       case 5:
@@ -823,32 +812,49 @@ public final class MainActivity extends Activity {
         }
         break;
       case 4:
-        scene.text("3:216", "Твоя музыка,\nрядом.");
-        scene.text("3:220", "На этом телефоне");
+        scene.text("3:216", isRu() ? "Твоя музыка,\nрядом." : "Your music,\nclose.");
+        scene.text("3:220", isRu() ? "На этом телефоне" : "On this phone");
         scene.bounds("3:220", 76, 239, 260, 22);
-        scene.text("3:221", app.tracks.size() + " треков в библиотеке");
+        scene.text(
+            "3:221",
+            isRu()
+                ? (app.tracks.size() + " треков в библиотеке")
+                : (app.tracks.size() + " tracks in library"));
         scene.bounds("3:221", 76, 263, 263, 22);
-        scene.text("3:222", app.scanning ? "Сканирование…" : "Хранится на устройстве");
+        scene.text(
+            "3:222",
+            app.scanning
+                ? (isRu() ? "Сканирование…" : "Scanning…")
+                : (isRu() ? "Хранится на устройстве" : "Stored on device"));
         scene.bounds("3:222", 76, 286, 265, 20);
-        scene.text("3:224", "Сканировать");
+        scene.text("3:224", isRu() ? "Сканировать" : "Scan");
         scene.bounds("3:224", 94, 323, 140, 18);
-        scene.text("3:227", "LINUX / WINDOWS");
+        scene.text("3:227", "WINDOWS & DESKTOP");
         scene.bounds("3:227", 76, 397, 252, 20);
-        scene.text("3:228", "Синхронизация появится позже");
+        String syncIp = app.syncServer != null ? app.syncServer.getLocalIp() : "127.0.0.1";
+        scene.text(
+            "3:228",
+            isRu()
+                ? ("Сервер: " + syncIp + ":8865")
+                : ("Server: " + syncIp + ":8865"));
         scene.bounds("3:228", 76, 421, 270, 24);
-        scene.text("3:229", "Скоро");
+        scene.text("3:229", isRu() ? "Wi-Fi · автопоиск" : "Wi-Fi · auto-discover");
         scene.bounds("3:229", 76, 444, 252, 18);
-        scene.text("3:231", "Скоро");
+        scene.text("3:231", isRu() ? "Синхронизация" : "Sync");
         scene.bounds("3:231", 88, 481, 140, 18);
         long b = 0;
         for (Track tr : app.tracks) b += tr.bytes;
-        scene.text("3:233", String.format(Locale.ROOT, "%.1f ГБ", b / 1e9));
+        scene.text(
+            "3:233",
+            String.format(Locale.ROOT, "%.1f " + (isRu() ? "ГБ" : "GB"), b / 1e9));
         scene.bounds("3:233", 24, 584, 135, 40);
-        scene.text("3:234", "на телефоне");
+        scene.text("3:234", isRu() ? "на телефоне" : "on phone");
         scene.bounds("3:234", 165, 592, 190, 24);
         scene.text(
             "3:238",
-            "Оригиналы хранятся на телефоне. Сканируйте устройство или выберите аудиофайлы.");
+            isRu()
+                ? "Оригиналы хранятся на телефоне. Синхронизируйте библиотеку и статистику с Windows."
+                : "Audio stored on phone. Sync library and listening stats with Windows companion.");
         scene.bounds("3:238", 24, 647, 342, 50);
         break;
       case 6:
@@ -2204,6 +2210,61 @@ public final class MainActivity extends Activity {
                           })
                       .setNegativeButton("Отмена", null)
                       .show();
+                  break;
+              }
+            })
+        .show();
+  }
+
+  private void syncOptions() {
+    String ip = app.syncServer != null ? app.syncServer.getLocalIp() : "127.0.0.1";
+    String[] items = {
+      (isRu() ? "Адрес сервера: http://" : "Server URL: http://") + ip + ":8865",
+      isRu() ? "Отправить сигнал поиска в сеть (UDP)" : "Broadcast network discovery (UDP)",
+      isRu() ? "Экспорт библиотеки в файл" : "Export library to JSON file",
+      isRu() ? "Перезапустить сервер синхронизации" : "Restart sync server"
+    };
+    new AlertDialog.Builder(this)
+        .setTitle(isRu() ? "Синхронизация с Windows" : "Windows & Desktop Sync")
+        .setItems(
+            items,
+            (d, i) -> {
+              switch (i) {
+                case 0:
+                  android.content.ClipboardManager cm =
+                      (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                  if (cm != null) {
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText(
+                            "Pain Sync IP", "http://" + ip + ":8865"));
+                    toast(isRu() ? "Адрес скопирован в буфер" : "URL copied to clipboard");
+                  }
+                  break;
+                case 1:
+                  if (app.syncServer != null) {
+                    app.syncServer.broadcastDiscovery();
+                    toast(isRu() ? "Сигнал отправлен в сеть" : "Discovery broadcast sent");
+                  }
+                  break;
+                case 2:
+                  try {
+                    String json = app.repo.exportJson();
+                    java.io.File exportFile = new java.io.File(getExternalFilesDir(null), "pain_library_export.json");
+                    try (java.io.FileWriter fw = new java.io.FileWriter(exportFile)) {
+                      fw.write(json);
+                    }
+                    toast(isRu() ? ("Экспортировано: " + exportFile.getName()) : ("Exported to " + exportFile.getName()));
+                  } catch (Exception e) {
+                    toast("Ошибка экспорта: " + e.getMessage());
+                  }
+                  break;
+                case 3:
+                  if (app.syncServer != null) {
+                    app.syncServer.stop();
+                    app.syncServer.start();
+                    toast(isRu() ? "Сервер перезапущен" : "Sync server restarted");
+                    bind();
+                  }
                   break;
               }
             })

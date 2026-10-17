@@ -8,3 +8,7 @@ captures/
 *.iml
 .DS_Store
 *.log
+node_modules/
+desktop/data/*.json
+desktop/downloads/*
+!desktop/downloads/.gitkeep

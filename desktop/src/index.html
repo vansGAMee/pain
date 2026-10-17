@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pain — Audio Player & Windows Sync</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 206.3 250.9">
+        <path fill="currentColor" d="M103.1484 0.0 C111.4258 26.7422 119.0664 50.3008 126.0703 69.4023 L160.4531 47.1172 L152.8125 89.1406 L194.1992 82.1367 L169.3672 117.1562 L206.2969 126.0703 L155.3594 152.1758 L163.6367 193.5625 L122.25 174.4609 L115.8828 250.8672 L90.4141 250.8672 L84.0469 174.4609 L42.6602 193.5625 L50.9375 152.1758 L0.0 126.0703 L36.9297 117.1562 L12.0977 82.1367 L53.4844 89.1406 L45.8438 47.1172 L80.2266 69.4023 C87.2305 50.3008 94.8711 26.7422 103.1484 0.0 Z"/>
+      </svg>
+      <div>
+        <div class="brand-text">Pain</div>
+        <div class="brand-sub">Desktop Sync</div>
+      </div>
+    </div>
+
+    <ul class="nav-menu">
+      <li class="nav-item active" data-view="player">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+        <span class="nav-label" data-en="Player" data-ru="Плеер">Player</span>
+      </li>
+      <li class="nav-item" data-view="library">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span class="nav-label" data-en="Library" data-ru="Библиотека">Library</span>
+      </li>
+      <li class="nav-item" data-view="insights">
+        <svg viewBox="0 0 24 24"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        <span class="nav-label" data-en="Insights" data-ru="Инсайты">Insights</span>
+      </li>
+      <li class="nav-item" data-view="sync">
+        <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span class="nav-label" data-en="Devices & Sync" data-ru="Устройства и Синхронизация">Devices & Sync</span>
+      </li>
+    </ul>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-sync-badge">
+        <div class="sync-status-row">
+          <div class="status-dot" id="sidebarDot"></div>
+          <span id="sidebarStatusText">Searching phone…</span>
+        </div>
+        <div class="sync-detail" id="sidebarDetailText">UDP auto-discovery active</div>
+      </div>
+
+      <div class="bottom-controls">
+        <button class="lang-btn" id="langToggle">EN / RU</button>
+        <button class="theme-btn" id="themeToggle">Theme</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-stage">
+    <header class="top-bar">
+      <div class="page-title" id="pageTitle">Player</div>
+      <div class="top-bar-actions">
+        <button class="btn-minimal" id="quickSyncBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span data-en="Quick Sync" data-ru="Быстрая синхронизация">Quick Sync</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="views-viewport">
+      <!-- VIEW 1: PLAYER -->
+      <section class="view-pane active" id="view-player">
+        <div class="player-container">
+          <div class="vinyl-box">
+            <div class="vinyl-grooves">
+              <div class="vinyl-center" id="vinylDisc">
+                <svg viewBox="0 0 206.3 250.9">
+                  <path fill="currentColor" d="M103.1484 0.0 C111.4258 26.7422 119.0664 50.3008 126.0703 69.4023 L160.4531 47.1172 L152.8125 89.1406 L194.1992 82.1367 L169.3672 117.1562 L206.2969 126.0703 L155.3594 152.1758 L163.6367 193.5625 L122.25 174.4609 L115.8828 250.8672 L90.4141 250.8672 L84.0469 174.4609 L42.6602 193.5625 L50.9375 152.1758 L0.0 126.0703 L36.9297 117.1562 L12.0977 82.1367 L53.4844 89.1406 L45.8438 47.1172 L80.2266 69.4023 C87.2305 50.3008 94.8711 26.7422 103.1484 0.0 Z"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="player-details">
+            <div class="track-origin" id="trackOrigin">PAIN · LOCAL PLAYBACK</div>
+            <div class="marquee-container">
+              <h1 class="track-title" id="trackTitle">Choose music</h1>
+            </div>
+            <div class="track-artist" id="trackArtist">Add or sync tracks to begin</div>
+
+            <div class="progress-container">
+              <span class="time-label" id="currentTime">0:00</span>
+              <div class="progress-track" id="progressTrack">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+              <span class="time-label" id="totalTime">0:00</span>
+            </div>
+
+            <div class="controls-row">
+              <!-- Repeat loop 1 -->
+              <button class="ctrl-btn" id="repeatBtn" title="Loop 1">
+                <svg viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+              </button>
+
+              <!-- Prev -->
+              <button class="ctrl-btn" id="prevBtn" title="Previous">
+                <svg viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+              </button>
+
+              <!-- Play/Pause -->
+              <button class="ctrl-btn play-btn" id="playBtn" title="Play">
+                <svg id="playIcon" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/></svg>
+              </button>
+
+              <!-- Next -->
+              <button class="ctrl-btn" id="nextBtn" title="Next">
+                <svg viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4" fill="currentColor"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+              </button>
+
+              <!-- Favorite Heart -->
+              <button class="ctrl-btn" id="favoriteBtn" title="Favorite">
+                <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </button>
+
+              <!-- Volume -->
+              <div class="volume-container">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="1">
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: LIBRARY -->
+      <section class="view-pane" id="view-library">
+        <div class="library-header">
+          <div>
+            <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 4px;" data-en="Library" data-ru="Библиотека">Library</h2>
+            <div style="font-size: 12px; color: var(--ink-muted);" id="librarySub">0 tracks · local & synced</div>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search track, artist, album…">
+          </div>
+        </div>
+
+        <table class="tracks-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;"></th>
+              <th data-en="Title & Artist" data-ru="Название и артист">Title & Artist</th>
+              <th data-en="Album" data-ru="Альбом">Album</th>
+              <th style="width: 80px;" data-en="Duration" data-ru="Длительность">Time</th>
+              <th style="width: 60px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tracksTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </section>
+
+      <!-- VIEW 3: INSIGHTS -->
+      <section class="view-pane" id="view-insights">
+        <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 6px;" data-en="Insights" data-ru="Инсайты">Insights</h2>
+        <div style="font-size: 12px; color: var(--ink-muted); margin-bottom: 24px;" data-en="Listening history, statistics and habits." data-ru="История прослушиваний, статистика и привычки.">Listening history, statistics and habits.</div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label" data-en="Total Listening" data-ru="Всего прослушано">Total Listening</div>
+            <div class="stat-value" id="statTotalTime">0 ч</div>
+            <div class="stat-sub" id="statTodayTime">Today: 0 min</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" data-en="Unique Tracks" data-ru="Уникальных треков">Unique Tracks</div>
+            <div class="stat-value" id="statUnique">0</div>
+            <div class="stat-sub" id="statPlays">0 plays recorded</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" data-en="Top Obsession" data-ru="Главный трек">Top Obsession</div>
+            <div class="stat-value" style="font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="statObsession">—</div>
+            <div class="stat-sub" id="statObsessionPlays">0 plays</div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="stat-label" data-en="7-Day Activity" data-ru="Активность за 7 дней">7-Day Activity</div>
+          <div class="chart-bars" id="weekBars">
+            <!-- 7 bars for week -->
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 4: DEVICES & SYNC -->
+      <section class="view-pane" id="view-sync">
+        <div class="sync-section">
+          <div class="sync-card">
+            <div class="sync-card-title" data-en="Mobile Device Connection" data-ru="Подключение телефона">Mobile Device Connection</div>
+            <div class="sync-card-sub" data-en="Connect with Pain on Android via Wi-Fi or USB tethering." data-ru="Подключение к приложению Pain на Android через Wi-Fi или USB.">Connect with Pain on Android via Wi-Fi or USB tethering.</div>
+
+            <div class="ip-connect-row">
+              <input type="text" class="ip-input" id="phoneIpInput" placeholder="http://192.168.1.X:8865 or http://10.0.2.16:8865" value="http://localhost:8865">
+              <button class="btn-minimal primary" id="connectBtn" data-en="Check Connection" data-ru="Проверить связь">Check Connection</button>
+            </div>
+
+            <div style="font-size: 12px; color: var(--ink-muted);" id="deviceInfoText">
+              Listening for Android auto-discovery on UDP port 8866…
+            </div>
+          </div>
+
+          <div class="sync-card">
+            <div class="sync-card-title" data-en="Fast Synchronization" data-ru="Быстрая синхронизация">Fast Synchronization</div>
+            <div class="sync-card-sub" data-en="Transfer library, stats, and audio files between devices." data-ru="Передача фонотеки, статистики и аудиофайлов между устройствами.">Transfer library, stats, and audio files between devices.</div>
+
+            <div class="sync-btn-grid">
+              <button class="sync-action-btn" id="syncAllBtn">
+                <div class="sync-action-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:-2px"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg><span data-en="Sync All" data-ru="Синхронизировать всё">Sync All</span></div>
+                <div class="sync-action-desc" data-en="Full library + listening stats in 1s" data-ru="Вся фонотека + статистика за 1 секунду">Full library + listening stats in 1s</div>
+              </button>
+
+              <button class="sync-action-btn" id="syncLibraryBtn">
+                <div class="sync-action-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:-2px"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span data-en="Sync Library" data-ru="Фонотека">Sync Library</span></div>
+                <div class="sync-action-desc" data-en="Tracks metadata, albums, favorites" data-ru="Метаданные треков, альбомы, избранное">Tracks metadata, albums, favorites</div>
+              </button>
+
+              <button class="sync-action-btn" id="syncStatsBtn">
+                <div class="sync-action-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:-2px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span data-en="Sync Stats" data-ru="Статистика">Sync Stats</span></div>
+                <div class="sync-action-desc" data-en="History, plays, time, streaks" data-ru="История, прослушивания, время, серии">History, plays, time, streaks</div>
+              </button>
+
+              <button class="sync-action-btn" id="downloadAllAudioBtn">
+                <div class="sync-action-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span data-en="Download Audio" data-ru="Скачать аудио">Download Audio</span></div>
+                <div class="sync-action-desc" data-en="Batch download audio files to PC" data-ru="Скачать все файлы песен на ПК">Batch download audio files to PC</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Progress Banner -->
+          <div class="progress-banner" id="progressBanner">
+            <div class="progress-meta">
+              <span id="progressTaskTitle">Syncing...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="syncProgressFill" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Log Card -->
+          <div class="sync-card">
+            <div class="sync-card-title" data-en="Sync Activity Log" data-ru="Журнал синхронизации">Sync Activity Log</div>
+            <div class="log-box" id="logBox">
+              [System] Pain Windows Companion ready.
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <audio id="audioEngine"></audio>
+  <script src="app.js"></script>
+</body>
+</html>
