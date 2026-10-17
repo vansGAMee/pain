@@ -174,9 +174,13 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Pain Windows Companion running at http://localhost:${PORT}`);
-  // Open in browser on launch
-  const startCmd = process.platform === 'win32' ? 'start' : (process.platform === 'darwin' ? 'open' : 'xdg-open');
   if (process.env.OPEN_BROWSER !== 'false') {
-    exec(`${startCmd} http://localhost:${PORT}`);
+    if (process.platform === 'win32') {
+      exec(`start http://localhost:${PORT}`);
+    } else if (process.platform === 'darwin') {
+      exec(`open http://localhost:${PORT}`);
+    } else {
+      exec(`(which chromium >/dev/null 2>&1 && chromium --app=http://localhost:${PORT}) || xdg-open http://localhost:${PORT}`);
+    }
   }
 });

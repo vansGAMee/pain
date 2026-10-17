@@ -4,7 +4,8 @@
   "description": "Pain — Minimalist Audio Player & Sync Companion for Windows",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node src/server.js",
+    "electron": "electron .",
     "web": "node src/server.js",
     "build:win": "electron-builder --win"
   },
