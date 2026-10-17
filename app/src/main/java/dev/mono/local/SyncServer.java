@@ -77,8 +77,27 @@ public final class SyncServer {
             notifyListener("peer_discovered", packet.getAddress().getHostAddress());
           }
         }
-      } catch (Exception e) {
+      } catch (Exception ignored) {
         // UDP socket closed or network error
+      }
+    });
+
+    // Periodically broadcast presence to LAN every 3 seconds
+    threadPool.execute(() -> {
+      while (running) {
+        try {
+          if (udpSocket != null && !udpSocket.isClosed()) {
+            String announcement = "PAIN_DEVICE|Android|" + HTTP_PORT + "|" + app.tracks.size();
+            byte[] bytes = announcement.getBytes(StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(bytes, bytes.length, InetAddress.getByName("255.255.255.255"), UDP_PORT);
+            udpSocket.send(packet);
+          }
+        } catch (Exception ignored) {}
+        try {
+          Thread.sleep(3000);
+        } catch (InterruptedException e) {
+          break;
+        }
       }
     });
   }

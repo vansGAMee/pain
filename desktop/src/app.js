@@ -79,6 +79,15 @@
     setupEvents();
     startDiscoveryPolling();
 
+    if (state.phoneUrl) {
+      checkConnection().then(ok => {
+        if (ok && (!state.hasAutoSynced || state.tracks.length === 0)) {
+          state.hasAutoSynced = true;
+          syncAll();
+        }
+      });
+    }
+
     const hash = window.location.hash.replace('#', '');
     if (hash && ['player', 'library', 'insights', 'sync'].includes(hash)) {
       switchView(hash);
@@ -371,10 +380,20 @@
               phoneIpInput.value = state.phoneUrl;
               localStorage.setItem('pain_phone_url', state.phoneUrl);
             }
+
+            // Zero-touch auto sync: pull immediately without user clicking anything
+            if (!state.hasAutoSynced || state.tracks.length === 0) {
+              state.hasAutoSynced = true;
+              log(`Discovered ${phone.name}! Automatically syncing library...`);
+              await syncAll();
+            }
+          } else if (state.tracks.length === 0) {
+            // Check if backend already pulled the library
+            await loadSavedData();
           }
         }
       } catch (ignored) {}
-    }, 2500);
+    }, 1200);
   }
 
   // Synchronization Logic
@@ -528,8 +547,18 @@
         const res = await fetch(streamUrl);
         if (res.ok) {
           const blob = await res.blob();
+          const ext = track.path ? track.path.split('.').pop() : 'mp3';
+          const filename = `${track.artist} - ${track.title}.${ext}`;
+          await fetch('/api/save-audio', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'X-Filename': encodeURIComponent(filename)
+            },
+            body: blob
+          });
           done++;
-          log(`Downloaded [${i+1}/${total}]: ${track.title} (${(blob.size / 1e6).toFixed(2)} MB)`);
+          log(`Saved [${i+1}/${total}]: ${filename} (${(blob.size / 1e6).toFixed(2)} MB)`);
         }
       } catch (e) {
         log(`Failed to download ${track.title}: ${e.message}`);
