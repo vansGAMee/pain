@@ -1,8 +1,10 @@
 package dev.mono.local;
 
+import android.content.ContentUris;
 import android.content.Context;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
+import android.provider.MediaStore;
 import android.text.format.Formatter;
 import java.io.*;
 import java.net.*;
@@ -211,6 +213,28 @@ public final class SyncServer {
         app.refresh();
         sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"merged\":" + merged + "}");
         notifyListener("stats_merged", merged + " stats items");
+      } else if ("/api/favorite".equals(path) && "POST".equalsIgnoreCase(method)) {
+        String body = readBody(reader, contentLength);
+        org.json.JSONObject obj = new org.json.JSONObject(body);
+        String trackId = obj.getString("trackId");
+        boolean favorite = obj.optBoolean("favorite", obj.optInt("favorite", 0) == 1);
+        app.repo.favorite(trackId, favorite);
+        app.refresh();
+        sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"favorite\":" + (favorite ? 1 : 0) + "}");
+        notifyListener("favorite_synced", trackId + ": " + favorite);
+      } else if ("/api/record-play".equals(path) && "POST".equalsIgnoreCase(method)) {
+        String body = readBody(reader, contentLength);
+        org.json.JSONObject obj = new org.json.JSONObject(body);
+        String trackId = obj.getString("track");
+        long heard = obj.optLong("heard", 0);
+        long started = obj.optLong("started", System.currentTimeMillis());
+        long duration = obj.optLong("duration", heard);
+        boolean finished = obj.optBoolean("finished", true);
+        String playId = "pc_" + System.currentTimeMillis() + "_" + (int)(Math.random() * 10000);
+        app.repo.record(playId, trackId, "pc_companion", started, duration, System.currentTimeMillis(), heard, heard, finished, false);
+        app.refresh();
+        sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"playId\":\"" + playId + "\"}");
+        notifyListener("play_recorded", trackId + " (" + (heard / 1000) + "s)");
       } else if (path.startsWith("/api/track/") && ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method))) {
         String trackId = URLDecoder.decode(path.substring("/api/track/".length()), StandardCharsets.UTF_8);
         streamTrack(trackId, out);
@@ -254,12 +278,26 @@ public final class SyncServer {
 
     InputStream fileIn = null;
     try {
-      if (target.uri.startsWith("content://")) {
-        fileIn = app.getContentResolver().openInputStream(Uri.parse(target.uri));
-      } else if (target.uri.startsWith("file://")) {
-        fileIn = new FileInputStream(new File(Uri.parse(target.uri).getPath()));
-      } else {
-        fileIn = new FileInputStream(new File(target.uri));
+      if (target.uri != null && !target.uri.isEmpty()) {
+        try {
+          if (target.uri.startsWith("content://")) {
+            fileIn = app.getContentResolver().openInputStream(Uri.parse(target.uri));
+          } else if (target.uri.startsWith("file://")) {
+            fileIn = new FileInputStream(new File(Uri.parse(target.uri).getPath()));
+          } else {
+            fileIn = new FileInputStream(new File(target.uri));
+          }
+        } catch (Exception ignored) {}
+      }
+
+      if (fileIn == null) {
+        try {
+          if (trackId.startsWith("media:")) {
+            long mediaId = Long.parseLong(trackId.substring("media:".length()));
+            Uri contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId);
+            fileIn = app.getContentResolver().openInputStream(contentUri);
+          }
+        } catch (Exception ignored) {}
       }
 
       if (fileIn == null) {

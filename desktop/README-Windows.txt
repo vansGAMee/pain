@@ -1,11 +1,18 @@
 Pain — Minimalist Audio Player & Sync Companion
 =================================================
 
-How to Run on Windows:
-1. Make sure Node.js is installed (https://nodejs.org/).
-2. Double-click "run-windows.bat".
-3. The companion will automatically open in your default browser at http://localhost:3000.
-4. On the "Devices & Sync" tab, click "Sync All" to instantly transfer your music library and statistics from your Android phone over Wi-Fi!
+How to Run on Windows (10 / 11):
+Option A (Standalone — No Node.js required):
+1. Double-click "Pain.exe" (or "Pain-App.vbs").
+2. The companion will automatically start in app mode or open in your browser at http://localhost:3000.
+
+Option B (Batch script):
+1. Double-click "run-windows.bat".
+
+Syncing with Android:
+1. Open Pain on your Android phone (ensure both PC and phone are on the same Wi-Fi).
+2. The companion will automatically detect your phone and synchronize your library and statistics.
+3. Likes and playback statistics synchronize automatically 2-way between PC and Android!
 
 Ports:
 - HTTP Companion: 3000

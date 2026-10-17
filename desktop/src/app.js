@@ -1140,6 +1140,17 @@
       updatePlayingRowUI();
     }).catch(err => {
       console.warn('Playback error (retrying directly or phone asleep):', err);
+      if (state.phoneUrl) {
+        const cleanPhone = state.phoneUrl.replace(/\/+$/, '');
+        const directUrl = `${cleanPhone}/api/track/${encodeURIComponent(track.id)}`;
+        audio.src = directUrl;
+        audio.play().then(() => {
+          state.isPlaying = true;
+          updatePlayBtnUI();
+          DOM.vinylBigDisc.classList.add('spinning');
+          updatePlayingRowUI();
+        }).catch(e => console.warn('Direct stream also failed:', e));
+      }
     });
 
     updatePlayerBarUI(track, true);
@@ -1225,14 +1236,14 @@
 
     renderCurrentView();
 
-    // 1. Relay to backend & mobile phone
+    // 1. Relay to backend & mobile phone via server
     try {
       await fetch('/api/sync-like', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           trackId: track.id,
-          favorite: track.favorite,
+          favorite: track.favorite ? 1 : 0,
           phoneUrl: state.phoneUrl
         })
       });
@@ -1240,7 +1251,22 @@
       console.warn('Favorite sync error:', e);
     }
 
-    // 2. Persist local library
+    // 2. Direct relay to phone if reachable
+    if (state.phoneUrl) {
+      try {
+        const cleanUrl = state.phoneUrl.replace(/\/+$/, '');
+        fetch(`${cleanUrl}/api/favorite`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trackId: track.id,
+            favorite: track.favorite ? 1 : 0
+          })
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    // 3. Persist local library
     saveLibraryToServer();
   }
 
@@ -1248,23 +1274,53 @@
     const track = state.tracks.find(t => t.id === trackId);
     if (!track) return;
 
+    const playDuration = Math.round(audio.duration * 1000) || 180000;
     const playRecord = {
+      id: 'pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
       track: track.id,
-      heard: Math.round(audio.duration * 1000) || 180000,
+      session: 'pc_companion',
+      started: Date.now() - playDuration,
+      duration: playDuration,
+      at: Date.now(),
+      heard: playDuration,
+      media_heard: playDuration,
+      finished: 1,
+      skipped: 0,
       timestamp: Date.now()
     };
 
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
 
-    // Relay to backend & mobile phone
+    // Relay to backend & mobile phone via server
     try {
       await fetch('/api/sync-stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(playRecord)
+        body: JSON.stringify({
+          ...playRecord,
+          phoneUrl: state.phoneUrl
+        })
       });
     } catch (e) {}
+
+    // Direct relay to phone
+    if (state.phoneUrl) {
+      try {
+        const cleanUrl = state.phoneUrl.replace(/\/+$/, '');
+        fetch(`${cleanUrl}/api/record-play`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            track: track.id,
+            heard: playDuration,
+            started: playRecord.started,
+            duration: playDuration,
+            finished: true
+          })
+        }).catch(() => {});
+      } catch (e) {}
+    }
 
     // Persist local stats
     try {

@@ -550,20 +550,23 @@ public final class Repository extends SQLiteOpenHelper {
           org.json.JSONObject tr = tracksArr.getJSONObject(i);
           ContentValues v = new ContentValues();
           v.put("id", tr.optString("id"));
-          v.put("uri", tr.optString("uri"));
-          v.put("title", tr.optString("title"));
-          v.put("artist", tr.optString("artist"));
-          v.put("album", tr.optString("album"));
-          v.put("folder", tr.optString("folder"));
-          v.put("mime", tr.optString("mime", "audio/*"));
-          v.put("duration", tr.optLong("duration", 0));
-          v.put("bytes", tr.optLong("bytes", 0));
-          v.put("added", tr.optLong("added", System.currentTimeMillis()));
-          v.put("album_id", tr.optLong("album_id", 0));
-          v.put("number", tr.optInt("number", 0));
-          v.put("favorite", tr.optInt("favorite", 0));
-          v.put("available", tr.optInt("available", 1));
+          if (tr.has("uri")) v.put("uri", tr.optString("uri"));
+          if (tr.has("title")) v.put("title", tr.optString("title"));
+          if (tr.has("artist")) v.put("artist", tr.optString("artist"));
+          if (tr.has("album")) v.put("album", tr.optString("album"));
+          if (tr.has("folder")) v.put("folder", tr.optString("folder"));
+          if (tr.has("mime")) v.put("mime", tr.optString("mime", "audio/*"));
+          if (tr.has("duration")) v.put("duration", tr.optLong("duration", 0));
+          if (tr.has("bytes")) v.put("bytes", tr.optLong("bytes", 0));
+          if (tr.has("added")) v.put("added", tr.optLong("added", System.currentTimeMillis()));
+          if (tr.has("album_id")) v.put("album_id", tr.optLong("album_id", 0));
+          if (tr.has("number")) v.put("number", tr.optInt("number", 0));
+          if (tr.has("favorite")) v.put("favorite", tr.optInt("favorite", tr.optBoolean("favorite", false) ? 1 : 0));
+          if (tr.has("available")) v.put("available", tr.optInt("available", 1));
           if (d.update("tracks", v, "id=?", new String[] {tr.optString("id")}) == 0) {
+            if (!v.containsKey("uri")) v.put("uri", "");
+            if (!v.containsKey("title")) v.put("title", "");
+            if (!v.containsKey("artist")) v.put("artist", "");
             d.insert("tracks", null, v);
           }
           count++;

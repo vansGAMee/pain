@@ -496,7 +496,7 @@ const server = http.createServer((req, res) => {
     }
 
     // Stream from mobile phone while simultaneously caching to disk safely via .tmp
-    const phoneUrl = url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl();
+    const phoneUrl = (url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl()).replace(/\/+$/, '');
     const sourceUrl = `${phoneUrl}/api/track/${encodeURIComponent(trackId)}`;
 
     http.get(sourceUrl, (phoneRes) => {
@@ -508,16 +508,27 @@ const server = http.createServer((req, res) => {
 
       const contentType = phoneRes.headers['content-type'] || mime;
       const contentLength = phoneRes.headers['content-length'];
+      const total = contentLength ? parseInt(contentLength, 10) : 0;
 
-      const responseHeaders = {
-        'Content-Type': contentType,
-        'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*'
-      };
-      if (contentLength) {
-        responseHeaders['Content-Length'] = contentLength;
+      if (req.headers.range && total > 0) {
+        res.writeHead(206, {
+          'Content-Type': contentType,
+          'Content-Length': total,
+          'Content-Range': `bytes 0-${total - 1}/${total}`,
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*'
+        });
+      } else {
+        const responseHeaders = {
+          'Content-Type': contentType,
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*'
+        };
+        if (contentLength) {
+          responseHeaders['Content-Length'] = contentLength;
+        }
+        res.writeHead(200, responseHeaders);
       }
-      res.writeHead(200, responseHeaders);
 
       const writeStream = fs.createWriteStream(tmpFile);
       phoneRes.pipe(res);
@@ -703,32 +714,65 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        const { trackId, favorite } = JSON.parse(body);
+        const parsed = JSON.parse(body);
+        const { trackId, favorite } = parsed;
+        const favVal = (favorite === true || favorite === 1) ? 1 : 0;
+
         const libFile = path.join(DATA_DIR, 'library.json');
         if (fs.existsSync(libFile)) {
-          const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
-          const track = (lib.tracks || []).find(t => t.id === trackId);
-          if (track) {
-            track.favorite = favorite;
-            fs.writeFileSync(libFile, JSON.stringify(lib, null, 2), 'utf8');
-          }
+          try {
+            const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+            const track = (lib.tracks || []).find(t => t.id === trackId);
+            if (track) {
+              track.favorite = favVal;
+              fs.writeFileSync(libFile, JSON.stringify(lib, null, 2), 'utf8');
+            }
+          } catch (e) {}
         }
+
         // Relay to mobile phone
-        const phoneUrl = getMobilePhoneBaseUrl();
-        const pUrl = new URL(`${phoneUrl}/api/library`);
-        const syncPayload = JSON.stringify({ tracks: [{ id: trackId, favorite }] });
-        const postReq = http.request(pUrl, {
+        const rawPhone = parsed.phoneUrl || getMobilePhoneBaseUrl();
+        const phoneUrl = rawPhone.replace(/\/+$/, '');
+
+        // Save last known phone IP for persistent reconnection
+        try {
+          const u = new URL(phoneUrl);
+          fs.writeFileSync(LAST_IP_FILE, `${u.hostname}:${u.port || MOBILE_HTTP_PORT}`, 'utf8');
+        } catch (e) {}
+
+        const favPayload = JSON.stringify({ trackId, favorite: favVal });
+        const favUrl = new URL(`${phoneUrl}/api/favorite`);
+        const postReq = http.request(favUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(syncPayload) }
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(favPayload) }
         }, (phoneRes) => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', syncedToPhone: phoneRes.statusCode === 200 }));
+          if (phoneRes.statusCode === 200) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', syncedToPhone: true }));
+          } else {
+            // Fallback for older Android server versions
+            const libPayload = JSON.stringify({ tracks: [{ id: trackId, favorite: favVal }] });
+            const libUrl = new URL(`${phoneUrl}/api/library`);
+            const fallbackReq = http.request(libUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(libPayload) }
+            }, (fallbackRes) => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ status: 'ok', syncedToPhone: fallbackRes.statusCode === 200 }));
+            });
+            fallbackReq.on('error', () => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
+            });
+            fallbackReq.write(libPayload);
+            fallbackReq.end();
+          }
         });
         postReq.on('error', () => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
         });
-        postReq.write(syncPayload);
+        postReq.write(favPayload);
         postReq.end();
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -744,30 +788,82 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        const playRecord = JSON.parse(body);
+        const parsed = JSON.parse(body);
         const statsFile = path.join(DATA_DIR, 'stats.json');
         let stats = { plays: [], slices: [] };
         if (fs.existsSync(statsFile)) {
           try { stats = JSON.parse(fs.readFileSync(statsFile, 'utf8')); } catch (e) {}
         }
-        if (playRecord.play) stats.plays.push(playRecord.play);
+
+        const trackId = parsed.track || (parsed.play && parsed.play.track);
+        const heard = parsed.heard || (parsed.play && parsed.play.heard) || 0;
+        const duration = parsed.duration || (parsed.play && parsed.play.duration) || heard;
+        const started = parsed.started || (parsed.play && parsed.play.started) || (Date.now() - heard);
+        const finished = (parsed.finished === true || parsed.finished === 1 || (parsed.play && parsed.play.finished == 1)) ? 1 : 0;
+
+        const playObj = parsed.play || {
+          id: 'pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+          track: trackId,
+          session: 'pc_companion',
+          started: started,
+          heard: heard,
+          media_heard: heard,
+          duration: duration,
+          finished: finished,
+          skipped: 0
+        };
+        stats.plays.push(playObj);
         fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
 
         // Relay to mobile phone
-        const phoneUrl = getMobilePhoneBaseUrl();
-        const pUrl = new URL(`${phoneUrl}/api/stats`);
-        const postReq = http.request(pUrl, {
+        const rawPhone = parsed.phoneUrl || getMobilePhoneBaseUrl();
+        const phoneUrl = rawPhone.replace(/\/+$/, '');
+
+        // Save last known phone IP
+        try {
+          const u = new URL(phoneUrl);
+          fs.writeFileSync(LAST_IP_FILE, `${u.hostname}:${u.port || MOBILE_HTTP_PORT}`, 'utf8');
+        } catch (e) {}
+
+        const recPayload = JSON.stringify({
+          track: trackId,
+          heard: heard,
+          started: started,
+          duration: duration,
+          finished: finished === 1
+        });
+        const recUrl = new URL(`${phoneUrl}/api/record-play`);
+        const postReq = http.request(recUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(recPayload) }
         }, (phoneRes) => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', syncedToPhone: phoneRes.statusCode === 200 }));
+          if (phoneRes.statusCode === 200) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', syncedToPhone: true }));
+          } else {
+            // Fallback to /api/stats
+            const legacyStatsPayload = JSON.stringify({ plays: [playObj] });
+            const legacyUrl = new URL(`${phoneUrl}/api/stats`);
+            const fallbackReq = http.request(legacyUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(legacyStatsPayload) }
+            }, (fallbackRes) => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ status: 'ok', syncedToPhone: fallbackRes.statusCode === 200 }));
+            });
+            fallbackReq.on('error', () => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
+            });
+            fallbackReq.write(legacyStatsPayload);
+            fallbackReq.end();
+          }
         });
         postReq.on('error', () => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
         });
-        postReq.write(body);
+        postReq.write(recPayload);
         postReq.end();
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
