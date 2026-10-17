@@ -13,8 +13,13 @@ const UDP_PORT = 8866;
 const BASE_DATA_DIR = process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
 const DATA_DIR = path.join(BASE_DATA_DIR, 'data');
 const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
+const CACHE_DIR = path.join(BASE_DATA_DIR, 'cache');
+const COVERS_DIR = path.join(BASE_DATA_DIR, 'covers');
+const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 
@@ -271,10 +276,120 @@ const MIME_TYPES = {
   '.flac': 'audio/flac'
 };
 
+function getMobilePhoneBaseUrl() {
+  if (discoveredDevices.length > 0) {
+    const dev = discoveredDevices[0];
+    return `http://${dev.ip}:${dev.port}`;
+  }
+  try {
+    if (fs.existsSync(LAST_IP_FILE)) {
+      const c = fs.readFileSync(LAST_IP_FILE, 'utf8').trim();
+      if (c) return `http://${c}`;
+    }
+  } catch (e) {}
+  return 'http://192.168.1.2:8865';
+}
+
+let trackMimeCache = new Map();
+
+function getTrackMimeType(trackId) {
+  if (trackMimeCache.has(trackId)) {
+    return trackMimeCache.get(trackId);
+  }
+  try {
+    const libFile = path.join(DATA_DIR, 'library.json');
+    if (fs.existsSync(libFile)) {
+      const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+      if (lib.tracks && Array.isArray(lib.tracks)) {
+        for (const t of lib.tracks) {
+          if (t.id && t.mime) {
+            trackMimeCache.set(t.id, t.mime);
+          }
+        }
+        if (trackMimeCache.has(trackId)) {
+          return trackMimeCache.get(trackId);
+        }
+      }
+    }
+  } catch (e) {}
+  return 'audio/mpeg';
+}
+
+function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
+  try {
+    const stat = fs.statSync(filePath);
+    const total = stat.size;
+    const range = req.headers.range;
+
+    if (range) {
+      const match = range.match(/bytes\s*=\s*(\d+)\s*-\s*(\d+)?/i);
+      if (!match) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${total}`,
+          'Accept-Ranges': 'bytes'
+        });
+        res.end();
+        return;
+      }
+      const start = parseInt(match[1], 10);
+      let end = match[2] ? parseInt(match[2], 10) : total - 1;
+
+      if (isNaN(start) || start >= total || start > end) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${total}`,
+          'Accept-Ranges': 'bytes'
+        });
+        res.end();
+        return;
+      }
+      if (end >= total) {
+        end = total - 1;
+      }
+
+      const chunksize = (end - start) + 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': mime,
+        'Access-Control-Allow-Origin': '*'
+      });
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      const stream = fs.createReadStream(filePath, { start, end });
+      stream.on('error', () => {
+        try { res.end(); } catch (e) {}
+      });
+      stream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': total,
+        'Accept-Ranges': 'bytes',
+        'Content-Type': mime,
+        'Access-Control-Allow-Origin': '*'
+      });
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', () => {
+        try { res.end(); } catch (e) {}
+      });
+      stream.pipe(res);
+    }
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('File stream error: ' + err.message);
+  }
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Filename, Range');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
@@ -362,6 +477,302 @@ const server = http.createServer((req, res) => {
     fileStream.on('error', (err) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
+
+  // Sleep-proof local cached track playback (streams from disk or fetches & caches from mobile)
+  if (pathname.startsWith('/api/cached-track/')) {
+    const trackId = decodeURIComponent(pathname.substring('/api/cached-track/'.length));
+    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+    const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
+    const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
+    const mime = getTrackMimeType(trackId);
+
+    // If fully cached on disk, stream with HTTP 206 Range support
+    if (fs.existsSync(cachedFile) && fs.statSync(cachedFile).size > 1000) {
+      streamFileWithRange(cachedFile, req, res, mime);
+      return;
+    }
+
+    // Stream from mobile phone while simultaneously caching to disk safely via .tmp
+    const phoneUrl = url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl();
+    const sourceUrl = `${phoneUrl}/api/track/${encodeURIComponent(trackId)}`;
+
+    http.get(sourceUrl, (phoneRes) => {
+      if (phoneRes.statusCode !== 200) {
+        res.writeHead(phoneRes.statusCode, phoneRes.headers);
+        phoneRes.pipe(res);
+        return;
+      }
+
+      const contentType = phoneRes.headers['content-type'] || mime;
+      const contentLength = phoneRes.headers['content-length'];
+
+      const responseHeaders = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*'
+      };
+      if (contentLength) {
+        responseHeaders['Content-Length'] = contentLength;
+      }
+      res.writeHead(200, responseHeaders);
+
+      const writeStream = fs.createWriteStream(tmpFile);
+      phoneRes.pipe(res);
+      phoneRes.pipe(writeStream);
+
+      writeStream.on('finish', () => {
+        try {
+          if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000) {
+            fs.renameSync(tmpFile, cachedFile);
+          }
+        } catch (e) {
+          console.warn('Rename tmp cache file error:', e);
+        }
+      });
+
+      phoneRes.on('error', () => {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+      });
+    }).on('error', (err) => {
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end(`Failed to fetch from phone: ${err.message}`);
+    });
+    return;
+  }
+
+  // Pre-fetch track in background for sleep-resistant seamless queue
+  if (pathname.startsWith('/api/preload-track/') && req.method === 'POST') {
+    const trackId = decodeURIComponent(pathname.substring('/api/preload-track/'.length));
+    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+    const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
+    const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
+    if (fs.existsSync(cachedFile) && fs.statSync(cachedFile).size > 1000) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'already_cached' }));
+      return;
+    }
+    const phoneUrl = url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl();
+    http.get(`${phoneUrl}/api/track/${encodeURIComponent(trackId)}`, (phoneRes) => {
+      if (phoneRes.statusCode === 200) {
+        const fileStream = fs.createWriteStream(tmpFile);
+        phoneRes.pipe(fileStream);
+        fileStream.on('finish', () => {
+          try {
+            if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000) {
+              fs.renameSync(tmpFile, cachedFile);
+            }
+          } catch (e) {}
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'cached', trackId }));
+        });
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Phone responded ${phoneRes.statusCode}` }));
+      }
+    }).on('error', (e) => {
+      try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (err) {}
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    });
+    return;
+  }
+
+function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
+  let hash = 0;
+  const str = String(title || 'Pain') + String(artist || 'Audio');
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const absHash = Math.abs(hash);
+  const paperBgs = ['#EAE7DF', '#E2DFD5', '#DCD8CE', '#E7E4DC', '#DDD8CD', '#ECE9E1'];
+  const labelBgs = ['#FAF9F6', '#1C1C1A', '#EFEDE6', '#E4E1D7'];
+  const bg = paperBgs[absHash % paperBgs.length];
+  const labelBg = labelBgs[(absHash >> 2) % labelBgs.length];
+  const isDarkLabel = labelBg === '#1C1C1A';
+  const textFill = isDarkLabel ? '#EFEDE6' : '#1C1C1A';
+
+  let monogram = 'P';
+  if (title) {
+    const words = String(title).trim().split(/\s+/);
+    if (words.length >= 2) {
+      monogram = (words[0][0] + words[1][0]).toUpperCase();
+    } else if (words[0].length >= 2) {
+      monogram = words[0].substring(0, 2).toUpperCase();
+    } else {
+      monogram = words[0].toUpperCase();
+    }
+  }
+  const cleanMonogram = monogram.replace(/[&<>'"]/g, '');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+    <rect width="200" height="200" fill="${bg}"/>
+    <circle cx="100" cy="100" r="88" fill="none" stroke="#1C1C1A" stroke-width="0.75" opacity="0.08"/>
+    <circle cx="100" cy="100" r="76" fill="none" stroke="#1C1C1A" stroke-width="0.75" opacity="0.07"/>
+    <circle cx="100" cy="100" r="64" fill="none" stroke="#1C1C1A" stroke-width="0.75" opacity="0.08"/>
+    <circle cx="100" cy="100" r="52" fill="none" stroke="#1C1C1A" stroke-width="0.75" opacity="0.09"/>
+    <circle cx="100" cy="100" r="42" fill="none" stroke="#1C1C1A" stroke-width="0.75" opacity="0.07"/>
+    <circle cx="100" cy="100" r="32" fill="${labelBg}" stroke="#1C1C1A" stroke-width="0.8" opacity="0.95"/>
+    <circle cx="100" cy="100" r="5.5" fill="${bg}" stroke="#1C1C1A" stroke-width="1.2"/>
+    <text x="100" y="86" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" letter-spacing="-0.5" fill="${textFill}">${cleanMonogram}</text>
+    <text x="100" y="122" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="6.5" font-weight="600" letter-spacing="1" fill="${textFill}" opacity="0.75">PAIN AUDIO</text>
+  </svg>`.trim();
+}
+
+  // Cover Art Endpoints
+  if (pathname.startsWith('/api/cover/')) {
+    const trackId = decodeURIComponent(pathname.substring('/api/cover/'.length));
+    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+    const coverFile = path.join(COVERS_DIR, `${safeId}.jpg`);
+    if (fs.existsSync(coverFile)) {
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
+      fs.createReadStream(coverFile).pipe(res);
+      return;
+    }
+
+    let trackTitle = 'Pain', trackArtist = 'Audio';
+    try {
+      const libFile = path.join(DATA_DIR, 'library.json');
+      if (fs.existsSync(libFile)) {
+        const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+        const track = (lib.tracks || []).find(t => t.id === trackId);
+        if (track) {
+          trackTitle = track.title || 'Pain';
+          trackArtist = track.artist || 'Audio';
+        }
+      }
+    } catch (e) {}
+
+    const svg = generateProceduralCoverSvg(trackTitle, trackArtist);
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400' });
+    res.end(svg);
+    return;
+  }
+
+  if (pathname.startsWith('/api/save-cover/') && req.method === 'POST') {
+    const trackId = decodeURIComponent(pathname.substring('/api/save-cover/'.length));
+    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+    const coverFile = path.join(COVERS_DIR, `${safeId}.jpg`);
+    const writeStream = fs.createWriteStream(coverFile);
+    req.pipe(writeStream);
+    writeStream.on('finish', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    writeStream.on('error', (err) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
+
+  // Custom Playlists Endpoints
+  if (pathname === '/api/playlists' && req.method === 'GET') {
+    if (fs.existsSync(PLAYLISTS_FILE)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      fs.createReadStream(PLAYLISTS_FILE).pipe(res);
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([]));
+    }
+    return;
+  }
+
+  if (pathname === '/api/playlists' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        fs.writeFileSync(PLAYLISTS_FILE, body, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // 2-Way Sync: Favorite / Like Toggle
+  if (pathname === '/api/sync-like' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { trackId, favorite } = JSON.parse(body);
+        const libFile = path.join(DATA_DIR, 'library.json');
+        if (fs.existsSync(libFile)) {
+          const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+          const track = (lib.tracks || []).find(t => t.id === trackId);
+          if (track) {
+            track.favorite = favorite;
+            fs.writeFileSync(libFile, JSON.stringify(lib, null, 2), 'utf8');
+          }
+        }
+        // Relay to mobile phone
+        const phoneUrl = getMobilePhoneBaseUrl();
+        const pUrl = new URL(`${phoneUrl}/api/library`);
+        const syncPayload = JSON.stringify({ tracks: [{ id: trackId, favorite }] });
+        const postReq = http.request(pUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(syncPayload) }
+        }, (phoneRes) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', syncedToPhone: phoneRes.statusCode === 200 }));
+        });
+        postReq.on('error', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
+        });
+        postReq.write(syncPayload);
+        postReq.end();
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // 2-Way Sync: Play Statistics
+  if (pathname === '/api/sync-stats' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const playRecord = JSON.parse(body);
+        const statsFile = path.join(DATA_DIR, 'stats.json');
+        let stats = { plays: [], slices: [] };
+        if (fs.existsSync(statsFile)) {
+          try { stats = JSON.parse(fs.readFileSync(statsFile, 'utf8')); } catch (e) {}
+        }
+        if (playRecord.play) stats.plays.push(playRecord.play);
+        fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
+
+        // Relay to mobile phone
+        const phoneUrl = getMobilePhoneBaseUrl();
+        const pUrl = new URL(`${phoneUrl}/api/stats`);
+        const postReq = http.request(pUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+        }, (phoneRes) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', syncedToPhone: phoneRes.statusCode === 200 }));
+        });
+        postReq.on('error', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
+        });
+        postReq.write(body);
+        postReq.end();
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
     });
     return;
   }

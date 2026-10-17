@@ -10,7 +10,12 @@ captures/
 *.log
 node_modules/
 desktop/data/*.json
+desktop/data/*.txt
 desktop/downloads/*
 !desktop/downloads/.gitkeep
+desktop/cache/*
+!desktop/cache/.gitkeep
+desktop/covers/*
+!desktop/covers/.gitkeep
 release-builds/
 desktop/package-lock.json
