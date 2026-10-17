@@ -10,8 +10,9 @@ const PORT = 3000;
 const MOBILE_HTTP_PORT = 8865;
 const UDP_PORT = 8866;
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DOWNLOADS_DIR = path.join(__dirname, '..', 'downloads');
+const BASE_DATA_DIR = process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
+const DATA_DIR = path.join(BASE_DATA_DIR, 'data');
+const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 
@@ -230,15 +231,31 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Pain Windows Companion running at http://localhost:${PORT}`);
-  if (process.env.OPEN_BROWSER !== 'false') {
-    if (process.platform === 'win32') {
-      exec(`start http://localhost:${PORT}`);
-    } else if (process.platform === 'darwin') {
-      exec(`open http://localhost:${PORT}`);
-    } else {
-      exec(`(chromium --app=http://localhost:${PORT} || xdg-open http://localhost:${PORT}) >/dev/null 2>&1 &`);
+let currentPort = parseInt(process.env.PORT, 10) || PORT;
+
+function startServer(p) {
+  server.listen(p, '0.0.0.0', () => {
+    console.log(`Pain Windows Companion running at http://localhost:${p}`);
+    if (process.env.OPEN_BROWSER !== 'false') {
+      if (process.platform === 'win32') {
+        exec(`start http://localhost:${p}`);
+      } else if (process.platform === 'darwin') {
+        exec(`open http://localhost:${p}`);
+      } else {
+        exec(`(chromium --app=http://localhost:${p} || xdg-open http://localhost:${p}) >/dev/null 2>&1 &`);
+      }
     }
+  });
+}
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+    currentPort++;
+    startServer(currentPort);
+  } else {
+    console.error('Server error:', err);
   }
 });
+
+startServer(currentPort);

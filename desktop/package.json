@@ -3,11 +3,19 @@
   "version": "1.0.1",
   "description": "Pain — Minimalist Audio Player & Sync Companion for Windows",
   "main": "src/main.js",
+  "bin": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "electron": "electron .",
     "web": "node src/server.js",
-    "build:win": "electron-builder --win"
+    "build:win": "electron-builder --win",
+    "package:exe": "pkg . --target node18-win-x64 --output dist/Pain.exe"
+  },
+  "pkg": {
+    "assets": [
+      "src/**/*",
+      "assets/**/*"
+    ]
   },
   "keywords": ["audio", "player", "minimalist", "pain", "sync", "windows"],
   "author": "Ivan",
