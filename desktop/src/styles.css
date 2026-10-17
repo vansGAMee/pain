@@ -590,10 +590,13 @@ body {
   overflow-y: auto;
   padding: 24px 32px;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-pane {
   display: none;
+  width: 100%;
 }
 
 .view-pane.active {
@@ -2061,19 +2064,218 @@ input:checked + .switch-slider:before {
 }
 
 /* ========================================================
-   FAVORITES VIEW: SUBTLE VIOLET BACKGROUND GRADIENT
+   FAVORITES VIEW: SEAMLESS FLOWING AMBIENT VIOLET GRADIENT
    ======================================================== */
+.view-pane#view-favorites.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-height: 100%;
+}
+
 #view-favorites {
   position: relative;
-  min-height: 100%;
-  border-radius: 14px;
-  background: radial-gradient(circle at 10% 0%, rgba(168, 85, 247, 0.08) 0%, rgba(147, 51, 234, 0.03) 50%, transparent 80%),
-              linear-gradient(180deg, rgba(192, 132, 252, 0.06) 0%, rgba(168, 85, 247, 0.02) 260px, transparent 480px);
+  width: calc(100% + 64px);
+  margin: -24px -32px;
+  padding: 24px 32px 64px 32px;
+  min-height: calc(100% + 48px);
+  box-sizing: border-box;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(
+    135deg,
+    rgba(239, 237, 230, 1) 0%,
+    rgba(235, 222, 252, 0.65) 25%,
+    rgba(224, 204, 250, 0.50) 50%,
+    rgba(241, 231, 255, 0.60) 75%,
+    rgba(239, 237, 230, 1) 100%
+  );
+  background-size: 260% 260%;
+  animation: favoritesAuraFlow 20s ease-in-out infinite;
 }
 
 [data-theme="dark"] #view-favorites {
-  background: radial-gradient(circle at 10% 0%, rgba(168, 85, 247, 0.14) 0%, rgba(147, 51, 234, 0.05) 50%, transparent 80%),
-              linear-gradient(180deg, rgba(168, 85, 247, 0.10) 0%, rgba(147, 51, 234, 0.03) 280px, transparent 500px);
+  background: linear-gradient(
+    135deg,
+    rgba(21, 21, 19, 1) 0%,
+    rgba(56, 20, 92, 0.45) 25%,
+    rgba(36, 14, 60, 0.55) 50%,
+    rgba(72, 26, 114, 0.38) 75%,
+    rgba(21, 21, 19, 1) 100%
+  );
+  background-size: 260% 260%;
+  animation: favoritesAuraFlow 20s ease-in-out infinite;
+}
+
+/* Ambient layer containing the flowing liquid light orbs */
+.favorites-ambient-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aura-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Orb 1: Top-left luminous deep violet */
+.aura-orb.orb-1 {
+  top: -120px;
+  left: -80px;
+  width: 680px;
+  height: 580px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.22) 0%, rgba(139, 92, 246, 0.08) 50%, transparent 72%);
+  filter: blur(80px);
+  animation: orbLiquidDrift1 22s ease-in-out infinite alternate;
+}
+
+[data-theme="dark"] .aura-orb.orb-1 {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.30) 0%, rgba(139, 92, 246, 0.12) 50%, transparent 72%);
+}
+
+/* Orb 2: Top-right bright magenta/lavender */
+.aura-orb.orb-2 {
+  top: 40px;
+  right: -90px;
+  width: 620px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.18) 0%, rgba(147, 51, 234, 0.06) 50%, transparent 72%);
+  filter: blur(85px);
+  animation: orbLiquidDrift2 26s ease-in-out infinite alternate;
+}
+
+[data-theme="dark"] .aura-orb.orb-2 {
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.24) 0%, rgba(147, 51, 234, 0.10) 50%, transparent 72%);
+}
+
+/* Orb 3: Center/lower subtle flowing glow that travels vertically */
+.aura-orb.orb-3 {
+  top: 320px;
+  left: 20%;
+  width: 580px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(147, 51, 234, 0.14) 0%, rgba(168, 85, 247, 0.05) 50%, transparent 72%);
+  filter: blur(90px);
+  animation: orbLiquidDrift3 28s ease-in-out infinite alternate;
+}
+
+[data-theme="dark"] .aura-orb.orb-3 {
+  background: radial-gradient(circle, rgba(147, 51, 234, 0.20) 0%, rgba(168, 85, 247, 0.08) 50%, transparent 72%);
+}
+
+/* Bottom fade: softly merges the ambient glow into base background at the bottom */
+.aura-bottom-fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 160px;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Keep hero header & table comfortably elevated above the background flow */
+#view-favorites .playlist-hero {
+  position: relative;
+  z-index: 1;
+  padding: 28px 0 28px 0;
+}
+
+#view-favorites .tracks-table-wrapper {
+  position: relative;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="dark"] #view-favorites .tracks-table-wrapper {
+  background: rgba(30, 30, 27, 0.68);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+#view-favorites .tracks-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] #view-favorites .tracks-table tbody tr:hover,
+:root:not([data-theme="dark"]) #view-favorites .tracks-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Fluid animations for gradient and floating orbs */
+@keyframes favoritesAuraFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 50% 100%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  75% {
+    background-position: 50% 0%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes orbLiquidDrift1 {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate(75px, 60px) scale(1.12) rotate(25deg);
+  }
+  66% {
+    transform: translate(-30px, 100px) scale(0.92) rotate(-20deg);
+  }
+  100% {
+    transform: translate(85px, 35px) scale(1.08) rotate(15deg);
+  }
+}
+
+@keyframes orbLiquidDrift2 {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate(-70px, 50px) scale(1.10) rotate(-25deg);
+  }
+  66% {
+    transform: translate(-25px, -45px) scale(0.90) rotate(25deg);
+  }
+  100% {
+    transform: translate(-85px, 30px) scale(1.05) rotate(-15deg);
+  }
+}
+
+@keyframes orbLiquidDrift3 {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(50px, -60px) scale(1.15);
+  }
+  66% {
+    transform: translate(-60px, 40px) scale(0.90);
+  }
+  100% {
+    transform: translate(30px, 50px) scale(1.08);
+  }
 }
 
 /* ========================================================
