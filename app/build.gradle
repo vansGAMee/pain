@@ -4,7 +4,7 @@ android {
  compileSdk 36
  defaultConfig {
   applicationId 'dev.mono.local'; minSdk 26; targetSdk 35
-  versionCode 3; versionName '0.1.2'
+  versionCode 4; versionName '1.0.1'
   testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
  }
  compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
