@@ -7,7 +7,7 @@
     currentTrackIndex: -1,
     isPlaying: false,
     loopOne: false,
-    phoneUrl: localStorage.getItem('pain_phone_url') || 'http://localhost:8865',
+    phoneUrl: (localStorage.getItem('pain_phone_url') && localStorage.getItem('pain_phone_url') !== 'http://localhost:8865') ? localStorage.getItem('pain_phone_url') : 'http://192.168.1.2:8865',
     stats: { plays: [], slices: [] },
     devices: []
   };
@@ -253,6 +253,7 @@
         if (!e.target.closest('button')) {
           const originalIndex = state.tracks.findIndex(item => item.id === t.id);
           playTrack(originalIndex);
+          switchView('player');
         }
       });
 
@@ -261,6 +262,7 @@
         e.stopPropagation();
         const originalIndex = state.tracks.findIndex(item => item.id === t.id);
         playTrack(originalIndex);
+        switchView('player');
       });
 
       const favButton = tr.querySelector('button[title="Favorite"]');
@@ -363,10 +365,11 @@
             sidebarStatusText.textContent = phone.name;
             sidebarDetailText.textContent = `${phone.ip}:${phone.port} · ${phone.tracks} tracks`;
 
-            // Auto-fill IP if not customized
-            if (phoneIpInput.value === 'http://localhost:8865' || !phoneIpInput.value) {
+            // Auto-fill IP with discovered device
+            if (phone.ip && phone.ip !== '127.0.0.1') {
               state.phoneUrl = `http://${phone.ip}:${phone.port}`;
               phoneIpInput.value = state.phoneUrl;
+              localStorage.setItem('pain_phone_url', state.phoneUrl);
             }
           }
         }

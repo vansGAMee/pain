@@ -1,4 +1,6 @@
 const http = require('http');
+const net = require('net');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
@@ -59,6 +61,62 @@ function broadcastDiscovery() {
     if (err && err.code !== 'ENETUNREACH') console.error('Broadcast err:', err);
   });
 }
+
+// Fast Subnet Scanner (fallback if router blocks UDP broadcast)
+function scanSubnetForDevices() {
+  const interfaces = os.networkInterfaces();
+  const subnets = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        const parts = iface.address.split('.');
+        parts.pop();
+        subnets.push(parts.join('.'));
+      }
+    }
+  }
+
+  for (const prefix of subnets) {
+    for (let i = 1; i <= 254; i++) {
+      const ip = prefix + '.' + i;
+      const sock = new net.Socket();
+      sock.setTimeout(350);
+      sock.on('connect', () => {
+        sock.destroy();
+        http.get(`http://${ip}:${MOBILE_HTTP_PORT}/api/status`, res => {
+          let b = '';
+          res.on('data', c => b += c);
+          res.on('end', () => {
+            try {
+              const data = JSON.parse(b);
+              if (data.status === 'ok') {
+                const device = {
+                  name: data.appName ? `${data.appName} (${data.device || 'Android'})` : 'Android Device',
+                  ip: ip,
+                  port: MOBILE_HTTP_PORT,
+                  tracks: data.tracks || 0,
+                  lastSeen: Date.now()
+                };
+                const existing = discoveredDevices.find(d => d.ip === device.ip);
+                if (existing) {
+                  Object.assign(existing, device);
+                } else {
+                  discoveredDevices.push(device);
+                }
+              }
+            } catch (e) {}
+          });
+        }).on('error', () => {});
+      });
+      sock.on('timeout', () => sock.destroy());
+      sock.on('error', () => sock.destroy());
+      sock.connect(MOBILE_HTTP_PORT, ip);
+    }
+  }
+}
+
+scanSubnetForDevices();
+setInterval(scanSubnetForDevices, 8000);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
