@@ -1,0 +1,627 @@
+ 3:2 FRAME 01 — Home (0, 0, 390, 844)  
+  3:3 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  3:4 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  3:5 TEXT 80% (342, 18, 24, 14) '80%' 11
+  3:6 TEXT MONO / LOCAL (24, 60, 88, 13) 'MONO / LOCAL' 10
+  3:7 TEXT Good morning, Ivan. (24, 88, 300, 76) 'Good morning,\nIvan.' 34
+  3:8 TEXT Your music, not an algorithm. (24, 171, 184, 18) 'Your music, not an algorithm.' 14
+  3:9 ROUNDED_RECTANGLE Rectangle (24, 214, 342, 194)  
+  3:10 TEXT CONTINUE (42, 234, 60, 13) 'CONTINUE' 10
+  3:11 TEXT Unknown Pleasures (42, 260, 180, 64) 'Unknown\nPleasures' 30
+  3:12 TEXT Joy Division (42, 331, 74, 17) 'Joy Division' 13
+  3:13 ELLIPSE Ellipse (233, 238, 108, 108)  
+  3:14 ELLIPSE Ellipse (261, 266, 52, 52)  
+  3:15 ROUNDED_RECTANGLE Rectangle (276, 276, 22, 32)  
+  3:16 LINE Line (287, 278, 27, 0)  
+  3:17 ELLIPSE Ellipse (224, 229, 126, 126)  
+  3:18 ELLIPSE Ellipse (334, 312, 10, 10)  
+  3:19 TEXT TODAY (24, 442, 37, 13) 'TODAY' 10
+  3:20 TEXT 1h 37m (24, 463, 91, 36) '1h 37m' 28
+  3:21 TEXT 26 tracks (145, 473, 59, 17) '26 tracks' 13
+  3:22 ROUNDED_RECTANGLE Rectangle (24, 516, 342, 124)  
+  3:23 TEXT CURRENT OBSESSION (42, 535, 127, 13) 'CURRENT OBSESSION' 10
+  3:24 TEXT Disorder (42, 560, 96, 31) 'Disorder' 24
+  3:25 TEXT 12 plays this week (42, 592, 103, 16) '12 plays this week' 12
+  3:26 LINE Line (250, 548, 63, 0)  
+  3:27 TEXT 87% (276, 556, 50, 33) '87%' 25
+  3:28 TEXT completion (269, 588, 53, 13) 'completion' 10
+  3:29 ROUNDED_RECTANGLE Rectangle (18, 712, 354, 56)  
+  3:30 ROUNDED_RECTANGLE Rectangle (26, 720, 40, 40)  
+  3:31 ROUNDED_RECTANGLE Rectangle (35, 724, 22, 32)  
+  3:32 LINE Line (46, 726, 28, 0)  
+  3:33 TEXT Disorder (78, 722, 57, 18) 'Disorder' 14
+  3:34 TEXT Joy Division (78, 743, 61, 14) 'Joy Division' 11
+  3:35 TEXT Ⅱ (332, 727, 11, 23) 'Ⅱ' 18
+  3:36 ROUNDED_RECTANGLE Rectangle (18, 780, 354, 50)  
+  3:37 TEXT ⌂ (40, 788, 13, 23) '⌂' 18
+  3:38 TEXT Home (26, 811, 28, 13) 'Home' 10
+  3:39 TEXT ▥ (124, 788, 16, 23) '▥' 18
+  3:40 TEXT Library (110, 811, 33, 13) 'Library' 10
+  3:41 TEXT ◒ (218, 788, 17, 23) '◒' 18
+  3:42 TEXT Insights (204, 811, 38, 13) 'Insights' 10
+  3:43 TEXT ◉ (308, 788, 17, 23) '◉' 18
+  3:44 TEXT Devices (294, 811, 38, 13) 'Devices' 10
+  12:2 LINE Etched / Section Divider (24, 516, 342, 0)  
+  12:3 TEXT Local Library Signature (42, 375, 123, 10) 'LOCAL  •  14,382 TRACKS' 8
+  12:4 ELLIPSE Local / Status (319, 377, 6, 6)  
+  13:2 LINE NavIcon / Home Roof L (40, 798, 6, 5)  
+  13:3 LINE NavIcon / Home Roof R (46, 798, 6, 5)  
+  13:4 ROUNDED_RECTANGLE NavIcon / Home Body (41, 803, 10, 8)  
+  13:5 ROUNDED_RECTANGLE NavIcon / Library Spine (124, 798, 2, 14)  
+  13:6 ROUNDED_RECTANGLE NavIcon / Library Spine (129, 798, 2, 14)  
+  13:7 ROUNDED_RECTANGLE NavIcon / Library Spine (134, 798, 2, 14)  
+  13:8 ELLIPSE NavIcon / Insights Dial (217, 798, 14, 14)  
+  13:9 LINE NavIcon / Insights Horizon (219, 805, 10, 0)  
+  13:10 ELLIPSE NavIcon / Insights Dot (222.5, 801, 3, 3)  
+  13:11 ELLIPSE NavIcon / Device Outer (307, 798, 14, 14)  
+  13:12 ELLIPSE NavIcon / Device Inner (311, 802, 6, 6)  
+  16:2 ROUNDED_RECTANGLE Relief / Signal Rail (222, 254, 78, 10)  
+  16:3 ROUNDED_RECTANGLE Relief / Signal Rail (229, 269, 78, 10)  
+  16:4 ROUNDED_RECTANGLE Relief / Signal Rail (236, 284, 78, 10)  
+  16:12 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 3:45 FRAME 02 — Now Playing (450, 0, 390, 844)  
+  3:46 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  3:47 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  3:48 TEXT 80% (342, 18, 24, 14) '80%' 11
+  3:49 TEXT ‹ (24, 56, 13, 49) '‹' 38
+  3:50 TEXT JOY DIVISION (24, 112, 79, 13) 'JOY DIVISION' 10
+  3:51 TEXT Disorder (24, 134, 155, 49) 'Disorder' 38
+  3:52 TEXT Unknown Pleasures · 1979 (24, 182, 155, 17) 'Unknown Pleasures · 1979' 13
+  3:53 ELLIPSE Ellipse (59, 240, 272, 272)  
+  3:54 ELLIPSE Ellipse (71, 252, 248, 248)  
+  3:55 ELLIPSE Ellipse (95, 276, 200, 200)  
+  3:56 ELLIPSE Ellipse (132, 313, 126, 126)  
+  3:57 ROUNDED_RECTANGLE Rectangle (163, 333, 64, 86)  
+  3:58 LINE Line (196, 338, 6.1, 0)  
+  3:59 LINE Line (197, 347, 6.1, 0)  
+  3:60 LINE Line (196, 356, 6.1, 0)  
+  3:61 LINE Line (197, 365, 6.3, 0)  
+  3:62 LINE Line (196, 374, 6, 0)  
+  3:63 LINE Line (197, 383, 6, 0)  
+  3:64 LINE Line (196, 392, 6.1, 0)  
+  3:65 LINE Line (197, 401, 6.1, 0)  
+  3:66 ELLIPSE Ellipse (48, 229, 294, 294)  
+  3:67 ELLIPSE Ellipse (323, 413, 14, 14)  
+  3:68 TEXT SCRUB (48, 219, 34, 10) 'SCRUB' 8
+  3:69 TEXT Text (47, 522, 0, 23)  18
+  3:70 TEXT 01:12 (24, 564, 30, 13) '01:12' 10
+  3:71 TEXT 03:36 (330, 564, 34, 13) '03:36' 10
+  3:72 LINE Line (24, 596, 342, 0)  
+  3:73 LINE Line (24, 596, 144, 0)  
+  3:74 ELLIPSE Ellipse (161, 589, 14, 14)  
+  3:75 ELLIPSE Ellipse (70, 650, 52, 52)  
+  3:76 TEXT |◀ (84, 665, 20, 23) '|◀' 18
+  3:77 ELLIPSE Ellipse (157, 634, 76, 76)  
+  3:78 TEXT Ⅱ (183, 650, 17, 36) 'Ⅱ' 28
+  3:79 ELLIPSE Ellipse (268, 650, 52, 52)  
+  3:80 TEXT ▶| (282, 665, 20, 23) '▶|' 18
+  3:81 TEXT QUEUE 8 (24, 770, 54, 13) 'QUEUE  8' 10
+  3:82 TEXT LOCAL · MP3 320 (278, 770, 91, 12) 'LOCAL · MP3 320' 9
+  10:2 ROUNDED_RECTANGLE Pause / Bar (181, 657, 6, 28)  
+  10:3 ROUNDED_RECTANGLE Pause / Bar (195, 657, 6, 28)  
+  12:5 LINE Menu Groove (337, 66, 22, 0)  
+  12:6 LINE Menu Groove (337, 72, 22, 0)  
+  12:7 LINE Menu Groove (337, 78, 22, 0)  
+  12:8 ELLIPSE Dial / Specular Hairline (81, 262, 228, 228)  
+  16:5 ROUNDED_RECTANGLE Progress / Recessed Track (24, 594, 342, 6)  
+  16:6 ROUNDED_RECTANGLE Progress / Fill (24, 595, 144, 4)  
+  16:7 ELLIPSE Dial / Rim Highlight (52, 233, 286, 286)  
+  16:8 ELLIPSE Dial / Rim Shade (54, 235, 282, 282)  
+  16:9 ELLIPSE Dial / Specular (105, 276, 7, 7)  
+  16:13 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 3:83 FRAME 03 — Library (900, 0, 390, 844)  
+  3:84 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  3:85 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  3:86 TEXT 80% (342, 18, 24, 14) '80%' 11
+  3:87 TEXT LIBRARY (24, 60, 49, 13) 'LIBRARY' 10
+  3:88 TEXT Albums (24, 87, 123, 44) 'Albums' 34
+  3:89 ROUNDED_RECTANGLE Rectangle (274, 76, 92, 38)  
+  3:90 TEXT Sort ↕ (296, 87, 39, 16) 'Sort  ↕' 12
+  3:91 ROUNDED_RECTANGLE Rectangle (24, 144, 84, 84)  
+  3:92 ROUNDED_RECTANGLE Rectangle (45, 162, 42, 48)  
+  3:93 LINE Line (66, 166, 5, 0)  
+  3:94 LINE Line (66, 173, 5.1, 0)  
+  3:95 LINE Line (66, 180, 5, 0)  
+  3:96 LINE Line (66, 187, 5.1, 0)  
+  3:97 LINE Line (66, 194, 5, 0)  
+  3:98 LINE Line (66, 201, 5.1, 0)  
+  3:99 TEXT Unknown Pleasures (126, 158, 161, 22) 'Unknown Pleasures' 17
+  3:100 TEXT Joy Division (126, 184, 68, 16) 'Joy Division' 12
+  3:101 TEXT 10 tracks · 39 min (126, 206, 89, 14) '10 tracks · 39 min' 11
+  3:102 TEXT ⋯ (340, 170, 19, 29) '⋯' 22
+  3:103 ROUNDED_RECTANGLE Rectangle (24, 256, 84, 84)  
+  3:104 TEXT In Rainbows (126, 270, 99, 22) 'In Rainbows' 17
+  3:105 TEXT Radiohead (126, 296, 60, 16) 'Radiohead' 12
+  3:106 TEXT 12 tracks · 42 min (126, 318, 89, 14) '12 tracks · 42 min' 11
+  3:107 TEXT ⋯ (340, 282, 19, 29) '⋯' 22
+  3:108 ROUNDED_RECTANGLE Rectangle (24, 368, 84, 84)  
+  3:109 TEXT The Bends (126, 382, 86, 22) 'The Bends' 17
+  3:110 TEXT Radiohead (126, 408, 60, 16) 'Radiohead' 12
+  3:111 TEXT 12 tracks · 42 min (126, 430, 89, 14) '12 tracks · 42 min' 11
+  3:112 TEXT ⋯ (340, 394, 19, 29) '⋯' 22
+  3:113 ROUNDED_RECTANGLE Rectangle (24, 480, 84, 84)  
+  3:114 TEXT Disintegration (126, 494, 115, 22) 'Disintegration' 17
+  3:115 TEXT The Cure (126, 520, 50, 16) 'The Cure' 12
+  3:116 TEXT 12 tracks · 42 min (126, 542, 89, 14) '12 tracks · 42 min' 11
+  3:117 TEXT ⋯ (340, 506, 19, 29) '⋯' 22
+  3:118 ROUNDED_RECTANGLE Rectangle (24, 612, 342, 78)  
+  3:119 TEXT LIBRARY SIZE (42, 630, 79, 13) 'LIBRARY SIZE' 10
+  3:120 TEXT 14,382 tracks (42, 651, 134, 26) '14,382 tracks' 20
+  3:121 TEXT 417 GB (270, 654, 46, 18) '417 GB' 14
+  3:122 ROUNDED_RECTANGLE Rectangle (18, 712, 354, 56)  
+  3:123 ROUNDED_RECTANGLE Rectangle (26, 720, 40, 40)  
+  3:124 ROUNDED_RECTANGLE Rectangle (35, 724, 22, 32)  
+  3:125 LINE Line (46, 726, 28, 0)  
+  3:126 TEXT Nude (78, 722, 36, 18) 'Nude' 14
+  3:127 TEXT Radiohead (78, 743, 54, 14) 'Radiohead' 11
+  3:128 TEXT Ⅱ (332, 727, 11, 23) 'Ⅱ' 18
+  3:129 ROUNDED_RECTANGLE Rectangle (18, 780, 354, 50)  
+  3:130 TEXT ⌂ (40, 788, 13, 23) '⌂' 18
+  3:131 TEXT Home (26, 811, 28, 13) 'Home' 10
+  3:132 TEXT ▥ (124, 788, 16, 23) '▥' 18
+  3:133 TEXT Library (110, 811, 34, 13) 'Library' 10
+  3:134 TEXT ◒ (218, 788, 17, 23) '◒' 18
+  3:135 TEXT Insights (204, 811, 38, 13) 'Insights' 10
+  3:136 TEXT ◉ (308, 788, 17, 23) '◉' 18
+  3:137 TEXT Devices (294, 811, 38, 13) 'Devices' 10
+  12:9 LINE Catalog / Hairline (126, 242, 240, 0)  
+  12:10 LINE Catalog / Hairline (126, 354, 240, 0)  
+  12:11 LINE Catalog / Hairline (126, 466, 240, 0)  
+  12:12 LINE Catalog / Hairline (126, 578, 240, 0)  
+  12:13 ELLIPSE Search / Lens (232, 80, 14, 14)  
+  12:14 LINE Search / Handle (243, 92, 7, 0.0)  
+  13:13 LINE NavIcon / Home Roof L (40, 798, 6, 5)  
+  13:14 LINE NavIcon / Home Roof R (46, 798, 6, 5)  
+  13:15 ROUNDED_RECTANGLE NavIcon / Home Body (41, 803, 10, 8)  
+  13:16 ROUNDED_RECTANGLE NavIcon / Library Spine (124, 798, 2, 14)  
+  13:17 ROUNDED_RECTANGLE NavIcon / Library Spine (129, 798, 2, 14)  
+  13:18 ROUNDED_RECTANGLE NavIcon / Library Spine (134, 798, 2, 14)  
+  13:19 ELLIPSE NavIcon / Insights Dial (217, 798, 14, 14)  
+  13:20 LINE NavIcon / Insights Horizon (219, 805, 10, 0)  
+  13:21 ELLIPSE NavIcon / Insights Dot (222.5, 801, 3, 3)  
+  13:22 ELLIPSE NavIcon / Device Outer (307, 798, 14, 14)  
+  13:23 ELLIPSE NavIcon / Device Inner (311, 802, 6, 6)  
+  16:14 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 3:138 FRAME 04 — Insights (1350, 0, 390, 844)  
+  3:139 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  3:140 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  3:141 TEXT 80% (342, 18, 24, 14) '80%' 11
+  3:142 TEXT INSIGHTS / 2026 (24, 60, 99, 13) 'INSIGHTS / 2026' 10
+  3:143 TEXT Your listening. (24, 87, 227, 44) 'Your listening.' 34
+  3:195 ROUNDED_RECTANGLE Rectangle (18, 712, 354, 56)  
+  3:196 ROUNDED_RECTANGLE Rectangle (26, 720, 40, 40)  
+  3:197 ROUNDED_RECTANGLE Rectangle (35, 724, 22, 32)  
+  3:198 LINE Line (46, 726, 28, 0)  
+  3:199 TEXT Disorder (78, 722, 57, 18) 'Disorder' 14
+  3:200 TEXT Joy Division (78, 743, 61, 14) 'Joy Division' 11
+  3:201 TEXT Ⅱ (332, 727, 11, 23) 'Ⅱ' 18
+  3:202 ROUNDED_RECTANGLE Rectangle (18, 780, 354, 50)  
+  3:203 TEXT ⌂ (40, 788, 13, 23) '⌂' 18
+  3:204 TEXT Home (26, 811, 28, 13) 'Home' 10
+  3:205 TEXT ▥ (124, 788, 16, 23) '▥' 18
+  3:206 TEXT Library (110, 811, 33, 13) 'Library' 10
+  3:207 TEXT ◒ (218, 788, 17, 23) '◒' 18
+  3:208 TEXT Insights (204, 811, 39, 13) 'Insights' 10
+  3:209 TEXT ◉ (308, 788, 17, 23) '◉' 18
+  3:210 TEXT Devices (294, 811, 38, 13) 'Devices' 10
+  9:2 ROUNDED_RECTANGLE Glass / Year Summary (24, 140, 342, 104)  
+  9:3 TEXT 31,482 (42, 157, 126, 49) '31,482' 38
+  9:4 TEXT minutes (42, 202, 46, 16) 'minutes' 12
+  9:5 TEXT 416 sessions (238, 166, 74, 16) '416 sessions' 12
+  9:6 TEXT 4,192 songs (238, 190, 61, 14) '4,192 songs' 11
+  9:7 TEXT LOCAL HISTORY (238, 214, 86, 12) 'LOCAL HISTORY' 9
+  9:8 TEXT LISTENING CLOCK (24, 270, 98, 12) 'LISTENING CLOCK' 9
+  9:9 ROUNDED_RECTANGLE Glass / Listening Clock (24, 292, 158, 128)  
+  9:10 ELLIPSE Ellipse (50, 303, 106, 106)  
+  9:11 ELLIPSE Ellipse (69, 322, 68, 68)  
+  9:12 LINE Line (103, 318, 10, 0)  
+  9:13 LINE Line (112.8, 319.3, 10, 0)  
+  9:14 LINE Line (124, 319.6, 6, 0)  
+  9:15 LINE Line (132.7, 326.3, 6, 0)  
+  9:16 LINE Line (139.4, 335, 6, 0)  
+  9:17 LINE Line (143.6, 345.1, 6, 0)  
+  9:18 LINE Line (145, 356, 6, 0)  
+  9:19 LINE Line (143.6, 366.9, 6, 0)  
+  9:20 LINE Line (139.4, 377, 6, 0)  
+  9:21 LINE Line (132.7, 385.7, 6, 0)  
+  9:22 LINE Line (124, 392.4, 6, 0)  
+  9:23 LINE Line (113.9, 396.6, 6, 0)  
+  9:24 LINE Line (103, 398, 6, 0)  
+  9:25 LINE Line (92.1, 396.6, 6, 0)  
+  9:26 LINE Line (82, 392.4, 6, 0)  
+  9:27 LINE Line (73.3, 385.7, 6, 0)  
+  9:28 LINE Line (66.6, 377, 6, 0)  
+  9:29 LINE Line (62.4, 366.9, 6, 0)  
+  9:30 LINE Line (61, 356, 6, 0)  
+  9:31 LINE Line (62.4, 345.1, 6, 0)  
+  9:32 LINE Line (66.6, 335, 6, 0)  
+  9:33 LINE Line (76.1, 329.1, 10, 0)  
+  9:34 LINE Line (84, 323.1, 10, 0)  
+  9:35 LINE Line (93.2, 319.3, 10, 0)  
+  9:36 TEXT 23:00 (84, 347, 33, 14) '23:00' 11
+  9:37 TEXT peak (89, 364, 22, 12) 'peak' 9
+  9:38 ROUNDED_RECTANGLE Glass / Streak (198, 292, 168, 128)  
+  9:39 TEXT STREAK (216, 309, 42, 12) 'STREAK' 9
+  9:40 TEXT 12 (216, 333, 38, 44) '12' 34
+  9:41 TEXT days (264, 344, 27, 16) 'days' 12
+  9:42 LINE Line (216, 382, 132, 0)  
+  9:43 TEXT longest (216, 392, 32, 12) 'longest' 9
+  9:44 TEXT 41 days (302, 390, 40, 14) '41 days' 11
+  9:45 TEXT DISCOVERY / COMFORT (24, 446, 129, 12) 'DISCOVERY / COMFORT' 9
+  9:46 TEXT 37% (24, 467, 37, 23) '37%' 18
+  9:47 TEXT new (68, 471, 20, 13) 'new' 10
+  9:48 TEXT 63% (307, 467, 39, 23) '63%' 18
+  9:49 TEXT familiar (308, 490, 32, 12) 'familiar' 9
+  9:50 ROUNDED_RECTANGLE Rectangle (24, 503, 342, 6)  
+  9:51 ROUNDED_RECTANGLE Rectangle (24, 503, 126, 6)  
+  9:52 TEXT SKIP PROFILE (24, 535, 75, 12) 'SKIP PROFILE' 9
+  9:53 ROUNDED_RECTANGLE Glass / Skip Profile (24, 557, 342, 72)  
+  9:54 TEXT 78% (42, 575, 41, 26) '78%' 20
+  9:55 TEXT completed (42, 600, 45, 12) 'completed' 9
+  9:56 TEXT 11% (142, 575, 34, 26) '11%' 20
+  9:57 TEXT < 30 sec (142, 600, 36, 12) '< 30 sec' 9
+  9:58 TEXT 6% (236, 575, 30, 26) '6%' 20
+  9:59 TEXT replayed (236, 600, 37, 12) 'replayed' 9
+  9:60 TEXT 5% (316, 575, 30, 26) '5%' 20
+  9:61 TEXT other (316, 600, 23, 12) 'other' 9
+  9:62 TEXT CURRENT OBSESSION (24, 650, 119, 12) 'CURRENT OBSESSION' 9
+  9:63 TEXT Disorder (24, 668, 84, 26) 'Disorder' 20
+  9:64 TEXT 27 plays · 6 days · local history (24, 693, 141, 13) '27 plays · 6 days · local history' 10
+  9:65 LINE Line (198, 692, 21.4, 0)  
+  9:66 LINE Line (219, 688, 21.1, 0)  
+  9:67 LINE Line (240, 690.5, 21.8, 0)  
+  9:68 LINE Line (261, 684.5, 21.4, 0)  
+  9:69 LINE Line (282, 680.5, 21.1, 0)  
+  9:70 LINE Line (303, 682.5, 21.8, 0)  
+  9:71 LINE Line (324, 676.5, 21.1, 0)  
+  12:16 LINE Discovery / Tick (24, 498, 0.0, 16)  
+  12:17 LINE Discovery / Tick (109.5, 498, 0.0, 16)  
+  12:18 LINE Discovery / Tick (195, 498, 0.0, 16)  
+  12:19 LINE Discovery / Tick (280.5, 498, 0.0, 16)  
+  12:20 LINE Discovery / Tick (366, 498, 0.0, 16)  
+  12:21 ROUNDED_RECTANGLE Obsession / Daily Pulse (202, 696, 8, 8)  
+  12:22 ROUNDED_RECTANGLE Obsession / Daily Pulse (223, 690, 8, 14)  
+  12:23 ROUNDED_RECTANGLE Obsession / Daily Pulse (244, 693, 8, 11)  
+  12:24 ROUNDED_RECTANGLE Obsession / Daily Pulse (265, 682, 8, 22)  
+  12:25 ROUNDED_RECTANGLE Obsession / Daily Pulse (286, 686, 8, 18)  
+  12:26 ROUNDED_RECTANGLE Obsession / Daily Pulse (307, 677, 8, 27)  
+  12:27 ROUNDED_RECTANGLE Obsession / Daily Pulse (328, 680, 8, 24)  
+  13:24 LINE NavIcon / Home Roof L (40, 798, 6, 5)  
+  13:25 LINE NavIcon / Home Roof R (46, 798, 6, 5)  
+  13:26 ROUNDED_RECTANGLE NavIcon / Home Body (41, 803, 10, 8)  
+  13:27 ROUNDED_RECTANGLE NavIcon / Library Spine (124, 798, 2, 14)  
+  13:28 ROUNDED_RECTANGLE NavIcon / Library Spine (129, 798, 2, 14)  
+  13:29 ROUNDED_RECTANGLE NavIcon / Library Spine (134, 798, 2, 14)  
+  13:30 ELLIPSE NavIcon / Insights Dial (217, 798, 14, 14)  
+  13:31 LINE NavIcon / Insights Horizon (219, 805, 10, 0)  
+  13:32 ELLIPSE NavIcon / Insights Dot (222.5, 801, 3, 3)  
+  13:33 ELLIPSE NavIcon / Device Outer (307, 798, 14, 14)  
+  13:34 ELLIPSE NavIcon / Device Inner (311, 802, 6, 6)  
+  16:15 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 3:211 FRAME 05 — Devices (1800, 0, 390, 844)  
+  3:212 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  3:213 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  3:214 TEXT 80% (342, 18, 24, 14) '80%' 11
+  3:215 TEXT DEVICES (24, 60, 50, 13) 'DEVICES' 10
+  3:216 TEXT Your music, everywhere. (24, 87, 320, 76) 'Your music,\neverywhere.' 34
+  3:217 TEXT No account. Same library. (24, 172, 163, 18) 'No account. Same library.' 14
+  3:218 ROUNDED_RECTANGLE Rectangle (24, 224, 342, 136)  
+  3:219 ELLIPSE Ellipse (42, 245, 18, 18)  
+  3:220 TEXT DESKTOP (76, 239, 57, 16) 'DESKTOP' 12
+  3:221 TEXT 14,382 tracks · 417 GB (76, 263, 134, 17) '14,382 tracks · 417 GB' 13
+  3:222 TEXT Last sync 12 sec ago (76, 286, 104, 14) 'Last sync 12 sec ago' 11
+  3:223 ROUNDED_RECTANGLE Rectangle (76, 316, 160, 26)  
+  3:224 TEXT THIS DEVICE (101, 323, 61, 13) 'THIS DEVICE' 10
+  3:225 ROUNDED_RECTANGLE Rectangle (24, 382, 342, 136)  
+  3:226 ELLIPSE Ellipse (42, 403, 18, 18)  
+  3:227 TEXT ANDROID (76, 397, 56, 16) 'ANDROID' 12
+  3:228 TEXT 2,182 tracks · 38 GB (76, 421, 120, 17) '2,182 tracks · 38 GB' 13
+  3:229 TEXT LAN · ready (76, 444, 58, 14) 'LAN · ready' 11
+  3:230 ROUNDED_RECTANGLE Rectangle (76, 474, 116, 26)  
+  3:231 TEXT SEND MUSIC (95, 481, 63, 13) 'SEND MUSIC' 10
+  3:232 TEXT SMART STORAGE (24, 558, 98, 13) 'SMART STORAGE' 10
+  3:233 TEXT 30 GB (24, 584, 76, 34) '30 GB' 26
+  3:234 TEXT limit on phone (105, 592, 80, 16) 'limit on phone' 12
+  3:235 LINE Line (24, 632, 342, 0)  
+  3:236 LINE Line (24, 632, 246, 0)  
+  3:237 ELLIPSE Ellipse (264, 625, 14, 14)  
+  3:238 TEXT Favorites, recent albums and playlists stay offline automatically. (24, 655, 320, 36) 'Favorites, recent albums and playlists stay offline automatically.' 12
+  3:239 ROUNDED_RECTANGLE Rectangle (18, 780, 354, 50)  
+  3:240 TEXT ⌂ (40, 788, 13, 23) '⌂' 18
+  3:241 TEXT Home (26, 811, 28, 13) 'Home' 10
+  3:242 TEXT ▥ (124, 788, 16, 23) '▥' 18
+  3:243 TEXT Library (110, 811, 33, 13) 'Library' 10
+  3:244 TEXT ◒ (218, 788, 17, 23) '◒' 18
+  3:245 TEXT Insights (204, 811, 38, 13) 'Insights' 10
+  3:246 TEXT ◉ (308, 788, 17, 23) '◉' 18
+  3:247 TEXT Devices (294, 811, 39, 13) 'Devices' 10
+  12:28 TEXT Devices / Privacy (24, 724, 177, 10) 'LOCAL ONLY  ·  NO CLOUD ACCOUNT' 8
+  13:35 LINE NavIcon / Home Roof L (40, 798, 6, 5)  
+  13:36 LINE NavIcon / Home Roof R (46, 798, 6, 5)  
+  13:37 ROUNDED_RECTANGLE NavIcon / Home Body (41, 803, 10, 8)  
+  13:38 ROUNDED_RECTANGLE NavIcon / Library Spine (124, 798, 2, 14)  
+  13:39 ROUNDED_RECTANGLE NavIcon / Library Spine (129, 798, 2, 14)  
+  13:40 ROUNDED_RECTANGLE NavIcon / Library Spine (134, 798, 2, 14)  
+  13:41 ELLIPSE NavIcon / Insights Dial (217, 798, 14, 14)  
+  13:42 LINE NavIcon / Insights Horizon (219, 805, 10, 0)  
+  13:43 ELLIPSE NavIcon / Insights Dot (222.5, 801, 3, 3)  
+  13:44 ELLIPSE NavIcon / Device Outer (307, 798, 14, 14)  
+  13:45 ELLIPSE NavIcon / Device Inner (311, 802, 6, 6)  
+  16:10 ROUNDED_RECTANGLE Storage / Recessed Track (24, 630, 342, 7)  
+  16:11 ROUNDED_RECTANGLE Storage / Fill (24, 631, 246, 5)  
+  16:16 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 3:248 TEXT HOME (0, -34, 37, 13) 'HOME' 11
+ 3:249 TEXT NOW PLAYING (450, -34, 91, 13) 'NOW PLAYING' 11
+ 3:250 TEXT LIBRARY (900, -34, 54, 13) 'LIBRARY' 11
+ 3:251 TEXT INSIGHTS (1350, -34, 61, 13) 'INSIGHTS' 11
+ 3:252 TEXT DEVICES (1800, -34, 55, 13) 'DEVICES' 11
+ 3:253 FRAME Design Notes (0, 920, 840, 210)  
+  3:254 TEXT DESIGN SYSTEM (24, 22, 97, 12) 'DESIGN SYSTEM' 10
+  3:255 TEXT Ceramic hi-fi / quiet luxury (24, 46, 316, 31) 'Ceramic hi-fi / quiet luxury' 24
+  3:256 TEXT Geist · warm paper · tactile soft UI · dual shadows · recessed controls · local-only analytics · local SYLT/.LRC karaoke · progressive settings (24, 86, 760, 38) 'Geist · warm paper · tactile soft UI · dual shadows · recessed controls · local-only analytics · local SYLT/.LRC karaoke · progressive settings' 13
+  3:257 ELLIPSE Ellipse (24, 132, 28, 28)  
+  3:258 TEXT INK (60, 139, 17, 12) 'INK' 10
+  3:259 ELLIPSE Ellipse (144, 132, 28, 28)  
+  3:260 TEXT PAPER (180, 139, 32, 12) 'PAPER' 10
+  3:261 ELLIPSE Ellipse (264, 132, 28, 28)  
+  3:262 TEXT SURFACE (300, 139, 46, 12) 'SURFACE' 10
+  3:263 ELLIPSE Ellipse (384, 132, 28, 28)  
+  3:264 TEXT METAL (420, 139, 34, 12) 'METAL' 10
+  3:265 ELLIPSE Ellipse (504, 132, 28, 28)  
+  3:266 TEXT SYNC (540, 139, 29, 12) 'SYNC' 10
+ 9:72 FRAME 06 — Statistics Detail (2250, 0, 390, 844)  
+  9:73 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  9:74 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  9:75 TEXT 80% (342, 18, 24, 14) '80%' 11
+  9:76 TEXT ‹ (24, 54, 12, 47) '‹' 36
+  9:77 TEXT STATISTICS (24, 104, 61, 12) 'STATISTICS' 9
+  9:78 TEXT Your patterns. (24, 128, 232, 44) 'Your patterns.' 34
+  9:79 ROUNDED_RECTANGLE Glass / Range (230, 100, 136, 36)  
+  9:80 TEXT YEAR (247, 112, 27, 12) 'YEAR' 9
+  9:81 TEXT ALL TIME (294, 112, 47, 12) 'ALL TIME' 9
+  9:82 ROUNDED_RECTANGLE Metric / Minutes (24, 184, 106, 92)  
+  9:83 TEXT LISTENED (40, 201, 52, 12) 'LISTENED' 9
+  9:84 TEXT 31.4k (40, 224, 64, 31) '31.4k' 24
+  9:85 TEXT min (40, 251, 16, 12) 'min' 9
+  9:86 ROUNDED_RECTANGLE Metric / Sessions (142, 184, 106, 92)  
+  9:87 TEXT SESSIONS (158, 201, 55, 12) 'SESSIONS' 9
+  9:88 TEXT 416 (158, 224, 43, 31) '416' 24
+  9:89 TEXT local (158, 251, 21, 12) 'local' 9
+  9:90 ROUNDED_RECTANGLE Metric / TRACKS (260, 184, 106, 92)  
+  9:91 TEXT TRACKS (276, 201, 43, 12) 'TRACKS' 9
+  9:92 TEXT 4,192 (276, 224, 57, 29) '4,192' 22
+  9:93 TEXT unique (276, 251, 29, 12) 'unique' 9
+  9:94 TEXT TOP ARTISTS (24, 307, 70, 12) 'TOP ARTISTS' 9
+  9:95 TEXT Joy Division (24, 332, 70, 16) 'Joy Division' 12
+  9:96 TEXT 8h 14m (314, 332, 34, 13) '8h 14m' 10
+  9:97 ROUNDED_RECTANGLE Bar / Joy Division (24, 354, 342, 3)  
+  9:98 ROUNDED_RECTANGLE Fill / Joy Division (24, 354, 342, 3)  
+  9:99 TEXT Radiohead (24, 377, 60, 16) 'Radiohead' 12
+  9:100 TEXT 6h 09m (314, 377, 37, 13) '6h 09m' 10
+  9:101 ROUNDED_RECTANGLE Bar / Radiohead (24, 399, 342, 3)  
+  9:102 ROUNDED_RECTANGLE Fill / Radiohead (24, 399, 253.1, 3)  
+  9:103 TEXT The Cure (24, 422, 50, 16) 'The Cure' 12
+  9:104 TEXT 4h 21m (314, 422, 34, 13) '4h 21m' 10
+  9:105 ROUNDED_RECTANGLE Bar / The Cure (24, 444, 342, 3)  
+  9:106 ROUNDED_RECTANGLE Fill / The Cure (24, 444, 181.3, 3)  
+  9:107 TEXT Mr.Kitty (24, 467, 44, 16) 'Mr.Kitty' 12
+  9:108 TEXT 3h 52m (314, 467, 37, 13) '3h 52m' 10
+  9:109 ROUNDED_RECTANGLE Bar / Mr.Kitty (24, 489, 342, 3)  
+  9:110 ROUNDED_RECTANGLE Fill / Mr.Kitty (24, 489, 160.7, 3)  
+  9:111 TEXT YOUR ROUTINE (24, 526, 81, 12) 'YOUR ROUTINE' 9
+  9:112 ROUNDED_RECTANGLE Glass / Routine (24, 548, 342, 92)  
+  9:113 TEXT 23:00 (42, 566, 66, 29) '23:00' 22
+  9:114 TEXT peak hour (42, 594, 43, 12) 'peak hour' 9
+  9:115 TEXT 48m (151, 566, 49, 29) '48m' 22
+  9:116 TEXT avg session (151, 594, 50, 12) 'avg session' 9
+  9:117 TEXT 3h 12m (256, 566, 77, 29) '3h 12m' 22
+  9:118 TEXT longest (256, 594, 32, 12) 'longest' 9
+  9:119 TEXT ON THIS DAY (24, 670, 69, 12) 'ON THIS DAY' 9
+  9:120 ROUNDED_RECTANGLE Glass / On This Day (24, 692, 342, 68)  
+  9:121 TEXT 1 year ago (42, 708, 58, 13) '1 year ago' 10
+  9:122 TEXT 1h 12m · 18 tracks (42, 730, 125, 20) '1h 12m · 18 tracks' 15
+  9:123 TEXT › (338, 714, 8, 31) '›' 24
+  9:124 ROUNDED_RECTANGLE Glass / Navigation (18, 780, 354, 50)  
+  9:125 TEXT ⌂ (40, 788, 13, 23) '⌂' 18
+  9:126 TEXT Home (26, 811, 28, 13) 'Home' 10
+  9:127 TEXT ▥ (124, 788, 16, 23) '▥' 18
+  9:128 TEXT Library (110, 811, 33, 13) 'Library' 10
+  9:129 TEXT ◒ (218, 788, 17, 23) '◒' 18
+  9:130 TEXT Insights (204, 811, 39, 13) 'Insights' 10
+  9:131 TEXT ◉ (308, 788, 17, 23) '◉' 18
+  9:132 TEXT Devices (294, 811, 38, 13) 'Devices' 10
+  12:29 TEXT Statistics / Source (280, 164, 77, 10) 'LOCAL HISTORY' 8
+  13:46 LINE NavIcon / Home Roof L (40, 798, 6, 5)  
+  13:47 LINE NavIcon / Home Roof R (46, 798, 6, 5)  
+  13:48 ROUNDED_RECTANGLE NavIcon / Home Body (41, 803, 10, 8)  
+  13:49 ROUNDED_RECTANGLE NavIcon / Library Spine (124, 798, 2, 14)  
+  13:50 ROUNDED_RECTANGLE NavIcon / Library Spine (129, 798, 2, 14)  
+  13:51 ROUNDED_RECTANGLE NavIcon / Library Spine (134, 798, 2, 14)  
+  13:52 ELLIPSE NavIcon / Insights Dial (217, 798, 14, 14)  
+  13:53 LINE NavIcon / Insights Horizon (219, 805, 10, 0)  
+  13:54 ELLIPSE NavIcon / Insights Dot (222.5, 801, 3, 3)  
+  13:55 ELLIPSE NavIcon / Device Outer (307, 798, 14, 14)  
+  13:56 ELLIPSE NavIcon / Device Inner (311, 802, 6, 6)  
+  16:17 LINE Shell / Top Highlight (28, 1, 334, 0)  
+ 9:133 TEXT STATISTICS DETAIL (2250, -34, 117, 14) 'STATISTICS DETAIL' 11
+ 22:2 FRAME 07 — Settings (2700, 0, 390, 844)  
+  22:3 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  22:4 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  22:5 TEXT 80% (342, 18, 24, 14) '80%' 11
+  22:6 TEXT ‹ (24, 54, 12, 47) '‹' 36
+  22:7 TEXT SETTINGS (58, 62, 53, 12) 'SETTINGS' 9
+  22:8 TEXT Tune the machine. (58, 88, 275, 42) 'Tune the machine.' 32
+  22:9 TEXT Simple on top. Deep when you want it. (58, 130, 227, 17) 'Simple on top. Deep when you want it.' 13
+  22:10 ROUNDED_RECTANGLE Rectangle (24, 177, 342, 278)  
+  22:11 TEXT PLAYBACK (42, 198, 57, 12) 'PLAYBACK' 9
+  22:12 TEXT Feel (42, 222, 46, 29) 'Feel' 22
+  22:13 TEXT Fine control without touching the file. (42, 251, 188, 14) 'Fine control without touching the file.' 11
+  22:14 LINE Line (42, 282, 306, 0)  
+  22:15 TEXT Gapless playback (42, 299, 111, 17) 'Gapless playback' 13
+  22:16 TEXT Seamless album transitions (42, 319, 127, 13) 'Seamless album transitions' 10
+  22:17 ROUNDED_RECTANGLE Rectangle (302, 297, 46, 26)  
+  22:18 ELLIPSE Ellipse (324, 301, 18, 18)  
+  22:19 TEXT Crossfade (42, 350, 64, 17) 'Crossfade' 13
+  22:20 TEXT 4.0 s (304, 350, 28, 16) '4.0 s' 12
+  22:21 ROUNDED_RECTANGLE Rectangle (42, 377, 306, 6)  
+  22:22 ROUNDED_RECTANGLE Rectangle (42, 377, 104.0, 6)  
+  22:23 ELLIPSE Ellipse (139.0, 373, 14, 14)  
+  22:24 TEXT 0 s (42, 391, 14, 12) '0 s' 9
+  22:25 TEXT 12 s (304, 391, 17, 12) '12 s' 9
+  22:26 TEXT ReplayGain (42, 413, 71, 17) 'ReplayGain' 13
+  22:27 TEXT Track mode · scan locally (42, 433, 115, 13) 'Track mode · scan locally' 10
+  22:28 ROUNDED_RECTANGLE Rectangle (302, 409, 46, 26)  
+  22:29 ELLIPSE Ellipse (324, 413, 18, 18)  
+  22:30 ROUNDED_RECTANGLE Rectangle (24, 482, 342, 56)  
+  22:31 TEXT LIBRARY & TAGS (42, 494, 89, 12) 'LIBRARY & TAGS' 9
+  22:32 TEXT 3 folders · tags first (42, 511, 101, 14) '3 folders · tags first' 11
+  22:33 TEXT › (338, 497, 8, 31) '›' 24
+  22:34 ROUNDED_RECTANGLE Rectangle (24, 550, 342, 56)  
+  22:35 TEXT APPEARANCE (42, 562, 73, 12) 'APPEARANCE' 9
+  22:36 TEXT Warm paper · depth 72% (42, 579, 125, 14) 'Warm paper · depth 72%' 11
+  22:37 TEXT › (338, 565, 8, 31) '›' 24
+  22:38 ROUNDED_RECTANGLE Rectangle (24, 618, 342, 56)  
+  22:39 TEXT LYRICS & KARAOKE (42, 630, 104, 12) 'LYRICS & KARAOKE' 9
+  22:40 TEXT Embedded SYLT / .LRC · +180 ms (42, 647, 168, 14) 'Embedded SYLT / .LRC · +180 ms' 11
+  22:41 TEXT › (338, 633, 8, 31) '›' 24
+  22:42 ROUNDED_RECTANGLE Rectangle (24, 686, 342, 56)  
+  22:43 TEXT DEVICES & SYNC (42, 698, 91, 12) 'DEVICES & SYNC' 9
+  22:44 TEXT LAN only · metadata + history (42, 715, 151, 14) 'LAN only · metadata + history' 11
+  22:45 TEXT › (338, 701, 8, 31) '›' 24
+  22:46 TEXT ADVANCED (24, 760, 59, 12) 'ADVANCED' 9
+  22:47 TEXT Decoder · cache · audio output · history (24, 779, 181, 13) 'Decoder · cache · audio output · history' 10
+  22:48 TEXT › (350, 770, 8, 29) '›' 22
+ 22:49 FRAME 08 — Karaoke (3150, 0, 390, 844)  
+  22:50 TEXT 11:00 (24, 18, 30, 16) '11:00' 12
+  22:51 TEXT ◌ 13° (300, 18, 31, 14) '◌  13°' 11
+  22:52 TEXT 80% (342, 18, 24, 14) '80%' 11
+  22:53 TEXT ‹ (24, 54, 12, 47) '‹' 36
+  22:54 TEXT KARAOKE · LOCAL (58, 62, 98, 12) 'KARAOKE · LOCAL' 9
+  22:55 TEXT Disorder (58, 84, 115, 36) 'Disorder' 28
+  22:56 TEXT Joy Division (58, 120, 68, 16) 'Joy Division' 12
+  22:57 TEXT SOURCE · EMBEDDED SYLT (226, 124, 125, 10) 'SOURCE · EMBEDDED SYLT' 8
+  22:58 ROUNDED_RECTANGLE Rectangle (24, 157, 342, 52)  
+  22:59 TEXT LYRIC OFFSET (42, 171, 76, 12) 'LYRIC OFFSET' 9
+  22:60 TEXT +180 ms (268, 168, 52, 17) '+180 ms' 13
+  22:61 ROUNDED_RECTANGLE Rectangle (42, 193, 306, 6)  
+  22:62 ROUNDED_RECTANGLE Rectangle (42, 193, 171.4, 6)  
+  22:63 ELLIPSE Ellipse (206.4, 189, 14, 14)  
+  22:64 ROUNDED_RECTANGLE Rectangle (24, 233, 342, 405)  
+  22:65 LINE Line (50, 254, 290, 0)  
+  22:66 LINE Line (50, 617, 290, 0)  
+  22:67 TEXT 01:08 (54, 276, 31, 12) '01:08' 9
+  22:68 TEXT I've been waiting for a guide to come (54, 296, 284, 23) "I've been waiting for a guide to come" 16
+  22:69 TEXT 01:12 (54, 354, 28, 12) '01:12' 9
+  22:70 TEXT And take me by the hand (54, 377, 280, 72) 'And take me by the hand' 32
+  22:71 ROUNDED_RECTANGLE Rectangle (54, 464, 250, 4)  
+  22:72 ROUNDED_RECTANGLE Rectangle (54, 464, 154, 4)  
+  22:73 TEXT 62% (314, 455, 21, 13) '62%' 10
+  22:74 TEXT NEXT (54, 500, 28, 12) 'NEXT' 9
+  22:75 TEXT Could these sensations make me feel (54, 522, 280, 46) 'Could these sensations\nmake me feel' 17
+  22:76 TEXT the pleasures of a normal man? (54, 574, 280, 23) 'the pleasures of a normal man?' 17
+  22:77 ELLIPSE Ellipse (306, 332, 34, 34)  
+  22:78 TEXT 3 (318, 339, 10, 18) '3' 14
+  22:79 TEXT LOCAL FILE · NO NETWORK (54, 594, 147, 12) 'LOCAL FILE · NO NETWORK' 9
+  22:80 ROUNDED_RECTANGLE Rectangle (24, 665, 342, 96)  
+  22:81 ELLIPSE Ellipse (45, 685, 46, 46)  
+  22:82 TEXT |◀ (58, 697, 18, 21) '|◀' 16
+  22:83 ELLIPSE Ellipse (162, 675, 66, 66)  
+  22:84 ROUNDED_RECTANGLE Rectangle (186, 694, 5, 24)  
+  22:85 ROUNDED_RECTANGLE Rectangle (199, 694, 5, 24)  
+  22:86 ELLIPSE Ellipse (299, 685, 46, 46)  
+  22:87 TEXT ▶| (311, 697, 18, 21) '▶|' 16
+  22:88 TEXT 01:12 (42, 746, 28, 12) '01:12' 9
+  22:89 TEXT 03:36 (314, 746, 32, 12) '03:36' 9
+  22:90 TEXT A− (50, 791, 13, 12) 'A−' 9
+  22:91 TEXT A+ (105, 791, 13, 12) 'A+' 9
+  22:92 TEXT LINE FOCUS (165, 791, 65, 12) 'LINE FOCUS' 9
+  22:93 ROUNDED_RECTANGLE Rectangle (300, 784, 46, 26)  
+  22:94 ELLIPSE Ellipse (322, 788, 18, 18)  
+ 22:95 TEXT SETTINGS (2700, -34, 53, 12) 'SETTINGS' 9
+ 22:96 TEXT KARAOKE (3150, -34, 51, 12) 'KARAOKE' 9
+ 30:2 FRAME Brand — Maple Mark (3700, 0, 980, 700)  
+  30:3 TEXT BRAND / PRIMARY MARK (56, 42, 161, 14) 'BRAND / PRIMARY MARK' 11
+  30:4 TEXT Maple signal. (56, 72, 211, 44) 'Maple signal.' 34
+  30:5 TEXT A compact music mark: one silhouette, one gesture, readable at app-icon scale. (56, 118, 470, 17) 'A compact music mark: one silhouette, one gesture, readable at app-icon scale.' 13
+  30:14 ELLIPSE Logo pedestal (68, 180, 370, 370)  
+  30:6 FRAME Logo / Maple Mark / Primary (78, 190, 350, 350)  
+   30:7 FRAME Group (25.0, 47.4, 266.6, 288.5)  
+    30:8 VECTOR Vector (-0.0, 0.0, 266.6, 288.5)  
+    30:9 VECTOR Vector (133.1, 108.0, 0.4, 151.1)  
+    30:10 VECTOR Vector (74.5, 136.7, 57.4, 43.1)  
+    30:11 VECTOR Vector (134.0, 134.7, 59.5, 45.1)  
+    30:12 VECTOR Vector (93.0, 103.2, 39.6, 44.4)  
+    30:13 VECTOR Vector (134.0, 101.9, 40.3, 45.8)  
+  30:15 TEXT PRIMARY (500, 194, 54, 13) 'PRIMARY' 10
+  30:16 TEXT BLACK / WARM PAPER (500, 216, 142, 16) 'BLACK / WARM PAPER' 12
+  30:17 TEXT The veins are deliberately reduced to five strokes. They read as leaf structure up close and a sound gesture at small sizes — without borrowing Spotify’s waves. (500, 251, 337, 51) 'The veins are deliberately reduced to five strokes.\nThey read as leaf structure up close and a sound gesture\nat small sizes — without borrowing Spotify’s waves.' 13
+  30:18 FRAME App Icon / Warm (500, 344, 152, 152)  
+   31:10 FRAME Maple Mark / Icon (32, 32, 88, 88)  
+    31:11 FRAME Group (11.5, 12.5, 55.7, 67.7)  
+     31:12 VECTOR Vector (0.0, 0.0, 55.7, 67.7)  
+     31:13 VECTOR Vector (27.8, 28.5, 0.1, 31.3)  
+     31:14 VECTOR Vector (16.7, 33.7, 11, 9.6)  
+     31:15 VECTOR Vector (28.0, 33.3, 11, 10.0)  
+     31:16 VECTOR Vector (21.7, 26.5, 6.0, 8.2)  
+     31:17 VECTOR Vector (28.0, 26.3, 6.0, 8.4)  
+  30:27 FRAME App Icon / Inverse (684, 344, 152, 152)  
+   31:18 FRAME Maple Mark / Inverse (32, 32, 88, 88)  
+    31:19 FRAME Group (11.5, 12.5, 55.7, 67.7)  
+     31:20 VECTOR Vector (0.0, 0.0, 55.7, 67.7)  
+     31:21 VECTOR Vector (27.8, 28.5, 0.1, 31.3)  
+     31:22 VECTOR Vector (16.7, 33.7, 11, 9.6)  
+     31:23 VECTOR Vector (28.0, 33.3, 11, 10.0)  
+     31:24 VECTOR Vector (21.7, 26.5, 6.0, 8.2)  
+     31:25 VECTOR Vector (28.0, 26.3, 6.0, 8.4)  
+  30:32 TEXT APP ICON (500, 514, 58, 13) 'APP ICON' 10
+  30:33 TEXT warm (500, 535, 29, 14) 'warm' 11
+  30:34 TEXT inverse (684, 535, 38, 14) 'inverse' 11
+  30:35 TEXT SIZE TEST (500, 582, 60, 13) 'SIZE TEST' 10
+  30:36 FRAME Size test / 24 (500, 610, 44, 44)  
+   31:26 FRAME Maple Mark / 24 (10, 10, 24, 24)  
+    31:27 FRAME Group (3.1, 3.4, 15.2, 18.5)  
+     31:28 VECTOR Vector (0.0, 0.0, 15.2, 18.5)  
+     31:29 VECTOR Vector (7.6, 7.8, 0.0, 8.5)  
+     31:30 VECTOR Vector (4.5, 9.2, 3, 2.6)  
+     31:31 VECTOR Vector (7.6, 9.1, 3, 2.7)  
+     31:32 VECTOR Vector (5.9, 7.2, 1.6, 2.2)  
+     31:33 VECTOR Vector (7.6, 7.2, 1.6, 2.3)  
+  30:45 FRAME Size test / 40 (566, 610, 60, 60)  
+   31:34 FRAME Maple Mark / 40 (10, 10, 40, 40)  
+    31:35 FRAME Group (5.2, 5.7, 25.3, 30.8)  
+     31:36 VECTOR Vector (0.0, 0.0, 25.3, 30.8)  
+     31:37 VECTOR Vector (12.6, 13.0, 0.0, 14.2)  
+     31:38 VECTOR Vector (7.6, 15.3, 5, 4.4)  
+     31:39 VECTOR Vector (12.7, 15.2, 5, 4.5)  
+     31:40 VECTOR Vector (9.8, 12.0, 2.7, 3.8)  
+     31:41 VECTOR Vector (12.7, 12.0, 2.7, 3.8)  
+  30:54 FRAME Size test / 64 (648, 610, 84, 84)  
+   31:42 FRAME Maple Mark / 64 (10, 10, 64, 64)  
+    31:43 FRAME Group (8.3, 9.1, 40.5, 49.2)  
+     31:44 VECTOR Vector (0.0, 0.0, 40.5, 49.2)  
+     31:45 VECTOR Vector (20.2, 20.8, 0.1, 22.8)  
+     31:46 VECTOR Vector (12.1, 24.5, 8, 7)  
+     31:47 VECTOR Vector (20.4, 24.2, 8, 7.2)  
+     31:48 VECTOR Vector (15.8, 19.2, 4.4, 6)  
+     31:49 VECTOR Vector (20.4, 19.1, 4.4, 6.1)  
+  30:63 FRAME Size test / 96 (754, 610, 116, 116)  
+   31:50 FRAME Maple Mark / 96 (10, 10, 96, 96)  
+    31:51 FRAME Group (12.5, 13.6, 60.8, 73.9)  
+     31:52 VECTOR Vector (0.0, 0.0, 60.8, 73.9)  
+     31:53 VECTOR Vector (30.3, 31.1, 0.1, 34.1)  
+     31:54 VECTOR Vector (18.2, 36.8, 12, 10.5)  
+     31:55 VECTOR Vector (30.6, 36.4, 12, 10.9)  
+     31:56 VECTOR Vector (23.6, 28.9, 6.6, 9)  
+     31:57 VECTOR Vector (30.6, 28.7, 6.6, 9.2)  
+  30:72 TEXT 24 (500, 674, 12, 12) '24' 9
+  30:73 TEXT 40 (566, 674, 12, 12) '40' 9
+  30:74 TEXT 64 (649, 674, 12, 12) '64' 9
+  30:75 TEXT 96 (755, 674, 12, 12) '96' 9
+  31:2 FRAME Maple Mark / Primary (90, 202, 326, 326)  
+   31:3 FRAME Group (42.4, 46.2, 206.3, 250.9)  
+    31:4 VECTOR Vector (0.0, 0.0, 206.3, 250.9)  
+    31:5 VECTOR Vector (102.9, 105.7, 0.3, 115.9)  
+    31:6 VECTOR Vector (61.8, 124.8, 40.8, 35.7)  
+    31:7 VECTOR Vector (103.8, 123.5, 40.8, 36.9)  
+    31:8 VECTOR Vector (80.2, 98.1, 22.3, 30.6)  
+    31:9 VECTOR Vector (103.8, 97.4, 22.3, 31.2)  
