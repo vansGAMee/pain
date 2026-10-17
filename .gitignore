@@ -12,3 +12,5 @@ node_modules/
 desktop/data/*.json
 desktop/downloads/*
 !desktop/downloads/.gitkeep
+release-builds/
+desktop/package-lock.json
