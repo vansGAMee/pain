@@ -100,6 +100,10 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             <span data-en="Theme" data-ru="Тема">Theme</span>
           </button>
+          <button class="settings-btn" id="sidebarSettingsBtn" title="Settings" data-en-title="Settings" data-ru-title="Настройки">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span data-en="Settings" data-ru="Настройки">Settings</span>
+          </button>
         </div>
       </div>
     </aside>
@@ -168,6 +172,12 @@
           <button class="btn-minimal eq-trigger-btn" id="eqToggleBtn" title="Equalizer">
             <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
             <span>EQ</span>
+          </button>
+
+          <!-- Settings Button -->
+          <button class="btn-minimal settings-trigger-btn" id="settingsToggleBtn" title="Settings" data-en-title="Settings" data-ru-title="Настройки">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span data-en="Settings" data-ru="Настройки">Settings</span>
           </button>
         </div>
       </header>
@@ -852,6 +862,89 @@
           </div>
           <div class="eq-band-freq">12 kHz</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4.5 SETTINGS MODAL -->
+  <div class="modal-backdrop" id="settingsModalBackdrop" style="display: none;">
+    <div class="settings-modal-card">
+      <div class="settings-modal-header">
+        <div class="settings-title-row">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <div>
+            <h2 class="settings-title" data-en="Settings" data-ru="Настройки">Настройки</h2>
+            <div class="settings-sub" data-en="Visuals & Playback experience" data-ru="Внешний вид и воспроизведение">Внешний вид и воспроизведение</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="settingsCloseBtn">✕</button>
+      </div>
+
+      <div class="settings-modal-body">
+        <!-- Section: Ambient Fluid Glow -->
+        <div class="settings-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Ambient Fluid Aura (Liked Songs)" data-ru="Амбиентный флюид (Избранное)">Амбиентный флюид (Избранное)</div>
+            <div class="settings-section-desc" data-en="Customize the glowing liquid background and its dynamic behavior on the Liked Songs screen." data-ru="Настройте цвет и динамику жидкого градиента на экране «Избранное».">Настройте цвет и динамику жидкого градиента на экране «Избранное».</div>
+          </div>
+
+          <!-- Color palette & custom picker -->
+          <div class="fluid-setting-row">
+            <div class="fluid-row-label">
+              <span data-en="Aura Color" data-ru="Цвет флюида">Цвет флюида</span>
+              <span class="fluid-row-hint" data-en="Select preset or any custom color" data-ru="Выберите готовый или любой свой цвет">Выберите готовый или любой свой цвет</span>
+            </div>
+
+            <div class="fluid-color-presets">
+              <button type="button" class="fluid-color-swatch active" data-color="#7c4dff" title="Фиолетовый (По умолчанию)" style="--swatch-color: #7c4dff;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#3b82f6" title="Неоновый синий" style="--swatch-color: #3b82f6;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#06b6d4" title="Циан / Бирюза" style="--swatch-color: #06b6d4;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#10b981" title="Изумрудный" style="--swatch-color: #10b981;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#f59e0b" title="Янтарный" style="--swatch-color: #f59e0b;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#ef4444" title="Рубиновый" style="--swatch-color: #ef4444;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#ec4899" title="Сакура / Розовый" style="--swatch-color: #ec4899;"></button>
+              <button type="button" class="fluid-color-swatch" data-color="#94a3b8" title="Серебристый монохром" style="--swatch-color: #94a3b8;"></button>
+            </div>
+          </div>
+
+          <div class="fluid-custom-row">
+            <div class="fluid-custom-picker-group">
+              <input type="color" id="fluidColorPickerInput" value="#7c4dff" title="Pick custom color">
+              <input type="text" id="fluidColorHexInput" value="#7C4DFF" maxlength="7" spellcheck="false" class="fluid-hex-input">
+            </div>
+            <div class="fluid-preview-card" id="fluidPreviewCard">
+              <div class="fluid-preview-orb" id="fluidPreviewOrb"></div>
+              <span data-en="Live Preview" data-ru="Превью свечения">Превью свечения</span>
+            </div>
+            <button type="button" class="btn-minimal" id="fluidResetColorBtn" data-en="Default" data-ru="По умолчанию">По умолчанию</button>
+          </div>
+
+          <!-- BPM Sync Setting -->
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <div class="bpm-title-line">
+                <span data-en="BPM Tempo Synchronization" data-ru="Синхронизация по BPM">Синхронизация по BPM</span>
+                <span class="fluid-badge-bpm">⚡ Smart BPM</span>
+              </div>
+              <span class="fluid-row-hint" data-en="Flow speed and gentle pulsation will synchronize with the currently playing track's BPM" data-ru="Скорость перелива и мягкая пульсация флюида подстраиваются под ритм играющего трека">Скорость перелива и мягкая пульсация флюида подстраиваются под ритм играющего трека</span>
+              <div class="fluid-bpm-status" id="fluidBpmStatusText">Синхронизация отключена (по умолчанию)</div>
+            </div>
+
+            <div class="bpm-toggle-control">
+              <label class="switch-label">
+                <input type="checkbox" id="fluidBpmSyncSwitch">
+                <span class="switch-slider round"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-modal-footer">
+        <button type="button" class="btn-minimal primary" id="settingsDoneBtn" data-en="Done" data-ru="Готово">Готово</button>
       </div>
     </div>
   </div>

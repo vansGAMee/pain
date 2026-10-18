@@ -5,6 +5,52 @@
   font-display: swap;
 }
 
+@property --bg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #EFEDE6;
+}
+@property --card-bg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #E5E2DA;
+}
+@property --card-relief {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #DDD9D0;
+}
+@property --card-hover {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #D7D3C8;
+}
+@property --ink {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1C1C1A;
+}
+@property --ink-secondary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #403E39;
+}
+@property --ink-muted {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6B6860;
+}
+@property --border {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(28, 28, 26, 0.10);
+}
+@property --border-strong {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(28, 28, 26, 0.20);
+}
+
 :root {
   --bg: #EFEDE6;
   --ink: #1C1C1A;
@@ -20,6 +66,24 @@
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
   --heart-color: #E53935;
   --bottom-bar-height: 86px;
+
+  /* Ambient Fluid Variables (Default Violet matching current look) */
+  --fluid-accent-base: #7c4dff;
+  --fluid-accent-light: #b388ff;
+  --fluid-bg-color-1: rgba(235, 222, 252, 0.65);
+  --fluid-bg-color-2: rgba(224, 204, 250, 0.50);
+  --fluid-bg-color-3: rgba(241, 231, 255, 0.60);
+  --fluid-orb1-c1: rgba(168, 85, 247, 0.22);
+  --fluid-orb1-c2: rgba(139, 92, 246, 0.08);
+  --fluid-orb2-c1: rgba(192, 132, 252, 0.18);
+  --fluid-orb2-c2: rgba(147, 51, 234, 0.06);
+  --fluid-orb3-c1: rgba(147, 51, 234, 0.14);
+  --fluid-orb3-c2: rgba(168, 85, 247, 0.05);
+  --fluid-cycle-bg: 20s;
+  --fluid-cycle-orb1: 22s;
+  --fluid-cycle-orb2: 26s;
+  --fluid-cycle-orb3: 28s;
+  --fluid-beat-dur: 0.5s;
 }
 
 [data-theme="dark"] {
@@ -36,6 +100,16 @@
   --relief-shadow: inset 1px 1px 2px rgba(255, 255, 255, 0.04), inset -1px -1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.2);
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   --heart-color: #FF5252;
+
+  --fluid-bg-color-1: rgba(56, 20, 92, 0.45);
+  --fluid-bg-color-2: rgba(36, 14, 60, 0.55);
+  --fluid-bg-color-3: rgba(72, 26, 114, 0.38);
+  --fluid-orb1-c1: rgba(168, 85, 247, 0.30);
+  --fluid-orb1-c2: rgba(139, 92, 246, 0.12);
+  --fluid-orb2-c1: rgba(192, 132, 252, 0.24);
+  --fluid-orb2-c2: rgba(147, 51, 234, 0.10);
+  --fluid-orb3-c1: rgba(147, 51, 234, 0.20);
+  --fluid-orb3-c2: rgba(168, 85, 247, 0.08);
 }
 
 * {
@@ -52,8 +126,32 @@ body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  transition: background-color 0.25s ease, color 0.25s ease;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Synchronized smooth theme transitions for all container surfaces */
+body,
+.app-layout,
+.sidebar,
+.main-stage,
+.top-bar,
+.bottom-player-bar,
+.tracks-table-wrapper,
+.tracks-table th,
+.tracks-table td,
+.track-card,
+.card,
+.joint-card,
+.song-card,
+.views-viewport,
+.search-bar-wrap,
+.search-input,
+.settings-section,
+.settings-modal-card,
+.modal-card {
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Scrollbars */
@@ -162,7 +260,7 @@ body {
   font-weight: 500;
   color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .nav-item svg {
@@ -212,7 +310,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .icon-btn-minimal:hover {
@@ -236,7 +334,7 @@ body {
   align-items: center;
   gap: 12px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: var(--relief-shadow);
 }
 
@@ -248,7 +346,7 @@ body {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #7c4dff, #b388ff);
+  background: linear-gradient(135deg, var(--fluid-accent-base, #7c4dff), var(--fluid-accent-light, #b388ff));
   color: #fff;
   display: flex;
   align-items: center;
@@ -296,7 +394,7 @@ body {
   font-size: 13px;
   color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .playlist-list-item:hover {
@@ -374,7 +472,7 @@ body {
   font-weight: 600;
   color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .lang-btn:hover, .theme-btn:hover {
@@ -475,7 +573,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .filter-chip:hover {
@@ -551,7 +649,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .view-mode-btn svg {
@@ -592,6 +690,7 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
+  contain: paint;
 }
 
 .view-pane {
@@ -601,6 +700,12 @@ body {
 
 .view-pane.active {
   display: block;
+}
+
+/* Pause heavy background animations when view pane is inactive */
+.view-pane:not(.active) .favorites-ambient-layer,
+.view-pane:not(.active) .aura-orb {
+  animation-play-state: paused !important;
 }
 
 .view-hero-header {
@@ -635,7 +740,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   box-shadow: var(--relief-shadow);
 }
 
@@ -674,7 +779,7 @@ body {
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: var(--relief-shadow);
   position: relative;
 }
@@ -721,7 +826,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
   opacity: 0;
   transform: translateY(6px);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .track-card:hover .track-card-play-overlay {
@@ -900,7 +1005,9 @@ body {
 
 .tracks-table tbody tr {
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background-color 0.12s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 54px;
 }
 
 .tracks-table tbody tr:hover {
@@ -967,7 +1074,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   vertical-align: middle;
 }
 
@@ -1006,7 +1113,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .card-add-btn:hover,
@@ -1115,7 +1222,7 @@ body {
 }
 
 .playlist-hero-cover.heart-gradient {
-  background: linear-gradient(135deg, #7c4dff, #b388ff);
+  background: linear-gradient(135deg, var(--fluid-accent-base, #7c4dff), var(--fluid-accent-light, #b388ff));
   color: #fff;
 }
 
@@ -1429,7 +1536,7 @@ body {
   border-radius: 12px;
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
   color: var(--ink);
 }
 
@@ -1636,7 +1743,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   position: relative;
 }
 
@@ -1945,7 +2052,7 @@ input:checked + .switch-slider:before {
   justify-content: center;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .modal-close-btn:hover {
@@ -1969,7 +2076,7 @@ input:checked + .switch-slider:before {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .eq-preset-chip:hover {
@@ -2107,7 +2214,7 @@ input:checked + .switch-slider:before {
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
   box-shadow: var(--relief-shadow);
 }
 
@@ -2144,27 +2251,23 @@ input:checked + .switch-slider:before {
   isolation: isolate;
   background: linear-gradient(
     135deg,
-    rgba(239, 237, 230, 1) 0%,
-    rgba(235, 222, 252, 0.65) 25%,
-    rgba(224, 204, 250, 0.50) 50%,
-    rgba(241, 231, 255, 0.60) 75%,
-    rgba(239, 237, 230, 1) 100%
+    var(--bg) 0%,
+    var(--fluid-bg-color-1) 28%,
+    var(--fluid-bg-color-2) 52%,
+    var(--fluid-bg-color-3) 78%,
+    var(--bg) 100%
   );
-  background-size: 260% 260%;
-  animation: favoritesAuraFlow 20s ease-in-out infinite;
 }
 
 [data-theme="dark"] #view-favorites {
   background: linear-gradient(
     135deg,
-    rgba(21, 21, 19, 1) 0%,
-    rgba(56, 20, 92, 0.45) 25%,
-    rgba(36, 14, 60, 0.55) 50%,
-    rgba(72, 26, 114, 0.38) 75%,
-    rgba(21, 21, 19, 1) 100%
+    var(--bg) 0%,
+    var(--fluid-bg-color-1) 28%,
+    var(--fluid-bg-color-2) 52%,
+    var(--fluid-bg-color-3) 78%,
+    var(--bg) 100%
   );
-  background-size: 260% 260%;
-  animation: favoritesAuraFlow 20s ease-in-out infinite;
 }
 
 /* Ambient layer containing the flowing liquid light orbs */
@@ -2174,58 +2277,78 @@ input:checked + .switch-slider:before {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
+  contain: layout paint;
+  transition: transform 0.2s ease, opacity 0.3s ease;
+}
+
+.favorites-ambient-layer.bpm-synced.is-playing {
+  animation: fluidBpmBeatPulse var(--fluid-beat-dur, 0.5s) ease-in-out infinite;
+}
+
+@keyframes fluidBpmBeatPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.90;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 1;
+  }
 }
 
 .aura-orb {
   position: absolute;
   border-radius: 50%;
   pointer-events: none;
+  transform: translateZ(0);
+  contain: layout paint;
+  backface-visibility: hidden;
   will-change: transform;
 }
 
-/* Orb 1: Top-left luminous deep violet */
+/* Orb 1: Top-left luminous primary orb */
 .aura-orb.orb-1 {
   top: -120px;
   left: -80px;
   width: 680px;
   height: 580px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.22) 0%, rgba(139, 92, 246, 0.08) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb1-c1) 0%, var(--fluid-orb1-c2) 50%, transparent 72%);
   filter: blur(80px);
-  animation: orbLiquidDrift1 22s ease-in-out infinite alternate;
+  animation: orbLiquidDrift1 var(--fluid-cycle-orb1, 22s) ease-in-out infinite alternate;
 }
 
 [data-theme="dark"] .aura-orb.orb-1 {
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.30) 0%, rgba(139, 92, 246, 0.12) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb1-c1) 0%, var(--fluid-orb1-c2) 50%, transparent 72%);
 }
 
-/* Orb 2: Top-right bright magenta/lavender */
+/* Orb 2: Top-right bright secondary orb */
 .aura-orb.orb-2 {
   top: 40px;
   right: -90px;
   width: 620px;
   height: 520px;
-  background: radial-gradient(circle, rgba(192, 132, 252, 0.18) 0%, rgba(147, 51, 234, 0.06) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb2-c1) 0%, var(--fluid-orb2-c2) 50%, transparent 72%);
   filter: blur(85px);
-  animation: orbLiquidDrift2 26s ease-in-out infinite alternate;
+  animation: orbLiquidDrift2 var(--fluid-cycle-orb2, 26s) ease-in-out infinite alternate;
 }
 
 [data-theme="dark"] .aura-orb.orb-2 {
-  background: radial-gradient(circle, rgba(192, 132, 252, 0.24) 0%, rgba(147, 51, 234, 0.10) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb2-c1) 0%, var(--fluid-orb2-c2) 50%, transparent 72%);
 }
 
-/* Orb 3: Center/lower subtle flowing glow that travels vertically */
+/* Orb 3: Center/lower subtle flowing glow */
 .aura-orb.orb-3 {
   top: 320px;
   left: 20%;
   width: 580px;
   height: 480px;
-  background: radial-gradient(circle, rgba(147, 51, 234, 0.14) 0%, rgba(168, 85, 247, 0.05) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb3-c1) 0%, var(--fluid-orb3-c2) 50%, transparent 72%);
   filter: blur(90px);
-  animation: orbLiquidDrift3 28s ease-in-out infinite alternate;
+  animation: orbLiquidDrift3 var(--fluid-cycle-orb3, 28s) ease-in-out infinite alternate;
 }
 
 [data-theme="dark"] .aura-orb.orb-3 {
-  background: radial-gradient(circle, rgba(147, 51, 234, 0.20) 0%, rgba(168, 85, 247, 0.08) 50%, transparent 72%);
+  background: radial-gradient(circle, var(--fluid-orb3-c1) 0%, var(--fluid-orb3-c2) 50%, transparent 72%);
 }
 
 /* Bottom fade: softly merges the ambient glow into base background at the bottom */
@@ -2250,19 +2373,15 @@ input:checked + .switch-slider:before {
 #view-favorites .tracks-table-wrapper {
   position: relative;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 }
 
 [data-theme="dark"] #view-favorites .tracks-table-wrapper {
-  background: rgba(30, 30, 27, 0.68);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  background: rgba(28, 28, 25, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.35);
 }
 
 #view-favorites .tracks-table tbody tr:hover {
@@ -2274,67 +2393,49 @@ input:checked + .switch-slider:before {
   background: rgba(0, 0, 0, 0.03);
 }
 
-/* Fluid animations for gradient and floating orbs */
-@keyframes favoritesAuraFlow {
-  0% {
-    background-position: 0% 50%;
-  }
-  25% {
-    background-position: 50% 100%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  75% {
-    background-position: 50% 0%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
+/* Hardware accelerated fluid animations for floating orbs */
 @keyframes orbLiquidDrift1 {
   0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
   }
   33% {
-    transform: translate(75px, 60px) scale(1.12) rotate(25deg);
+    transform: translate3d(75px, 60px, 0) scale(1.12) rotate(25deg);
   }
   66% {
-    transform: translate(-30px, 100px) scale(0.92) rotate(-20deg);
+    transform: translate3d(-30px, 100px, 0) scale(0.92) rotate(-20deg);
   }
   100% {
-    transform: translate(85px, 35px) scale(1.08) rotate(15deg);
+    transform: translate3d(85px, 35px, 0) scale(1.08) rotate(15deg);
   }
 }
 
 @keyframes orbLiquidDrift2 {
   0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
   }
   33% {
-    transform: translate(-70px, 50px) scale(1.10) rotate(-25deg);
+    transform: translate3d(-70px, 50px, 0) scale(1.10) rotate(-25deg);
   }
   66% {
-    transform: translate(-25px, -45px) scale(0.90) rotate(25deg);
+    transform: translate3d(-25px, -45px, 0) scale(0.90) rotate(25deg);
   }
   100% {
-    transform: translate(-85px, 30px) scale(1.05) rotate(-15deg);
+    transform: translate3d(-85px, 30px, 0) scale(1.05) rotate(-15deg);
   }
 }
 
 @keyframes orbLiquidDrift3 {
   0% {
-    transform: translate(0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
   33% {
-    transform: translate(50px, -60px) scale(1.15);
+    transform: translate3d(50px, -60px, 0) scale(1.15);
   }
   66% {
-    transform: translate(-60px, 40px) scale(0.90);
+    transform: translate3d(-60px, 40px, 0) scale(0.90);
   }
   100% {
-    transform: translate(30px, 50px) scale(1.08);
+    transform: translate3d(30px, 50px, 0) scale(1.08);
   }
 }
 
@@ -2375,7 +2476,7 @@ input:checked + .switch-slider:before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .row-uncache-btn:hover, .card-uncache-btn:hover {
@@ -2966,7 +3067,7 @@ input:checked + .switch-slider:before {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: transform var(--transition), box-shadow var(--transition), opacity var(--transition);
   box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
 }
 
@@ -3137,5 +3238,264 @@ input:checked + .switch-slider:before {
   font-size: 12px;
   color: var(--ink-muted);
   max-width: 320px;
+}
+
+/* ========================================================
+   SETTINGS MODAL & FLUID AURA CUSTOMIZER
+   ======================================================== */
+.settings-modal-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 580px;
+  max-width: 92vw;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.settings-sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+.settings-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.settings-section-desc {
+  font-size: 12px;
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.fluid-setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fluid-setting-row.bpm-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.fluid-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.fluid-row-hint {
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-weight: normal;
+}
+
+.bpm-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fluid-badge-bpm {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--fluid-accent-base, #7c4dff);
+}
+
+.fluid-bpm-status {
+  font-size: 11px;
+  color: var(--ink-secondary);
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+.fluid-color-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fluid-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.fluid-color-swatch:hover {
+  transform: scale(1.18);
+}
+
+.fluid-color-swatch.active {
+  border-color: var(--ink);
+  transform: scale(1.22);
+  box-shadow: 0 0 0 2px var(--bg), 0 3px 8px rgba(0,0,0,0.25);
+}
+
+.fluid-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.fluid-custom-picker-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.fluid-custom-picker-group input[type="color"] {
+  -webkit-appearance: none;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  background: none;
+}
+
+.fluid-custom-picker-group input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.fluid-custom-picker-group input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.fluid-hex-input {
+  width: 72px;
+  font-family: monospace;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  outline: none;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fluid-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  flex: 1;
+}
+
+.fluid-preview-orb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fluid-accent-base, #7c4dff) 0%, transparent 80%);
+  filter: blur(1px);
+}
+
+.settings-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.settings-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-btn:hover {
+  background: var(--card-hover);
+  color: var(--ink);
+  border-color: var(--border-strong);
+}
+
+.settings-trigger-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
 }
 

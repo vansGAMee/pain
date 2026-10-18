@@ -48,7 +48,15 @@
       seeds: [],
       results: [],
       isGenerating: false
-    }
+    },
+
+    // Ambient Fluid Aura Settings
+    fluidColor: (function() {
+      try { return localStorage.getItem('pain_fluid_color') || '#7c4dff'; } catch(e) { return '#7c4dff'; }
+    })(),
+    fluidBpmSync: (function() {
+      try { return localStorage.getItem('pain_fluid_bpm_sync') === 'true'; } catch(e) { return false; }
+    })()
   };
 
 
@@ -269,7 +277,20 @@
     jointGenerateBtnText: document.getElementById('jointGenerateBtnText'),
     jointResultsMeta: document.getElementById('jointResultsMeta'),
     jointSavePlaylistBtn: document.getElementById('jointSavePlaylistBtn'),
-    jointResultsList: document.getElementById('jointResultsList')
+    jointResultsList: document.getElementById('jointResultsList'),
+
+    // Settings Modal & Fluid Customizer
+    settingsToggleBtn: document.getElementById('settingsToggleBtn'),
+    sidebarSettingsBtn: document.getElementById('sidebarSettingsBtn'),
+    settingsModalBackdrop: document.getElementById('settingsModalBackdrop'),
+    settingsCloseBtn: document.getElementById('settingsCloseBtn'),
+    settingsDoneBtn: document.getElementById('settingsDoneBtn'),
+    fluidColorPickerInput: document.getElementById('fluidColorPickerInput'),
+    fluidColorHexInput: document.getElementById('fluidColorHexInput'),
+    fluidPreviewOrb: document.getElementById('fluidPreviewOrb'),
+    fluidResetColorBtn: document.getElementById('fluidResetColorBtn'),
+    fluidBpmSyncSwitch: document.getElementById('fluidBpmSyncSwitch'),
+    fluidBpmStatusText: document.getElementById('fluidBpmStatusText')
   };
 
 
@@ -392,6 +413,7 @@
 
     DOM.phoneIpInput.value = state.phoneUrl;
     initEqualizerUI();
+    initSettingsUI();
 
     if (state.loopMode === 'all') {
       DOM.bottomRepeatBtn.classList.add('active');
@@ -820,8 +842,51 @@
   }
 
   // --- RENDERING: LIST TABLE WITH DRAG & DROP ---
+  function ensureTableDelegation(container) {
+    if (container._hasDelegatedListener) return;
+    container._hasDelegatedListener = true;
+
+    container.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-track-id]');
+      if (!tr) return;
+      const trackId = tr.dataset.trackId;
+      const trackList = container._currentTrackList || [];
+      const contextInfo = container._currentContextInfo || null;
+      const track = trackList.find(t => t.id === trackId) || state.tracks.find(t => t.id === trackId);
+      if (!track) return;
+
+      const favBtn = e.target.closest('.row-fav-btn');
+      if (favBtn) {
+        e.stopPropagation();
+        toggleFavorite(track.id);
+        return;
+      }
+
+      const moreBtn = e.target.closest('.row-more-btn');
+      if (moreBtn) {
+        e.stopPropagation();
+        openAddToPlaylistModal(track.id);
+        return;
+      }
+
+      const uncacheBtn = e.target.closest('.row-uncache-btn');
+      if (uncacheBtn) {
+        e.stopPropagation();
+        deleteTrackFromCache(track.id, track.title);
+        return;
+      }
+
+      if (!e.target.closest('button')) {
+        playTrackInContext(track, trackList, contextInfo);
+      }
+    });
+  }
+
   function renderTracksTable(container, trackList, enableDragAndDrop = true, contextInfo = null) {
     container.innerHTML = '';
+    container._currentTrackList = trackList;
+    container._currentContextInfo = contextInfo;
+    ensureTableDelegation(container);
 
     if (trackList.length === 0) {
       container.innerHTML = `
@@ -833,6 +898,8 @@
       `;
       return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     trackList.forEach((track, index) => {
       const isCurrent = state.currentTrackId === track.id;
@@ -887,34 +954,6 @@
         };
       }
 
-      // Click to play
-      tr.addEventListener('click', (e) => {
-        if (!e.target.closest('button')) {
-          playTrackInContext(track, trackList, contextInfo);
-        }
-      });
-
-      // Favorite button
-      const favBtn = tr.querySelector('.row-fav-btn');
-      favBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleFavorite(track.id);
-      });
-
-      // Add to playlist button
-      const moreBtn = tr.querySelector('.row-more-btn');
-      moreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openAddToPlaylistModal(track.id);
-      });
-
-      // Uncache button
-      const uncacheBtn = tr.querySelector('.row-uncache-btn');
-      uncacheBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteTrackFromCache(track.id, track.title);
-      });
-
       // Drag and drop reordering
       if (tr.draggable) {
         tr.addEventListener('dragstart', handleDragStart);
@@ -924,13 +963,56 @@
         tr.addEventListener('dragend', handleDragEnd);
       }
 
-      container.appendChild(tr);
+      fragment.appendChild(tr);
+    });
+
+    container.appendChild(fragment);
+  }
+
+  function ensureGridDelegation(container) {
+    if (container._hasDelegatedListener) return;
+    container._hasDelegatedListener = true;
+
+    container.addEventListener('click', (e) => {
+      const card = e.target.closest('.track-card[data-track-id]');
+      if (!card) return;
+      const trackId = card.dataset.trackId;
+      const trackList = container._currentTrackList || [];
+      const contextInfo = container._currentContextInfo || null;
+      const track = trackList.find(t => t.id === trackId) || state.tracks.find(t => t.id === trackId);
+      if (!track) return;
+
+      const favBtn = e.target.closest('.card-fav-btn');
+      if (favBtn) {
+        e.stopPropagation();
+        toggleFavorite(track.id);
+        return;
+      }
+
+      const addBtn = e.target.closest('.card-add-btn');
+      if (addBtn) {
+        e.stopPropagation();
+        openAddToPlaylistModal(track.id);
+        return;
+      }
+
+      const uncacheBtn = e.target.closest('.card-uncache-btn');
+      if (uncacheBtn) {
+        e.stopPropagation();
+        deleteTrackFromCache(track.id, track.title);
+        return;
+      }
+
+      playTrackInContext(track, trackList, contextInfo);
     });
   }
 
   // --- RENDERING: GRID CARDS ---
   function renderTracksGrid(container, trackList, contextInfo = null) {
     container.innerHTML = '';
+    container._currentTrackList = trackList;
+    container._currentContextInfo = contextInfo;
+    ensureGridDelegation(container);
 
     if (trackList.length === 0) {
       container.innerHTML = `
@@ -940,6 +1022,8 @@
       `;
       return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     trackList.forEach(track => {
       const isCurrent = state.currentTrackId === track.id;
@@ -952,7 +1036,7 @@
 
       card.innerHTML = `
         <div class="track-card-cover-wrapper">
-          <img class="track-card-img" src="${getCoverUrl(track)}" alt="">
+          <img class="track-card-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
           <div class="track-card-play-overlay">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
               ${isPlayingCurrent 
@@ -988,38 +1072,10 @@
         };
       }
 
-      card.addEventListener('click', (e) => {
-        if (!e.target.closest('button')) {
-          playTrackInContext(track, trackList, contextInfo);
-        }
-      });
-
-      const playOverlay = card.querySelector('.track-card-play-overlay');
-      playOverlay.addEventListener('click', (e) => {
-        e.stopPropagation();
-        playTrackInContext(track, trackList, contextInfo);
-      });
-
-      const favBtn = card.querySelector('.card-fav-btn');
-      favBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleFavorite(track.id);
-      });
-
-      const addBtn = card.querySelector('.card-add-btn');
-      addBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openAddToPlaylistModal(track.id);
-      });
-
-      const uncacheBtn = card.querySelector('.card-uncache-btn');
-      uncacheBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteTrackFromCache(track.id, track.title);
-      });
-
-      container.appendChild(card);
+      fragment.appendChild(card);
     });
+
+    container.appendChild(fragment);
   }
 
   // --- DRAG AND DROP REORDERING HANDLERS ---
@@ -1711,23 +1767,70 @@
   }
 
   function updatePlayingRowUI() {
-    document.querySelectorAll('.tracks-table tbody tr').forEach(tr => {
-      const isCurrent = tr.dataset.trackId === state.currentTrackId;
-      tr.classList.toggle('playing-row', isCurrent);
-      const titleEl = tr.querySelector('.track-row-title');
-      if (titleEl) titleEl.classList.toggle('active-text', isCurrent);
-      const indexNumSpan = tr.querySelector('.index-num');
-      if (indexNumSpan) {
-        const idx = parseInt(tr.dataset.index, 10);
-        if (isCurrent && state.isPlaying) {
-          indexNumSpan.textContent = '▶';
-          indexNumSpan.style.color = 'var(--ink)';
-        } else {
+    // 1. Demote old active table rows that are no longer the current track
+    const prevActiveRows = document.querySelectorAll('.tracks-table tbody tr.playing-row');
+    prevActiveRows.forEach(tr => {
+      if (tr.dataset.trackId !== state.currentTrackId) {
+        tr.classList.remove('playing-row');
+        const titleEl = tr.querySelector('.track-row-title');
+        if (titleEl) titleEl.classList.remove('active-text');
+        const indexNumSpan = tr.querySelector('.index-num');
+        if (indexNumSpan) {
+          const idx = parseInt(tr.dataset.index, 10);
           indexNumSpan.textContent = isNaN(idx) ? '' : (idx + 1);
           indexNumSpan.style.color = '';
         }
       }
     });
+
+    // 2. Promote current track table row(s)
+    if (state.currentTrackId) {
+      const currentRows = document.querySelectorAll(`.tracks-table tbody tr[data-track-id="${state.currentTrackId}"]`);
+      currentRows.forEach(tr => {
+        tr.classList.add('playing-row');
+        const titleEl = tr.querySelector('.track-row-title');
+        if (titleEl) titleEl.classList.add('active-text');
+        const indexNumSpan = tr.querySelector('.index-num');
+        if (indexNumSpan) {
+          if (state.isPlaying) {
+            indexNumSpan.textContent = '▶';
+            indexNumSpan.style.color = 'var(--ink)';
+          } else {
+            const idx = parseInt(tr.dataset.index, 10);
+            indexNumSpan.textContent = isNaN(idx) ? '' : (idx + 1);
+            indexNumSpan.style.color = '';
+          }
+        }
+      });
+    }
+
+    // 3. Demote old active grid cards
+    const prevActiveCards = document.querySelectorAll('.track-card.playing-card');
+    prevActiveCards.forEach(card => {
+      if (card.dataset.trackId !== state.currentTrackId) {
+        card.classList.remove('playing-card');
+        const title = card.querySelector('.track-card-title');
+        if (title) title.classList.remove('active-text');
+        const overlay = card.querySelector('.track-card-play-overlay svg');
+        if (overlay) overlay.innerHTML = '<polygon points="6 3 20 12 6 21 6 3"/>';
+      }
+    });
+
+    // 4. Promote current grid card(s)
+    if (state.currentTrackId) {
+      const currentCards = document.querySelectorAll(`.track-card[data-track-id="${state.currentTrackId}"]`);
+      currentCards.forEach(card => {
+        card.classList.add('playing-card');
+        const title = card.querySelector('.track-card-title');
+        if (title) title.classList.add('active-text');
+        const overlay = card.querySelector('.track-card-play-overlay svg');
+        if (overlay) {
+          overlay.innerHTML = state.isPlaying
+            ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'
+            : '<polygon points="6 3 20 12 6 21 6 3"/>';
+        }
+      });
+    }
   }
 
   let playbackRequest = 0;
@@ -1743,6 +1846,7 @@
     updatePlayBtnUI();
     DOM.vinylBigDisc.classList.toggle('spinning',state.isPlaying);
     updatePlayingRowUI();
+    updateFluidBpmTempo();
   }
   function togglePlay() {
     initAudioNodes();
@@ -2012,7 +2116,12 @@
   function applyTheme(theme) {
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('pain_theme', theme);
+    try {
+      localStorage.setItem('pain_theme', theme);
+    } catch (e) {}
+    if (state.fluidColor && state.fluidColor.toLowerCase() !== '#7c4dff') {
+      applyFluidColor(state.fluidColor);
+    }
   }
 
   function applyLang(lang) {
@@ -2037,6 +2146,220 @@
 
     updateGreeting();
     renderCurrentView();
+    updateFluidBpmTempo();
+  }
+
+  // --- SETTINGS MODAL & AMBIENT FLUID CONTROLLER ---
+  function openSettingsModal() {
+    if (DOM.settingsModalBackdrop) {
+      DOM.settingsModalBackdrop.style.display = 'flex';
+      applyFluidColor(state.fluidColor);
+      if (DOM.fluidBpmSyncSwitch) {
+        DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
+      }
+      updateFluidBpmTempo();
+    }
+  }
+
+  function closeSettingsModal() {
+    if (DOM.settingsModalBackdrop) {
+      DOM.settingsModalBackdrop.style.display = 'none';
+    }
+  }
+
+  function hexToRgb(hex) {
+    let clean = (hex || '').replace('#', '').trim();
+    if (clean.length === 3) {
+      clean = clean.split('').map(c => c + c).join('');
+    }
+    if (clean.length !== 6) return null;
+    const num = parseInt(clean, 16);
+    if (isNaN(num)) return null;
+    return {
+      r: (num >> 16) & 255,
+      g: (num >> 8) & 255,
+      b: num & 255
+    };
+  }
+
+  function applyFluidColor(hex) {
+    if (!hex) hex = '#7c4dff';
+    state.fluidColor = hex;
+    try {
+      localStorage.setItem('pain_fluid_color', hex);
+    } catch (e) {}
+
+    const root = document.documentElement;
+
+    if (hex.toLowerCase() === '#7c4dff') {
+      // Clear inline overrides so CSS stylesheet :root and [data-theme="dark"] take over cleanly
+      root.style.removeProperty('--fluid-accent-base');
+      root.style.removeProperty('--fluid-accent-light');
+      root.style.removeProperty('--fluid-bg-color-1');
+      root.style.removeProperty('--fluid-bg-color-2');
+      root.style.removeProperty('--fluid-bg-color-3');
+      root.style.removeProperty('--fluid-orb1-c1');
+      root.style.removeProperty('--fluid-orb1-c2');
+      root.style.removeProperty('--fluid-orb2-c1');
+      root.style.removeProperty('--fluid-orb2-c2');
+      root.style.removeProperty('--fluid-orb3-c1');
+      root.style.removeProperty('--fluid-orb3-c2');
+    } else {
+      const rgb = hexToRgb(hex);
+      if (rgb) {
+        // Lighter accent variant
+        const rLight = Math.min(255, Math.round(rgb.r * 0.65 + 255 * 0.35));
+        const gLight = Math.min(255, Math.round(rgb.g * 0.65 + 255 * 0.35));
+        const bLight = Math.min(255, Math.round(rgb.b * 0.65 + 255 * 0.35));
+
+        // Secondary variant (slightly shifted)
+        const rSec = Math.min(255, Math.round(rgb.r * 0.85 + rgb.b * 0.15));
+        const gSec = Math.min(255, Math.round(rgb.g * 0.85 + rgb.r * 0.15));
+        const bSec = Math.min(255, Math.round(rgb.b * 0.85 + rgb.g * 0.15));
+
+        // Dark theme stops
+        const rD1 = Math.round(rgb.r * 0.35);
+        const gD1 = Math.round(rgb.g * 0.35);
+        const bD1 = Math.round(rgb.b * 0.35);
+
+        const rD2 = Math.round(rgb.r * 0.22);
+        const gD2 = Math.round(rgb.g * 0.22);
+        const bD2 = Math.round(rgb.b * 0.22);
+
+        const rD3 = Math.round(rgb.r * 0.45);
+        const gD3 = Math.round(rgb.g * 0.45);
+        const bD3 = Math.round(rgb.b * 0.45);
+
+        root.style.setProperty('--fluid-accent-base', hex);
+        root.style.setProperty('--fluid-accent-light', `rgb(${rLight}, ${gLight}, ${bLight})`);
+
+        const isDark = state.theme === 'dark' || root.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+          root.style.setProperty('--fluid-bg-color-1', `rgba(${rD1}, ${gD1}, ${bD1}, 0.45)`);
+          root.style.setProperty('--fluid-bg-color-2', `rgba(${rD2}, ${gD2}, ${bD2}, 0.55)`);
+          root.style.setProperty('--fluid-bg-color-3', `rgba(${rD3}, ${gD3}, ${bD3}, 0.38)`);
+
+          root.style.setProperty('--fluid-orb1-c1', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.30)`);
+          root.style.setProperty('--fluid-orb1-c2', `rgba(${rLight}, ${gLight}, ${bLight}, 0.12)`);
+
+          root.style.setProperty('--fluid-orb2-c1', `rgba(${rLight}, ${gLight}, ${bLight}, 0.24)`);
+          root.style.setProperty('--fluid-orb2-c2', `rgba(${rSec}, ${gSec}, ${bSec}, 0.10)`);
+
+          root.style.setProperty('--fluid-orb3-c1', `rgba(${rSec}, ${gSec}, ${bSec}, 0.20)`);
+          root.style.setProperty('--fluid-orb3-c2', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`);
+        } else {
+          root.style.setProperty('--fluid-bg-color-1', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.20)`);
+          root.style.setProperty('--fluid-bg-color-2', `rgba(${rLight}, ${gLight}, ${bLight}, 0.14)`);
+          root.style.setProperty('--fluid-bg-color-3', `rgba(${rSec}, ${gSec}, ${bSec}, 0.18)`);
+
+          root.style.setProperty('--fluid-orb1-c1', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`);
+          root.style.setProperty('--fluid-orb1-c2', `rgba(${rLight}, ${gLight}, ${bLight}, 0.08)`);
+
+          root.style.setProperty('--fluid-orb2-c1', `rgba(${rLight}, ${gLight}, ${bLight}, 0.18)`);
+          root.style.setProperty('--fluid-orb2-c2', `rgba(${rSec}, ${gSec}, ${bSec}, 0.06)`);
+
+          root.style.setProperty('--fluid-orb3-c1', `rgba(${rSec}, ${gSec}, ${bSec}, 0.14)`);
+          root.style.setProperty('--fluid-orb3-c2', `rgba(${rLight}, ${gLight}, ${bLight}, 0.05)`);
+        }
+      }
+    }
+
+    // Only update modal swatches if settings modal exists and is open
+    if (DOM.settingsModalBackdrop && DOM.settingsModalBackdrop.style.display !== 'none') {
+      document.querySelectorAll('.fluid-color-swatch').forEach(sw => {
+        const swColor = sw.dataset.color;
+        if (swColor && swColor.toLowerCase() === hex.toLowerCase()) {
+          sw.classList.add('active');
+        } else {
+          sw.classList.remove('active');
+        }
+      });
+
+      if (DOM.fluidColorPickerInput) DOM.fluidColorPickerInput.value = hex;
+      if (DOM.fluidColorHexInput) DOM.fluidColorHexInput.value = hex.toUpperCase();
+      if (DOM.fluidPreviewOrb) {
+        const rgb = hexToRgb(hex) || { r: 124, g: 77, b: 255 };
+        const rLight = Math.min(255, Math.round(rgb.r * 0.65 + 255 * 0.35));
+        const gLight = Math.min(255, Math.round(rgb.g * 0.65 + 255 * 0.35));
+        const bLight = Math.min(255, Math.round(rgb.b * 0.65 + 255 * 0.35));
+        DOM.fluidPreviewOrb.style.background = `radial-gradient(circle, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9) 0%, rgba(${rLight}, ${gLight}, ${bLight}, 0.4) 60%, transparent 80%)`;
+      }
+    }
+  }
+
+  function updateFluidBpmTempo() {
+    const root = document.documentElement;
+    const ambientLayer = document.querySelector('.favorites-ambient-layer');
+
+    if (!state.fluidBpmSync) {
+      root.style.removeProperty('--fluid-cycle-bg');
+      root.style.removeProperty('--fluid-cycle-orb1');
+      root.style.removeProperty('--fluid-cycle-orb2');
+      root.style.removeProperty('--fluid-cycle-orb3');
+      root.style.removeProperty('--fluid-beat-dur');
+      if (ambientLayer) ambientLayer.classList.remove('bpm-synced', 'is-playing');
+      if (DOM.fluidBpmStatusText) {
+        DOM.fluidBpmStatusText.textContent = state.lang === 'ru'
+          ? 'Синхронизация отключена (по умолчанию: плавный дрейф 20-28с)'
+          : 'Sync disabled (default: ambient drift 20-28s)';
+      }
+      return;
+    }
+
+    const curTrack = (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null;
+    let bpm = 120;
+    let isDefaultBpm = true;
+
+    if (curTrack) {
+      const known = queue ? queue.getTrackBpm(curTrack) : curTrack.bpm;
+      if (known && known >= 50 && known <= 220) {
+        bpm = known;
+        isDefaultBpm = false;
+      }
+    }
+
+    const beatDur = 60 / bpm;
+    // Map BPM to musical fluid phrasing (cycles of 32, 36, 44, 48 beats):
+    const cycleBg = Math.max(8, Math.min(35, beatDur * 32));
+    const cycleOrb1 = Math.max(9, Math.min(38, beatDur * 36));
+    const cycleOrb2 = Math.max(10, Math.min(42, beatDur * 44));
+    const cycleOrb3 = Math.max(11, Math.min(46, beatDur * 48));
+
+    root.style.setProperty('--fluid-cycle-bg', `${cycleBg.toFixed(2)}s`);
+    root.style.setProperty('--fluid-cycle-orb1', `${cycleOrb1.toFixed(2)}s`);
+    root.style.setProperty('--fluid-cycle-orb2', `${cycleOrb2.toFixed(2)}s`);
+    root.style.setProperty('--fluid-cycle-orb3', `${cycleOrb3.toFixed(2)}s`);
+    root.style.setProperty('--fluid-beat-dur', `${beatDur.toFixed(3)}s`);
+
+    const isPlaying = state.isPlaying && !audio.paused;
+
+    if (ambientLayer) {
+      ambientLayer.classList.add('bpm-synced');
+      if (isPlaying) {
+        ambientLayer.classList.add('is-playing');
+      } else {
+        ambientLayer.classList.remove('is-playing');
+      }
+    }
+
+    if (DOM.fluidBpmStatusText) {
+      const trackTitle = curTrack ? `${curTrack.artist} - ${curTrack.title}` : (state.lang === 'ru' ? 'Нет трека' : 'No track');
+      const bpmLabel = isDefaultBpm ? `~${bpm} BPM (базовый)` : `${bpm} BPM`;
+      const playStateLabel = isPlaying
+        ? (state.lang === 'ru' ? 'пульсация активна' : 'pulsing active')
+        : (state.lang === 'ru' ? 'пауза' : 'paused');
+      DOM.fluidBpmStatusText.textContent = state.lang === 'ru'
+        ? `Ритм: ${bpmLabel} (${trackTitle}) · Пульс: ${beatDur.toFixed(2)}с [${playStateLabel}]`
+        : `Tempo: ${bpmLabel} (${trackTitle}) · Beat: ${beatDur.toFixed(2)}s [${playStateLabel}]`;
+    }
+  }
+
+  function initSettingsUI() {
+    applyFluidColor(state.fluidColor);
+    if (DOM.fluidBpmSyncSwitch) {
+      DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
+    }
+    updateFluidBpmTempo();
   }
 
   // --- DISCOVERY & ZERO-TOUCH AUTO-SYNC ---
@@ -2971,6 +3294,66 @@
         }
       });
     });
+
+    // Settings Modal & Fluid Customizer Event Listeners
+    if (DOM.settingsToggleBtn) DOM.settingsToggleBtn.addEventListener('click', openSettingsModal);
+    if (DOM.sidebarSettingsBtn) DOM.sidebarSettingsBtn.addEventListener('click', openSettingsModal);
+    if (DOM.settingsCloseBtn) DOM.settingsCloseBtn.addEventListener('click', closeSettingsModal);
+    if (DOM.settingsDoneBtn) DOM.settingsDoneBtn.addEventListener('click', closeSettingsModal);
+    if (DOM.settingsModalBackdrop) {
+      DOM.settingsModalBackdrop.addEventListener('click', (e) => {
+        if (e.target === DOM.settingsModalBackdrop) closeSettingsModal();
+      });
+    }
+
+    // Swatches
+    document.querySelectorAll('.fluid-color-swatch').forEach(sw => {
+      sw.addEventListener('click', () => {
+        const color = sw.dataset.color;
+        if (color) applyFluidColor(color);
+      });
+    });
+
+    // Custom color picker
+    if (DOM.fluidColorPickerInput) {
+      DOM.fluidColorPickerInput.addEventListener('input', (e) => {
+        applyFluidColor(e.target.value);
+      });
+    }
+
+    // Hex input
+    if (DOM.fluidColorHexInput) {
+      DOM.fluidColorHexInput.addEventListener('input', (e) => {
+        let val = e.target.value.trim();
+        if (!val.startsWith('#')) val = '#' + val;
+        if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+          applyFluidColor(val);
+        }
+      });
+    }
+
+    // Reset color to default
+    if (DOM.fluidResetColorBtn) {
+      DOM.fluidResetColorBtn.addEventListener('click', () => {
+        applyFluidColor('#7c4dff');
+      });
+    }
+
+    // BPM Sync Switch
+    if (DOM.fluidBpmSyncSwitch) {
+      DOM.fluidBpmSyncSwitch.addEventListener('change', (e) => {
+        state.fluidBpmSync = e.target.checked;
+        try {
+          localStorage.setItem('pain_fluid_bpm_sync', String(state.fluidBpmSync));
+        } catch (err) {}
+        updateFluidBpmTempo();
+        showToast(state.lang === 'ru'
+          ? (state.fluidBpmSync ? 'Синхронизация по BPM включена' : 'Синхронизация по BPM выключена')
+          : (state.fluidBpmSync ? 'BPM Sync Enabled' : 'BPM Sync Disabled'),
+          state.fluidBpmSync ? '⚡' : '✓'
+        );
+      });
+    }
 
     // New Playlist Modal
     DOM.newPlaylistBtn.addEventListener('click', () => {
