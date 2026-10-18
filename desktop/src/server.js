@@ -932,6 +932,11 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     filePath = path.join(__dirname, '..', safePath);
   }
 
+  // Check if it's in joint-model (AI weights)
+  if (safePath.startsWith('/joint-model/')) {
+    filePath = path.join(__dirname, '..', safePath);
+  }
+
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';

@@ -49,6 +49,10 @@
             <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
             <span class="nav-label" data-en="Devices & Sync" data-ru="Устройства">Devices & Sync</span>
           </li>
+          <li class="nav-item" data-view="joint-ai">
+            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V17a1 1 0 0 1-2 0v-.07A7.003 7.003 0 0 1 5.07 11H5a1 1 0 0 1 0-2h.07A7.003 7.003 0 0 1 11 5.07V5a1 1 0 0 1 2 0v.07A7.003 7.003 0 0 1 18.93 11H19a1 1 0 0 1 0 2h-.07A7.003 7.003 0 0 1 13 16.93z"/><circle cx="12" cy="11" r="2.5"/></svg>
+            <span class="nav-label" data-en="Joint AI" data-ru="Joint AI">Joint AI</span>
+          </li>
         </ul>
       </nav>
 
@@ -522,6 +526,146 @@
           </div>
         </section>
 
+        <!-- VIEW 7: JOINT AUDIO AI LAB -->
+        <section class="view-pane" id="view-joint-ai">
+          <div class="view-hero-header">
+            <div>
+              <div class="joint-model-badge">
+                <span class="joint-badge-dot"></span>
+                <span id="jointModelBadgeText">CLAP Sound + ListenBrainz Graph · 56 875 треков</span>
+              </div>
+              <h1 class="view-heading" data-en="Joint Audio AI" data-ru="Joint Audio AI">Joint Audio AI</h1>
+              <div class="view-subheading" data-en="50-track neural playlist synthesis powered by real acoustic spectra & co-listening graph." data-ru="Генерация плейлиста из 50 треков нейросетью CLAP (спектры звука) и графом со-прослушиваний.">50-track neural playlist synthesis powered by real acoustic spectra & co-listening graph.</div>
+            </div>
+          </div>
+
+          <div class="joint-grid">
+            <!-- Left: Seed Selection & Tuning Card -->
+            <div class="joint-card" id="jointCardLeft">
+              <div class="joint-card-title" data-en="Seed Tracks & Import" data-ru="Опорные треки и импорт">Опорные треки и импорт</div>
+              <div class="joint-card-sub" data-en="Add tracks from your library, upload CSV/JSON/TXT files, or paste a list of any size (up to 500+ tracks)." data-ru="Добавьте треки из фонотеки, загрузите файл CSV/JSON/TXT/M3U или вставьте список любой длины (до 500+ треков).">Добавьте треки из фонотеки, загрузите файл CSV/JSON/TXT или вставьте список любой длины (до 500+ треков).</div>
+
+              <div class="joint-seed-actions">
+                <button class="btn-minimal" id="jointUseCurrentBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+                  <span data-en="Current Track" data-ru="Текущий трек">Текущий трек</span>
+                </button>
+                <button class="btn-minimal" id="jointUseFavoritesBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                  <span id="jointUseFavoritesBtnText" data-en="Liked Songs" data-ru="Все избранные">Все избранные</span>
+                </button>
+                <button class="btn-minimal" id="jointUseLibraryBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  <span id="jointUseLibraryBtnText" data-en="All Library" data-ru="Вся фонотека">Вся фонотека</span>
+                </button>
+                <button class="btn-minimal" id="jointUploadFileBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span data-en="Upload File" data-ru="Загрузить файл">Загрузить файл</span>
+                </button>
+                <input type="file" id="jointFileInput" accept=".json,.csv,.tsv,.txt,.m3u,.m3u8,.pls" style="display: none;">
+                <button class="btn-minimal" id="jointPasteListBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span data-en="Paste List" data-ru="Вставить списком">Вставить списком</span>
+                </button>
+                <button class="btn-minimal danger-hover" id="jointClearSeedsBtn">
+                  <span data-en="Clear" data-ru="Очистить">Очистить</span>
+                </button>
+              </div>
+
+              <!-- Paste List Drawer -->
+              <div class="joint-paste-box" id="jointPasteBox" style="display: none;">
+                <textarea class="joint-textarea" id="jointPasteTextarea" rows="4" placeholder="Вставьте список треков построчно (например:&#10;Molchat Doma - Sudno&#10;FACE - Yumorist&#10;Radiohead - Creep)"></textarea>
+                <div class="joint-paste-actions">
+                  <button class="btn-minimal primary" id="jointApplyPasteBtn" data-en="Import List" data-ru="Импортировать список">Импортировать</button>
+                  <button class="btn-minimal" id="jointCancelPasteBtn" data-en="Cancel" data-ru="Отмена">Отмена</button>
+                </div>
+              </div>
+
+              <!-- Manual Single Input Row -->
+              <div class="joint-input-row">
+                <input type="text" class="joint-text-input" id="jointSeedInput" placeholder="Артист - Название (например, Queen - Bohemian Rhapsody)">
+                <button class="btn-minimal primary" id="jointAddSeedBtn" data-en="Add" data-ru="Добавить">Добавить</button>
+              </div>
+
+              <!-- Active Seed Chips & Counter -->
+              <div class="joint-seeds-meta" id="jointSeedsMeta">Выбрано сидов: 0 треков (перетащите файл сюда)</div>
+              <div class="joint-chips-container" id="jointActiveSeeds">
+                <!-- Dynamically populated seed chips -->
+              </div>
+
+              <!-- Filters & Tuning Section -->
+              <div class="joint-filters-section">
+                <div class="joint-filters-title" data-en="Recommendation Filters" data-ru="Настройки и фильтры подбора">Настройки и фильтры подбора</div>
+
+                <div class="joint-filter-row">
+                  <label class="joint-filter-label" data-en="Popularity" data-ru="Популярность">Популярность:</label>
+                  <select class="joint-select" id="jointFilterPopularity">
+                    <option value="all" data-en="Balanced (All Tiers)" data-ru="Сбалансированно (все треки)">Сбалансированно (все треки)</option>
+                    <option value="underground" data-en="💎 Underground (Rare Gems)" data-ru="💎 Underground (Редкие находки)">💎 Underground (Редкие находки)</option>
+                    <option value="mid" data-en="🌿 Moderate Popularity" data-ru="🌿 Умеренная популярность">🌿 Умеренная популярность</option>
+                    <option value="hits" data-en="🔥 Mainstream Hits Only" data-ru="🔥 Популярные хиты">🔥 Популярные хиты</option>
+                  </select>
+                </div>
+
+                <div class="joint-filter-row">
+                  <label class="joint-filter-label" data-en="Artist Variety" data-ru="Артисты">Разнообразие:</label>
+                  <select class="joint-select" id="jointFilterArtistLimit">
+                    <option value="1" data-en="Max 1 track per artist (50 artists)" data-ru="1 трек на артиста (50 разных)">1 трек на артиста (50 разных)</option>
+                    <option value="2" selected data-en="Standard (Up to 2 per artist)" data-ru="Стандарт (до 2 на артиста)">Стандарт (до 2 на артиста)</option>
+                    <option value="3" data-en="Deeper Discography (Up to 3)" data-ru="Глубже (до 3 на артиста)">Глубже (до 3 на артиста)</option>
+                  </select>
+                </div>
+
+                <div class="joint-filter-row">
+                  <label class="joint-filter-label" data-en="Audio Spectra" data-ru="Звуковые спектры">Спектр звука:</label>
+                  <select class="joint-select" id="jointFilterAudioOnly">
+                    <option value="all" data-en="All Candidates (Sound + Graph)" data-ru="Все треки (Звук + Граф)">Все треки (Звук + Граф)</option>
+                    <option value="audio_only" data-en="CLAP 512D Audio Only" data-ru="Только реальный звук (CLAP 512D)">Только реальный звук (CLAP 512D)</option>
+                  </select>
+                </div>
+
+                <div class="joint-filter-row">
+                  <label class="joint-filter-label" data-en="Local Library" data-ru="Локальная фонотека">Библиотека:</label>
+                  <select class="joint-select" id="jointFilterLocalOnly">
+                    <option value="all" data-en="56k Catalog + Library" data-ru="Каталог 56k + Библиотека">Каталог 56k + Библиотека</option>
+                    <option value="local_only" data-en="Only Tracks in Library" data-ru="Только из моей библиотеки">Только из моей библиотеки</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="joint-generate-box">
+                <button class="joint-btn-primary" id="jointGenerateBtn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                  <span id="jointGenerateBtnText" data-en="Synthesize 50-Track Playlist" data-ru="Сгенерировать 50 треков (Joint AI)">Сгенерировать 50 треков (Joint AI)</span>
+                </button>
+              </div>
+            </div>
+
+
+            <!-- Right: Results & Actions -->
+            <div class="joint-card">
+              <div class="joint-card-header-row">
+                <div>
+                  <div class="joint-card-title" data-en="Generated 50-Track Slate" data-ru="Сгенерированный плейлист (50 треков)">Сгенерированный плейлист</div>
+                  <div class="joint-card-sub" id="jointResultsMeta">Ожидание запуска генерации...</div>
+                </div>
+                <button class="btn-minimal primary" id="jointSavePlaylistBtn" style="display: none;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  <span data-en="Save as Playlist & Play" data-ru="Сохранить как плейлист и слушать">Сохранить как плейлист</span>
+                </button>
+              </div>
+
+              <div class="joint-results-list" id="jointResultsList">
+                <div class="joint-empty-state">
+                  <div class="joint-empty-icon">🎧</div>
+                  <div class="joint-empty-title">Нейросеть готова к работе</div>
+                  <div class="joint-empty-sub">Выберите 1–5 сид-треков слева и нажмите «Сгенерировать 50 треков».</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
       </div>
     </main>
 
@@ -757,6 +901,7 @@
   <script src="session-graph.js"></script>
   <script src="taste-model.js"></script>
   <script src="queue-engine.js"></script>
+  <script src="joint-ai.js"></script>
   <script src="app.js"></script>
   <script src="presentation.js"></script>
   <script src="karaoke.js"></script>
