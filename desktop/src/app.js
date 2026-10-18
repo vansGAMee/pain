@@ -1838,7 +1838,7 @@
       return;
     }
     const now=Date.now();
-    const playRecord={...audible,id:'pc_'+(globalThis.crypto?.randomUUID?.() || now+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',at:now,timestamp:now};
+    const playRecord={...audible,skipped:explicitSkip&&!audible.finished?1:0,id:'pc_'+(globalThis.crypto?.randomUUID?.() || now+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',at:now,timestamp:now};
     const track=state.tracks.find(t=>t.id===trackId);
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];

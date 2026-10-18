@@ -211,6 +211,7 @@
       this.playedHistory = [];
       this.recentArtists = [];
       this.lastTransition = null;
+      this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
       this.bpmCache = options.bpmCache || {};
       this.stats = options.stats || null;
@@ -228,6 +229,15 @@
         this._tasteTracks = this.tracks;
       }
       return this._taste.score(current,candidate,this.bpmCache,context);
+    }
+
+    smartChoose(current, indices) {
+      this.smartScore(current,this.tracks[indices[0]],{});
+      const chosen=this._taste.choose(current,indices.map(i=>this.tracks[i]),this.bpmCache,{
+        recentArtists:this.recentArtists.slice(-10),recentTrackIds:this.playedHistory.slice(-4).reverse().map(i=>this.tracks[i]?.id),step:this.smartStep,
+        seed:(this.smartSeed+Math.imul(this.smartStep,2654435761))>>>0
+      });
+      return {...chosen,index:indices.find(i=>this.tracks[i]===chosen.track)};
     }
 
     setBpmCache(cache) {
@@ -283,14 +293,16 @@
     }
 
     markPlayed(index) {
+      this.smartStep++;
       this.unplayedIndices.delete(index);
       this.playedHistory.push(index);
       if (this.playedHistory.length > 500) {
         this.playedHistory.shift();
       }
       const trk = this.tracks[index];
-      if (trk && trk.artist) {
-        this.recentArtists.push(trk.artist.trim().toLowerCase());
+      const artist=trk&&Taste.artistIdentity(trk);
+      if (artist) {
+        this.recentArtists.push(artist);
         if (this.recentArtists.length > 30) {
           this.recentArtists.shift();
         }
@@ -391,12 +403,7 @@
 
       // Check if current cycle exhausted
       if (this.unplayedIndices.size === 0) {
-        if (this.loopMode === 'off') {
-          // If in linear mode and reached end of queue
-          if (this.shuffleMode === 'off' && this.currentIndex >= this.tracks.length - 1) {
-            return null;
-          }
-        }
+        if (this.loopMode === 'off') return null;
         this.resetCycle();
       }
 
@@ -422,23 +429,7 @@
         } else if (!current) {
           nextIndex = candidates[0];
         } else {
-          const contextOpts = {
-            recentArtists: (this.recentArtists || []).slice(-10),
-            hour: (new Date()).getHours()
-          };
-
-          // Score all candidates with multi-factor engine
-          const scored = candidates.map(idx => {
-            const cand = this.tracks[idx];
-            const result = this.smartScore(current, cand, contextOpts);
-            return { index: idx, ...result };
-          });
-
-          // Sort descending by score
-          scored.sort((a, b) => b.score - a.score);
-
-          // Identical ranking in peekNext and next keeps prefetch accurate.
-          const chosen = scored[0];
+          const chosen = this.smartChoose(current,candidates);
           nextIndex = chosen.index;
           this.lastTransition = {
             fromTrack: current,
@@ -476,6 +467,7 @@
       if (this.loopMode === 'one' && this.currentIndex >= 0) {
         return this.tracks[this.currentIndex];
       }
+      if (this.loopMode === 'off' && this.unplayedIndices.size === 0) return null;
       if (this.shuffleMode === 'off') {
         if (this.currentIndex < this.tracks.length - 1) {
           return this.tracks[this.currentIndex + 1];
@@ -492,20 +484,7 @@
       if (this.shuffleMode === 'smart') {
         const current = this.getCurrentTrack();
         if (!current) return this.tracks[candidates[0]];
-        const contextOpts = {
-          recentArtists: (this.recentArtists || []).slice(-10),
-          hour: (new Date()).getHours()
-        };
-        let best = candidates[0];
-        let bestScore = -Infinity;
-        for (const idx of candidates) {
-          const { score } = this.smartScore(current, this.tracks[idx], contextOpts);
-          if (score > bestScore) {
-            bestScore = score;
-            best = idx;
-          }
-        }
-        return this.tracks[best];
+        return this.tracks[this.smartChoose(current,candidates).index];
       }
 
       return this.tracks[candidates[0]];

@@ -276,3 +276,17 @@ test('smart shuffle records lastTransition with explainable DJ rationale and tra
   assert.ok(lastTrans.reasons.length > 0);
 });
 
+
+test('shuffle stops after exhausting the queue when repeat is off, including a single track', () => {
+  for (const mode of ['random','smart']) for (const size of [1,3]) {
+    const tracks=Array.from({length:size},(_,i)=>({id:String(i)}));
+    const q=new QueueEngine({shuffleMode:mode,loopMode:'off'});
+    q.setContext('library',tracks,0);
+    const seen=new Set(['0']);
+    for(let i=1;i<size;i++){const next=q.next();assert.ok(next);assert.ok(!seen.has(next.id));seen.add(next.id);}
+    const before=[...q.playedHistory];
+    assert.equal(q.peekNext(),null);assert.equal(q.next(),null);assert.equal(q.next(),null);
+    assert.deepEqual(q.playedHistory,before);
+    q.setLoopMode('all');assert.ok(q.next());
+  }
+});
