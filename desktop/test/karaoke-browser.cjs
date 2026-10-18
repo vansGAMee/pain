@@ -1,0 +1,40 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1280,height:800}});
+ const records=[];
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>localStorage.setItem('pain_lang','ru'));
+ const tracks=[{id:'a',title:'Очень длинное название трека для проверки полноэкранного режима и адаптивности',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000},{id:'b',title:'Второй трек',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000}];
+ const samples=44100*6;const wav=Buffer.alloc(44+samples*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(44100,24);wav.writeUInt32LE(88200,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
+ await page.route('**/api/**',async route=>{
+  const u=new URL(route.request().url());
+  if(u.pathname==='/api/lyrics')return route.continue();
+  if(u.pathname.startsWith('/api/cached-track/')){const range=route.request().headers()['range'];const start=range?Number(range.match(/bytes=(\d+)/)?.[1]||0):0;return route.fulfill({status:range?206:200,headers:{'Content-Type':'audio/wav','Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${wav.length-1}/${wav.length}`}:{})},body:wav.subarray(start)});}
+  if(u.pathname==='/api/sync-stats')records.push(route.request().postDataJSON());
+  let data={};if(u.pathname==='/api/saved-library')data={tracks};else if(u.pathname==='/api/playlists'||u.pathname==='/api/devices')data=[];else if(u.pathname==='/api/saved-stats')data={plays:[],slices:[]};else if(u.pathname==='/api/cached-tracks')data={cached:[]};
+  await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+ });
+ await page.goto('http://localhost:3098');await page.waitForSelector('tr[data-track-id="a"]');
+ await page.click('#karaokeBtn');await page.click('#karaokeEdit').catch(()=>{});if(!await page.locator('#karaokeText').isVisible())await page.click('#karaokeEdit');await page.fill('#karaokeText','Первая строка\nВторая строка\nТретья строка');await page.click('#karaokeApply');
+ await page.click('#bottomPlayBtn');await page.waitForFunction(()=>!document.querySelector('audio').paused);
+ await page.evaluate(()=>document.querySelector('audio').pause());
+ await page.evaluate(()=>document.querySelector('audio').currentTime=1);await page.click('#karaokeStamp');
+ await page.evaluate(()=>document.querySelector('audio').currentTime=3);await page.click('#karaokeStamp');
+ await page.click('#karaokeUndo');assert.equal(await page.locator('.karaoke-row input').nth(1).inputValue(),'');
+ await page.click('#karaokeStamp');await page.evaluate(()=>document.querySelector('audio').currentTime=5);await page.click('#karaokeStamp');
+ await page.click('#karaokeSave');await page.waitForFunction(()=>document.querySelector('#karaokeStatus').textContent.includes('Сохранено'));
+ const saved=await page.evaluate(()=>fetch('/api/lyrics?track=a').then(r=>r.json()));assert.equal(saved.lines.length,3);assert.equal(saved.lines[1].time,3);
+ await page.click('#karaokeEdit');await page.locator('.karaoke-line').nth(0).click();await page.waitForFunction(()=>document.querySelector('audio').currentTime<1.2);
+ await page.waitForFunction(()=>!document.querySelector('audio').seeking);await page.screenshot({path:'/tmp/pain-karaoke.png'});
+ await page.click('#karaokeFull');await page.waitForFunction(()=>!!document.fullscreenElement);await page.click('#karaokeClose');await page.waitForFunction(()=>!document.fullscreenElement);
+ await page.evaluate(()=>Object.keys(localStorage).filter(k=>k.startsWith('pain_lyrics_draft_')).forEach(k=>localStorage.removeItem(k)));
+ await page.reload();await page.waitForSelector('tr[data-track-id="a"]');await page.click('#karaokeBtn');await page.waitForSelector('.karaoke-line');assert.equal(await page.locator('.karaoke-line').count(),3);
+ await page.click('#karaokeClose');await page.click('tr[data-track-id="b"]');await page.click('#karaokeBtn');assert.equal(await page.locator('.karaoke-line').count(),0);
+ await page.fill('#karaokeText','[00:01.50]Одна строка\n[00:03.00]Другая строка');await page.click('#karaokeApply');assert.equal(await page.locator('.karaoke-row input').nth(0).inputValue(),'1.50');
+ await page.locator('.karaoke-row input').nth(1).fill('0.5');await page.locator('.karaoke-row input').nth(1).press('Tab');assert.equal(await page.locator('.karaoke-row input').nth(1).inputValue(),'3.00');
+ await page.setViewportSize({width:800,height:600});await page.screenshot({path:'/tmp/pain-karaoke-editor.png'});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.karaoke-line').first().evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
+ assert.deepEqual(errors,[]);console.log('PASS karaoke: stamp, undo, save to disk, seek, fullscreen, reload, track isolation');await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

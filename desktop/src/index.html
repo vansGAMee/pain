@@ -13,6 +13,7 @@
 
   <!-- App Shell -->
   <div class="app-layout">
+    <button id="exitFullscreenBtn" class="btn-minimal fullscreen-exit">Exit · Esc</button>
 
     <!-- 1. LEFT SIDEBAR -->
     <aside class="sidebar">
@@ -581,6 +582,9 @@
           <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
         </button>
 
+        <button class="ctrl-btn-subtle" id="fullscreenPlayerBtn" aria-label="Fullscreen player" aria-pressed="false" title="Fullscreen player">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>
+        </button>
         <button class="ctrl-btn-subtle" id="bottomVinylToggleBtn" title="Vinyl View">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
         </button>
@@ -743,7 +747,10 @@
   <!-- Audio Element -->
   <audio id="audioEngine" crossorigin="anonymous"></audio>
 
+  <script src="listening.js"></script>
   <script src="app.js"></script>
+  <script src="presentation.js"></script>
+  <script src="karaoke.js"></script>
 </body>
 </html>
 

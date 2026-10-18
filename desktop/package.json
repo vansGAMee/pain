@@ -1,7 +1,7 @@
 {
   "name": "pain-desktop",
-  "version": "1.1.1",
-  "description": "Pain — Minimalist Audio Player & Sync Companion for Windows & Linux",
+  "version": "1.2.0",
+  "description": "Pain \u2014 Minimalist Audio Player & Sync Companion for Windows & Linux",
   "main": "src/main.js",
   "bin": "src/server.js",
   "scripts": {
@@ -9,7 +9,8 @@
     "electron": "electron .",
     "web": "node src/server.js",
     "build:win": "electron-builder --win",
-    "package:exe": "pkg . --target node18-win-x64 --output dist/Pain.exe"
+    "package:exe": "pkg . --target node18-win-x64 --output dist/Pain.exe",
+    "test": "node --test test/*.test.js"
   },
   "pkg": {
     "assets": [
@@ -17,7 +18,14 @@
       "assets/**/*"
     ]
   },
-  "keywords": ["audio", "player", "minimalist", "pain", "sync", "windows"],
+  "keywords": [
+    "audio",
+    "player",
+    "minimalist",
+    "pain",
+    "sync",
+    "windows"
+  ],
   "author": "Ivan",
   "license": "ISC"
 }

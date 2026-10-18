@@ -6,11 +6,14 @@ const path = require('path');
 const dgram = require('dgram');
 const { exec } = require('child_process');
 
+const lyricsRoute = require('./lyrics-store');
+const parseRange = require('./range');
+const mergeStats = require('./stats-store');
 const PORT = 3000;
 const MOBILE_HTTP_PORT = 8865;
 const UDP_PORT = 8866;
 
-const BASE_DATA_DIR = process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
+const BASE_DATA_DIR = process.env.PAIN_DATA_DIR || (process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..'));
 const DATA_DIR = path.join(BASE_DATA_DIR, 'data');
 const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
 const CACHE_DIR = path.join(BASE_DATA_DIR, 'cache');
@@ -20,6 +23,16 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
+
+function saveStatsSnapshot(body) {
+  const incoming=JSON.parse(body);
+  if(!incoming||typeof incoming!=='object'||!Array.isArray(incoming.plays))throw new Error('Invalid statistics');
+  const file=path.join(DATA_DIR,'stats.json');let local={plays:[],slices:[]};
+  try{local=JSON.parse(fs.readFileSync(file,'utf8'));}catch(_){}
+  const merged=mergeStats(local,incoming);
+  fs.writeFileSync(file+'.tmp',JSON.stringify(merged),'utf8');fs.renameSync(file+'.tmp',file);
+  return merged;
+}
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 
@@ -113,7 +126,7 @@ async function triggerBackgroundAutoSync(device) {
     res.on('data', c => body += c);
     res.on('end', () => {
       try {
-        fs.writeFileSync(path.join(DATA_DIR, 'stats.json'), body, 'utf8');
+        saveStatsSnapshot(body);
       } catch (e) {}
     });
   }).on('error', () => {});
@@ -216,6 +229,8 @@ function broadcastDiscovery() {
   } catch (e) {}
 }
 
+// Test/offline environments can explicitly disable LAN discovery.
+if(process.env.PAIN_DISCOVERY !== 'false') {
 // Setup UDP
 try {
   udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -259,6 +274,7 @@ setTimeout(scanArpTable, 1500);
 setTimeout(scanSubnetsSmart, 500);
 setInterval(scanArpTable, 5000);
 setInterval(scanSubnetsSmart, 15000);
+}
 
 
 const MIME_TYPES = {
@@ -322,29 +338,9 @@ function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
     const range = req.headers.range;
 
     if (range) {
-      const match = range.match(/bytes\s*=\s*(\d+)\s*-\s*(\d+)?/i);
-      if (!match) {
-        res.writeHead(416, {
-          'Content-Range': `bytes */${total}`,
-          'Accept-Ranges': 'bytes'
-        });
-        res.end();
-        return;
-      }
-      const start = parseInt(match[1], 10);
-      let end = match[2] ? parseInt(match[2], 10) : total - 1;
-
-      if (isNaN(start) || start >= total || start > end) {
-        res.writeHead(416, {
-          'Content-Range': `bytes */${total}`,
-          'Accept-Ranges': 'bytes'
-        });
-        res.end();
-        return;
-      }
-      if (end >= total) {
-        end = total - 1;
-      }
+      const parsedRange=parseRange(range,total);
+      if(!parsedRange){res.writeHead(416,{'Content-Range':`bytes */${total}`,'Accept-Ranges':'bytes'});res.end();return;}
+      const {start,end}=parsedRange;
 
       const chunksize = (end - start) + 1;
       res.writeHead(206, {
@@ -400,6 +396,8 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
+  if (lyricsRoute(req,res,url,DATA_DIR)) return;
+
   // API endpoints
   if (pathname === '/api/devices') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -452,7 +450,7 @@ const server = http.createServer((req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
       try {
-        fs.writeFileSync(path.join(DATA_DIR, 'stats.json'), body, 'utf8');
+        saveStatsSnapshot(body);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok' }));
       } catch (e) {
@@ -495,62 +493,37 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Stream from mobile phone while simultaneously caching to disk safely via .tmp
     const phoneUrl = (url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl()).replace(/\/+$/, '');
-    const sourceUrl = `${phoneUrl}/api/track/${encodeURIComponent(trackId)}`;
-
-    http.get(sourceUrl, (phoneRes) => {
-      if (phoneRes.statusCode !== 200) {
-        res.writeHead(phoneRes.statusCode, phoneRes.headers);
-        phoneRes.pipe(res);
-        return;
-      }
-
-      const contentType = phoneRes.headers['content-type'] || mime;
-      const contentLength = phoneRes.headers['content-length'];
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-      if (req.headers.range && total > 0) {
-        res.writeHead(206, {
-          'Content-Type': contentType,
-          'Content-Length': total,
-          'Content-Range': `bytes 0-${total - 1}/${total}`,
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*'
-        });
-      } else {
-        const responseHeaders = {
-          'Content-Type': contentType,
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*'
-        };
-        if (contentLength) {
-          responseHeaders['Content-Length'] = contentLength;
-        }
-        res.writeHead(200, responseHeaders);
-      }
-
-      const writeStream = fs.createWriteStream(tmpFile);
+    let source;
+    try{source=new URL(`${phoneUrl}/api/track/${encodeURIComponent(trackId)}`);if(source.protocol!=='http:')throw new Error('HTTP required');}
+    catch(e){res.writeHead(400);res.end('Invalid phone URL');return;}
+    const upstream=http.get(source,{headers:req.headers.range?{Range:req.headers.range}:{}},phoneRes=>{
+      const headers={'Content-Type':phoneRes.headers['content-type']||mime,'Accept-Ranges':'bytes','Access-Control-Allow-Origin':'*'};
+      for(const key of ['content-length','content-range'])if(phoneRes.headers[key])headers[key]=phoneRes.headers[key];
+      res.writeHead(phoneRes.statusCode,headers);
+      if(req.method==='HEAD'){res.end();phoneRes.resume();return;}
       phoneRes.pipe(res);
-      phoneRes.pipe(writeStream);
-
-      writeStream.on('finish', () => {
-        try {
-          if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000) {
-            fs.renameSync(tmpFile, cachedFile);
-          }
-        } catch (e) {
-          console.warn('Rename tmp cache file error:', e);
-        }
+      // Cache only an entire representation, never a partial seek response.
+      const cr=/^bytes 0-(\d+)\/(\d+)$/.exec(phoneRes.headers['content-range']||'');
+      const whole=phoneRes.statusCode===200||(phoneRes.statusCode===206&&cr&&Number(cr[1])+1===Number(cr[2]));
+      if(!whole){phoneRes.on('error',()=>res.destroy());return;}
+      const temp=cachedFile+'.'+require('crypto').randomUUID()+'.tmp';
+      const output=fs.createWriteStream(temp);
+      const discard=()=>{try{fs.unlinkSync(temp);}catch(_){}};
+      output.on('error',discard);
+      phoneRes.on('aborted',()=>{output.destroy();discard();});
+      phoneRes.on('error',()=>{output.destroy();discard();res.destroy();});
+      output.on('finish',()=>{
+        try{
+          const size=fs.statSync(temp).size;
+          const expected=Number(phoneRes.headers['content-length'])||0;
+          if(phoneRes.complete&&size>0&&(!expected||expected===size))fs.renameSync(temp,cachedFile);else discard();
+        }catch(_){discard();}
       });
-
-      phoneRes.on('error', () => {
-        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
-      });
-    }).on('error', (err) => {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end(`Failed to fetch from phone: ${err.message}`);
+      phoneRes.pipe(output);
     });
+    upstream.setTimeout(30000,()=>upstream.destroy(new Error('Phone timed out')));
+    upstream.on('error',err=>{if(!res.headersSent){res.writeHead(502);res.end('Phone unavailable');}else res.destroy();});
     return;
   }
 
@@ -559,7 +532,7 @@ const server = http.createServer((req, res) => {
     const trackId = decodeURIComponent(pathname.substring('/api/preload-track/'.length));
     const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
     const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
-    const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
+    const tmpFile = path.join(CACHE_DIR, `${safeId}.${require("crypto").randomUUID()}.tmp`);
     if (fs.existsSync(cachedFile) && fs.statSync(cachedFile).size > 1000) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'already_cached' }));
@@ -569,10 +542,13 @@ const server = http.createServer((req, res) => {
     http.get(`${phoneUrl}/api/track/${encodeURIComponent(trackId)}`, (phoneRes) => {
       if (phoneRes.statusCode === 200) {
         const fileStream = fs.createWriteStream(tmpFile);
+        fileStream.on('error',()=>{try{fs.unlinkSync(tmpFile);}catch(_){}if(!res.headersSent){res.writeHead(500);res.end();}});
+        phoneRes.on('aborted',()=>{fileStream.destroy();try{fs.unlinkSync(tmpFile);}catch(_){}if(!res.headersSent){res.writeHead(502);res.end();}});
+        phoneRes.on('error',()=>fileStream.destroy());
         phoneRes.pipe(fileStream);
         fileStream.on('finish', () => {
           try {
-            if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000) {
+            if (phoneRes.complete && fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000 && (!phoneRes.headers['content-length'] || fs.statSync(tmpFile).size === Number(phoneRes.headers['content-length']))) {
               fs.renameSync(tmpFile, cachedFile);
             }
           } catch (e) {}
@@ -927,6 +903,7 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
             });
+            fallbackReq.setTimeout(5000,()=>fallbackReq.destroy(new Error("Phone timed out")));
             fallbackReq.write(legacyStatsPayload);
             fallbackReq.end();
           }
@@ -935,6 +912,7 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
         });
+        postReq.setTimeout(5000,()=>postReq.destroy(new Error("Phone timed out")));
         postReq.write(recPayload);
         postReq.end();
       } catch (e) {
@@ -1009,3 +987,5 @@ server.on('error', (err) => {
 
 startServer(currentPort);
 
+
+module.exports = server;

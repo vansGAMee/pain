@@ -1,0 +1,33 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1280,height:800}});
+ const records=[];
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>localStorage.setItem('pain_lang','ru'));
+ const tracks=[{id:'a',title:'Очень длинное название трека для проверки полноэкранного режима и адаптивности',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000},{id:'b',title:'Второй трек',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000}];
+ const samples=44100*6;const wav=Buffer.alloc(44+samples*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(44100,24);wav.writeUInt32LE(88200,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
+ await page.route('**/api/**',async route=>{
+  const u=new URL(route.request().url());
+  if(u.pathname.startsWith('/api/cached-track/'))return route.fulfill({contentType:'audio/wav',body:wav});
+  if(u.pathname==='/api/sync-stats')records.push(route.request().postDataJSON());
+  let data={};if(u.pathname==='/api/saved-library')data={tracks};else if(u.pathname==='/api/playlists'||u.pathname==='/api/devices')data=[];else if(u.pathname==='/api/saved-stats')data={plays:[],slices:[]};else if(u.pathname==='/api/cached-tracks')data={cached:[]};
+  await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+ });
+ await page.goto(process.env.PAIN_TEST_URL || 'http://localhost:3097');await page.waitForSelector('tr[data-track-id="a"]');
+ await page.click('#bottomPlayBtn');await page.waitForFunction(()=>!document.querySelector('audio').paused);
+ assert.ok((await page.locator('audio').getAttribute('src')).includes('/a?'));
+ await page.click('tr[data-track-id="b"]');await page.waitForFunction(()=>document.querySelector('audio').src.includes('/b?'));
+ await page.click('#fullscreenPlayerBtn');await page.waitForFunction(()=>!!document.fullscreenElement);
+ assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#bottomPlayBtn').isVisible(),true);
+ assert.notEqual(await page.locator('#bottomPlayBtn').evaluate(v=>getComputedStyle(v).backgroundImage),'none');
+ await page.screenshot({path:'/tmp/pain-fullscreen.png'});
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.fullscreenElement&&!document.querySelector('.player-fullscreen'));
+ await page.evaluate(()=>document.querySelector('.app-layout').requestFullscreen=()=>Promise.reject(new Error('denied')));
+ await page.click('#fullscreenPlayerBtn');await page.waitForSelector('.player-fullscreen');await page.click('#exitFullscreenBtn');await page.waitForFunction(()=>!document.querySelector('.player-fullscreen'));
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('#bottomPlayBtn').evaluate(v=>getComputedStyle(v).transitionDuration),'0s');
+ await page.waitForFunction(()=>document.querySelector('audio').ended,{},{timeout:12000});
+ assert.equal(records.length,1);assert.equal(records[0].track,'b');assert.ok(records[0].heard>=5400&&records[0].heard<=6500);assert.equal(records[0].finished,1);
+ assert.deepEqual(errors,[]);console.log('PASS: restored play, rapid track change, fullscreen/Escape, denied-fullscreen fallback, metallic gradient, reduced motion, no JS errors');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

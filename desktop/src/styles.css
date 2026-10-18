@@ -2557,3 +2557,75 @@ input:checked + .switch-slider:before {
   opacity: 0;
   transform: translateY(-8px) scale(0.96);
 }
+
+/* Barely visible broad satin light; a slow, small shift on interaction. */
+.app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip) {
+  background-image: linear-gradient(116deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.025) 48%,rgba(0,0,0,.008) 100%);
+  background-size: 240% 100%;
+  background-position: 48% 50%;
+  transition: background-position 2800ms cubic-bezier(.45,0,.55,1),transform 180ms ease,box-shadow 220ms ease;
+}
+.app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip):is(:hover,:focus-visible) {
+  background-position: 52% 50%;
+}
+[data-theme="dark"] .app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip) {
+  background-image: linear-gradient(116deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.015) 48%,rgba(0,0,0,.006) 100%);
+}
+.fullscreen-exit { display:none; }
+.app-layout.player-fullscreen {
+  grid-template-columns: minmax(0,1fr); width:100%;height:100dvh;background:var(--bg);
+}
+.player-fullscreen .sidebar,.player-fullscreen .top-bar {display:none;}
+.player-fullscreen .main-stage {grid-column:1;min-height:0;}
+.player-fullscreen .fullscreen-exit {display:block;position:absolute;top:20px;right:24px;z-index:30;}
+.player-fullscreen .vinyl-player-stage {min-height:calc(100dvh - var(--bottom-bar-height) - 100px);padding:56px 16px 16px;gap:24px;box-sizing:border-box;}
+.player-fullscreen .vinyl-outer-ring {width:clamp(180px,42vh,460px);height:clamp(180px,42vh,460px);flex-shrink:0;}
+.player-fullscreen .vinyl-disc-body {width:87.5%;height:87.5%;}
+.player-fullscreen .vinyl-groove-rings {width:89%;height:89%;}
+.player-fullscreen .vinyl-label-center {width:39%;height:39%;}
+.player-fullscreen .vinyl-track-info {max-width:min(900px,90vw);}
+.player-fullscreen .vinyl-title {font-size:clamp(24px,3vw,48px);overflow-wrap:anywhere;}
+@media (max-height:600px) and (min-width:800px) {
+  .player-fullscreen .vinyl-player-stage {flex-direction:row;gap:48px;}
+  .player-fullscreen .vinyl-track-info {max-width:50vw;text-align:left;align-items:flex-start;}
+}
+@media (prefers-reduced-motion:reduce) {
+  .app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip) {transition:none;background-position:50% 50%;}
+  .vinyl-disc-body.spinning {animation:none;}
+}
+
+@font-face {font-family:'PainLyrics';src:url('/assets/Geist-SemiBold.ttf') format('truetype');font-weight:600;font-display:swap;}
+/* Large, quiet lyric canvas; transport stays available below it. */
+#karaoke[hidden], #karaoke [hidden] {display:none!important;}
+#karaoke {position:absolute;inset:0 0 var(--bottom-bar-height);z-index:90;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;min-height:0;padding:28px 40px 12px;box-sizing:border-box;}
+.karaoke-header {display:flex;justify-content:space-between;gap:24px;align-items:start;flex-shrink:0;}
+.karaoke-eyebrow {font-size:10px;letter-spacing:.12em;color:var(--ink-muted);}
+#karaokeTitle {font-size:20px;margin:8px 0 4px;overflow-wrap:anywhere;}
+#karaokeArtist {font-size:13px;color:var(--ink-muted);margin:0;}
+.karaoke-actions {display:flex;gap:8px;flex-wrap:wrap;}
+.karaoke-body {display:flex;min-height:0;flex:1;gap:32px;margin-top:24px;}
+.karaoke-scroll {overflow:auto;flex:1;min-width:0;overscroll-behavior:contain;scrollbar-width:thin;scroll-padding:40px;}
+.karaoke-lines {max-width:1000px;margin:auto;padding:18vh 24px 24vh;}
+.karaoke-row {display:flex;align-items:center;gap:16px;margin:0 0 28px;}
+.karaoke-line {border:0;background:none;text-align:left;color:var(--ink);opacity:.27;font:600 clamp(28px,3.5vw,64px)/1.24 'PainLyrics','Geist',sans-serif;letter-spacing:-.035em;padding:4px 0;cursor:pointer;overflow-wrap:anywhere;flex:1;min-width:0;transition:opacity 650ms ease;}
+.karaoke-line.is-past {opacity:.48;}
+.karaoke-line.is-current,.karaoke-line:hover,.karaoke-line:focus-visible {opacity:1;}
+.karaoke-line:focus-visible {outline:2px solid var(--ink-muted);outline-offset:5px;border-radius:5px;}
+.karaoke-empty {color:var(--ink-muted);font-size:clamp(22px,3vw,40px);line-height:1.4;max-width:700px;}
+.karaoke-editor {flex:0 0 300px;overflow:auto;padding:8px 12px 12px 0;}
+.karaoke-editor label {font-size:13px;display:block;margin-bottom:12px;}
+.karaoke-editor textarea {width:100%;height:190px;resize:vertical;box-sizing:border-box;background:var(--card-bg);color:var(--ink);border:1px solid var(--border-strong);border-radius:12px;padding:14px;font-family:inherit;font-size:14px;line-height:1.6;}
+.karaoke-editor p {font-size:13px;line-height:1.65;color:var(--ink-muted);}
+.karaoke-editor .btn-minimal {margin-top:10px;}
+.karaoke-stamp {width:100%;min-height:48px;}
+#karaoke button:disabled {opacity:.35;cursor:default;}
+#karaoke.is-editing .karaoke-lines {padding:20px 12px 120px;}
+#karaoke.is-editing .karaoke-line {font-size:clamp(22px,2.3vw,36px);opacity:.55;}
+#karaoke.is-editing .karaoke-line.is-next {opacity:1;}
+.karaoke-row input {width:88px;border:1px solid var(--border-strong);border-radius:8px;padding:8px;background:var(--card-bg);color:var(--ink);font-family:inherit;font-size:13px;font-variant-numeric:tabular-nums;}
+#karaokeStatus {min-height:20px;flex-shrink:0;font-size:12px;color:var(--ink-muted);padding-top:8px;}
+@media(max-width:800px){#karaoke{padding:16px;}.karaoke-header{gap:12px;}.karaoke-header .btn-minimal{padding:8px;font-size:12px;}.karaoke-body{gap:12px;}.karaoke-editor{flex-basis:220px;}.karaoke-lines{padding-left:8px;padding-right:8px;}}
+@media(max-width:580px){.karaoke-header{flex-direction:column;}.is-editing .karaoke-body{flex-direction:column;overflow:auto;}.karaoke-editor{flex:0 0 auto;overflow:visible;}.is-editing .karaoke-scroll{overflow:visible;flex:none;}.karaoke-editor textarea{height:120px;}}
+@media(prefers-reduced-motion:reduce){.karaoke-line{transition:none;}}
+.karaoke-editor > .karaoke-actions {margin-bottom:18px;}
+.karaoke-editor > .karaoke-stamp {margin-top:0;}

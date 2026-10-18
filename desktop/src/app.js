@@ -53,6 +53,7 @@
 
   // --- AUDIO & WEB AUDIO NODES ---
   const audio = document.getElementById('audioEngine');
+  window.PainPlayer = { getTrack:()=>state.tracks[state.currentTrackIndex] || null };
   let audioCtx = null;
   let sourceNode = null;
   let preampNode = null;
@@ -322,6 +323,7 @@
     await loadCachedTracksList();
     updateGreeting();
     setupEventListeners();
+    window.addEventListener('pain:show-player',()=>switchView('player'));
     startDiscoveryPolling();
 
     // Check query parameters and URL Hash for deep-linking
@@ -724,7 +726,7 @@
     trackList.forEach((track, index) => {
       const isCurrent = state.currentTrackId === track.id;
       const isPlayingCurrent = isCurrent && state.isPlaying;
-      const durationSec = track.duration > 1000 ? Math.floor(track.duration / 1000) : (track.duration || 0);
+      const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
       const plays = getTrackPlayCount(track.id);
 
       const tr = document.createElement('tr');
@@ -831,7 +833,7 @@
     trackList.forEach(track => {
       const isCurrent = state.currentTrackId === track.id;
       const isPlayingCurrent = isCurrent && state.isPlaying;
-      const durationSec = track.duration > 1000 ? Math.floor(track.duration / 1000) : (track.duration || 0);
+      const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
 
       const card = document.createElement('div');
       card.className = `track-card ${isCurrent ? 'playing-card' : ''}`;
@@ -1437,7 +1439,7 @@
     }
     const track = state.tracks[state.currentTrackIndex];
     if (track && track.duration) {
-      return track.duration > 1000 ? track.duration / 1000 : track.duration;
+      return Math.max(0, Number(track.duration) || 0) / 1000;
     }
     return 0;
   }
@@ -1462,59 +1464,51 @@
     });
   }
 
+  let playbackRequest = 0;
+  let listening = null;
+  function sampleListening(active = !audio.paused && !audio.seeking) {
+    listening?.sample(performance.now(), audio.currentTime || 0, active && !audio.muted && audio.volume > 0, audio.playbackRate || 1);
+  }
+  function beginListening(track) {
+    listening = new ListeningLedger(track.id, Number(track.duration)||0);
+  }
+  function syncPlaybackState() {
+    state.isPlaying = !audio.paused && !audio.ended;
+    updatePlayBtnUI();
+    DOM.vinylBigDisc.classList.toggle('spinning',state.isPlaying);
+    updatePlayingRowUI();
+  }
   function playTrackIndex(index) {
     if (index < 0 || index >= state.tracks.length) return;
     initAudioNodes();
-
-    // If previous track was listened for >= 50% or >= 30s before switching, record it
-    if (state.currentTrackId && audio.currentTime >= Math.min(30, (audio.duration || 180) * 0.5)) {
-      recordTrackFinished(state.currentTrackId);
-    }
-
-    state.currentTrackIndex = index;
-    const track = state.tracks[index];
-    state.currentTrackId = track.id;
-    state.hasPrefetchedNext = false;
-
-    const durationSec = track.duration > 1000 ? Math.floor(track.duration / 1000) : (track.duration || 0);
-    DOM.currentTime.textContent = '0:00';
-    DOM.totalTime.textContent = formatTime(durationSec);
-    DOM.progressFill.style.width = '0%';
-    if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
-
-    // Stream URL with sleep-proof caching proxy
-    const streamUrl = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
-    audio.src = streamUrl;
-
-    audio.play().then(() => {
-      state.isPlaying = true;
-      updatePlayBtnUI();
-      DOM.vinylBigDisc.classList.add('spinning');
-      updatePlayingRowUI();
-    }).catch(err => {
-      console.warn('Playback error (retrying directly or phone asleep):', err);
-      if (state.phoneUrl) {
-        const cleanPhone = state.phoneUrl.replace(/\/+$/, '');
-        const directUrl = `${cleanPhone}/api/track/${encodeURIComponent(track.id)}`;
-        audio.src = directUrl;
-        audio.play().then(() => {
-          state.isPlaying = true;
-          updatePlayBtnUI();
-          DOM.vinylBigDisc.classList.add('spinning');
-          updatePlayingRowUI();
-        }).catch(e => console.warn('Direct stream also failed:', e));
+    sampleListening();
+    if(state.currentTrackId)recordTrackFinished(state.currentTrackId);
+    const request=++playbackRequest;
+    state.currentTrackIndex=index;
+    const track=state.tracks[index];state.currentTrackId=track.id;state.hasPrefetchedNext=false;
+    beginListening(track);
+    state.isPlaying=false;
+    DOM.currentTime.textContent='0:00';
+    DOM.totalTime.textContent=formatTime(Math.max(0,Number(track.duration)||0)/1000);
+    DOM.progressFill.style.width='0%';if(DOM.progressThumb)DOM.progressThumb.style.left='0%';
+    audio.src=`/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+    audio.play().then(()=>{if(request===playbackRequest)syncPlaybackState();}).catch(async err=>{
+      // A superseded play or explicit pause must never restore an older source.
+      if(request!==playbackRequest||err.name==='AbortError')return;
+      if(state.phoneUrl){
+        audio.src=`${state.phoneUrl.replace(/\/+$/,'')}/api/track/${encodeURIComponent(track.id)}`;
+        try{await audio.play();}catch(e){if(request===playbackRequest)console.warn('Audio unavailable:',e);}
       }
+      if(request===playbackRequest)syncPlaybackState();
     });
-
-    updatePlayerBarUI(track, true);
-    updatePlayingRowUI();
-    if (state.currentView === 'player') renderVinylPlayerView();
+    updatePlayerBarUI(track,false);updatePlayBtnUI();updatePlayingRowUI();
+    if(state.currentView==='player')renderVinylPlayerView();
   }
 
   function togglePlay() {
     initAudioNodes();
-    if (state.currentTrackIndex === -1 && state.tracks.length > 0) {
-      playTrackIndex(0);
+    if (!audio.getAttribute('src') && state.tracks.length > 0) {
+      playTrackIndex(Math.max(0,state.currentTrackIndex));
       return;
     }
 
@@ -1526,6 +1520,7 @@
         updatePlayingRowUI();
       }).catch(err => console.warn(err));
     } else {
+      ++playbackRequest;
       audio.pause();
       state.isPlaying = false;
       updatePlayBtnUI();
@@ -1547,6 +1542,7 @@
   }
 
   function updatePlayerBarUI(track, isPlaying) {
+    window.dispatchEvent(new CustomEvent("pain:track",{detail:track}));
     if (!track) return;
     DOM.bottomTrackTitle.textContent = track.title || 'Untitled';
     DOM.bottomTrackArtist.textContent = (track.artist || 'Unknown Artist') + (track.album ? ` · ${track.album}` : '');
@@ -1557,7 +1553,7 @@
       this.src = getProceduralCoverSvg(track);
     };
 
-    const durationSec = track.duration > 1000 ? Math.floor(track.duration / 1000) : (track.duration || 0);
+    const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
     DOM.totalTime.textContent = formatTime(durationSec);
 
     updateFavoriteUI(track.favorite);
@@ -1623,43 +1619,27 @@
     saveLibraryToServer();
   }
 
-  let lastRecordTimestamp = 0;
   async function recordTrackFinished(trackId) {
-    const track = state.tracks.find(t => t.id === trackId);
-    if (!track) return;
-
-    // Prevent double-recording within 2.5s
-    const now = Date.now();
-    if (now - lastRecordTimestamp < 2500) return;
-    lastRecordTimestamp = now;
-
-    const playDuration = Math.round((audio.duration || 180) * 1000);
-    const playRecord = {
-      id: 'pc_' + now + '_' + Math.floor(Math.random() * 10000),
-      track: track.id,
-      session: 'pc_companion',
-      started: now - playDuration,
-      duration: playDuration,
-      at: now,
-      heard: playDuration,
-      media_heard: playDuration,
-      finished: 1,
-      skipped: 0,
-      timestamp: now
-    };
-
+    if(!listening||listening.id!==trackId)return;
+    const audible=listening.finish();
+    if(!audible)return;
+    const now=Date.now();
+    const playRecord={...audible,id:'pc_'+(globalThis.crypto?.randomUUID?.() || now+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',at:now,timestamp:now};
+    const track=state.tracks.find(t=>t.id===trackId);
+    if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
 
     // 1. Immediately update live DOM play count for all rows showing this track
     const newPlayCount = getTrackPlayCount(track.id);
-    document.querySelectorAll(`tr[data-track-id="${track.id}"] .col-plays`).forEach(el => {
-      el.textContent = newPlayCount;
+    document.querySelectorAll('tr[data-track-id]').forEach(row => {
+      if(row.dataset.trackId===track.id){const el=row.querySelector('.col-plays');if(el)el.textContent=newPlayCount;}
     });
 
     // 2. Relay to server
     try {
       await fetch('/api/sync-stats', {
+        keepalive:true,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1670,24 +1650,7 @@
       });
     } catch (e) {}
 
-    // 3. Direct relay to phone
-    if (state.phoneUrl) {
-      try {
-        const cleanUrl = state.phoneUrl.replace(/\/+$/, '');
-        fetch(`${cleanUrl}/api/record-play`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            track: track.id,
-            heard: playDuration,
-            started: playRecord.started,
-            duration: playDuration,
-            finished: true
-          })
-        }).catch(() => {});
-      } catch (e) {}
-    }
-
+    // The server is the single relay to the phone; a second POST counted plays twice.
     renderInsights();
   }
 
@@ -1872,12 +1835,14 @@
       const statsRes = await fetch(`${state.phoneUrl}/api/stats`);
       if (statsRes.ok) {
         const statsData = await statsRes.json();
-        state.stats = statsData;
+
         await fetch('/api/save-stats', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(statsData)
         });
+        const merged=await fetch('/api/saved-stats');
+        if(merged.ok)state.stats=await merged.json();
       }
 
       DOM.syncProgressFill.style.width = '100%';
@@ -2088,6 +2053,20 @@
       }
     }
 
+    audio.addEventListener('playing',()=>{
+      if(listening?.closed){const track=state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
+      listening?.anchor(performance.now(),audio.currentTime,!audio.muted&&audio.volume>0);
+      syncPlaybackState();
+    });
+    audio.addEventListener('pause',()=>{sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);syncPlaybackState();});
+    audio.addEventListener('waiting',()=>{sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);});
+    audio.addEventListener('seeking',()=>listening?.anchor(performance.now(),audio.currentTime,false));
+    audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
+    window.addEventListener('pagehide',()=>{sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId);});
+    audio.addEventListener('error',()=>{state.isPlaying=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
+    audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
+    audio.addEventListener('ratechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused));
+
     // Audio Metadata & Buffering
     audio.addEventListener('loadedmetadata', () => {
       const dur = getCurrentTrackDuration();
@@ -2106,20 +2085,12 @@
     });
 
     // Audio Timeline & Prefetching
-    let prevPlayheadTime = 0;
     audio.addEventListener('timeupdate', () => {
+      sampleListening();
       if (isScrubbing) return;
 
       const dur = getCurrentTrackDuration();
       const cur = audio.currentTime;
-
-      // Fallback: detect wrap-around repeat if track jumped from near end back to 0
-      if (state.loopMode === 'one' && dur > 5 && prevPlayheadTime > (dur - 2) && cur < 1.5) {
-        if (state.currentTrackId) {
-          recordTrackFinished(state.currentTrackId);
-        }
-      }
-      prevPlayheadTime = cur;
 
       DOM.currentTime.textContent = formatTime(cur);
       if (dur > 0) {
@@ -2136,6 +2107,7 @@
     });
 
     audio.addEventListener('ended', () => {
+      sampleListening(true);
       if (state.currentTrackId) {
         recordTrackFinished(state.currentTrackId);
       }

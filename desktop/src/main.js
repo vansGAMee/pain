@@ -23,12 +23,11 @@ function createWindow() {
     }
   });
 
-  // Start internal server
-  require('./server.js');
-
-  setTimeout(() => {
-    mainWindow.loadURL('http://localhost:3000');
-  }, 300);
+  // Wait for the actual listening port, including when 3000 is already occupied.
+  process.env.OPEN_BROWSER='false';
+  const server=require('./server.js');
+  const load=()=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.loadURL(`http://localhost:${server.address().port}`);};
+  if(server.listening)load();else server.once('listening',load);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
