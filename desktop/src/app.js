@@ -52,11 +52,30 @@
     }
   } catch (e) {}
 
+  let initialBpmCache = {};
+  try {
+    const rawBpm = localStorage.getItem('pain_bpm_cache');
+    if (rawBpm) initialBpmCache = JSON.parse(rawBpm);
+  } catch (e) {}
+
+  try {
+    const savedShuffle = localStorage.getItem('pain_shuffle_mode');
+    if (savedShuffle) {
+      state.shuffleMode = savedShuffle;
+      state.shuffle = savedShuffle !== 'off';
+    }
+    const savedLoop = localStorage.getItem('pain_loop_mode');
+    if (savedLoop) {
+      state.loopMode = savedLoop;
+    }
+  } catch (e) {}
+
   // --- AUDIO & WEB AUDIO NODES ---
   const audio = document.getElementById('audioEngine');
   const QueueClass = (typeof QueueEngine !== 'undefined' && (QueueEngine.QueueEngine || QueueEngine)) || null;
   const queue = QueueClass ? new QueueClass({
     stats: state.stats,
+    bpmCache: initialBpmCache,
     shuffleMode: state.shuffleMode || 'off',
     loopMode: state.loopMode || 'all',
     onQueueChange: (info) => {
@@ -338,6 +357,27 @@
       DOM.bottomRepeatBtn.classList.add('active');
       DOM.bottomRepeatBtn.title = 'Repeat All';
       if (DOM.bottomLoopBadge) DOM.bottomLoopBadge.style.display = 'none';
+    } else if (state.loopMode === 'one') {
+      DOM.bottomRepeatBtn.classList.add('active');
+      DOM.bottomRepeatBtn.title = 'Repeat One';
+      if (DOM.bottomLoopBadge) DOM.bottomLoopBadge.style.display = 'block';
+    } else {
+      DOM.bottomRepeatBtn.classList.remove('active');
+      if (DOM.bottomLoopBadge) DOM.bottomLoopBadge.style.display = 'none';
+    }
+
+    if (DOM.bottomShuffleBtn) {
+      const mode = queue ? queue.getShuffleMode() : state.shuffleMode;
+      DOM.bottomShuffleBtn.classList.toggle('active', mode !== 'off');
+      DOM.bottomShuffleBtn.classList.toggle('smart-mode', mode === 'smart');
+      if (DOM.bottomShuffleBadge) {
+        let badge = '';
+        if (mode === 'smart') badge = 'BPM';
+        else if (mode === 'random') badge = '🔀';
+        DOM.bottomShuffleBadge.textContent = badge;
+        DOM.bottomShuffleBadge.classList.toggle('active', !!badge);
+        DOM.bottomShuffleBadge.classList.toggle('smart-badge', mode === 'smart');
+      }
     }
 
     await loadLocalData();
@@ -1506,6 +1546,50 @@
       });
     }
     if (state.currentView === 'player') renderVinylPlayerView();
+    analyzeTrackBpmInBackground(track);
+  }
+
+  async function analyzeTrackBpmInBackground(track) {
+    if (!track || !track.id || !queue) return;
+    if (queue.bpmCache && queue.bpmCache[track.id]) return;
+    if (track._bpmAnalyzing) return;
+    track._bpmAnalyzing = true;
+
+    try {
+      const srcUrl = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+      const resp = await fetch(srcUrl, { headers: { Range: 'bytes=0-320000' } });
+      if (!resp.ok && resp.status !== 206) return;
+      const arrayBuffer = await resp.arrayBuffer();
+
+      const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!OfflineCtx) return;
+      const offlineCtx = new OfflineCtx(1, 44100 * 12, 44100);
+      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+      const pcmData = audioBuffer.getChannelData(0);
+      const detectFn = QueueEngine?.detectBpmFromPcm || (QueueClass && QueueClass.detectBpmFromPcm);
+      const detected = detectFn ? detectFn(pcmData, audioBuffer.sampleRate) : null;
+      if (detected && detected >= 60 && detected <= 200) {
+        queue.bpmCache[track.id] = detected;
+        try {
+          localStorage.setItem('pain_bpm_cache', JSON.stringify(queue.bpmCache));
+        } catch (e) {}
+        if (state.currentTrackId === track.id) {
+          updateQueueContextUI({
+            context: queue.getContext(),
+            track: track,
+            index: queue.getCurrentIndex(),
+            total: queue.getTracks().length,
+            shuffleMode: queue.getShuffleMode(),
+            loopMode: queue.getLoopMode()
+          });
+          if (state.currentView === 'player') renderVinylPlayerView();
+        }
+      }
+    } catch (e) {
+      // Non-fatal, keeps deterministic acoustic estimate
+    } finally {
+      track._bpmAnalyzing = false;
+    }
   }
 
   function playTrackInContext(track, trackList, contextInfo) {
@@ -1552,9 +1636,20 @@
       ctxName = info.context.type === 'favorites' ? (isRu ? 'Избранное' : 'Favorites') : (isRu ? 'Фонотека' : 'Library');
     }
     const pos = info.index >= 0 ? info.index + 1 : 1;
+    const isSmart = info.shuffleMode === 'smart';
+    DOM.bottomTrackContext.classList.toggle('smart-active', isSmart);
+
     let badge = '';
-    if (info.shuffleMode === 'smart') {
-      badge = ' · ⚡ Smart BPM';
+    if (isSmart) {
+      const lastTrans = queue && typeof queue.getLastTransition === 'function' ? queue.getLastTransition() : null;
+      let reasonText = '';
+      if (lastTrans && Array.isArray(lastTrans.reasons) && lastTrans.reasons.length > 0) {
+        reasonText = ` (${lastTrans.reasons[0]})`;
+      }
+      const curTrack = info.track || (queue && queue.getCurrentTrack());
+      const curBpm = (queue && curTrack) ? queue.getTrackBpm(curTrack) : null;
+      const bpmPart = curBpm ? ` · ${curBpm} BPM` : '';
+      badge = ` · ⚡ Smart DJ${bpmPart}${reasonText}`;
     } else if (info.shuffleMode === 'random') {
       badge = isRu ? ' · 🔀 Случайно' : ' · 🔀 Shuffle';
     }
@@ -1848,6 +1943,9 @@
       DOM.bottomRepeatBtn.title = 'Repeat Off';
       showToast(state.lang === 'ru' ? 'Повтор выключен' : 'Repeat Off', '➡️');
     }
+    try {
+      localStorage.setItem('pain_loop_mode', state.loopMode);
+    } catch (e) {}
   }
 
   // --- THEME & LANGUAGE ---
@@ -2132,6 +2230,9 @@
         const desc = queue.cycleShuffleMode();
         state.shuffle = desc.mode !== 'off';
         state.shuffleMode = desc.mode;
+        try {
+          localStorage.setItem('pain_shuffle_mode', desc.mode);
+        } catch (e) {}
 
         DOM.bottomShuffleBtn.classList.toggle('active', desc.mode !== 'off');
         DOM.bottomShuffleBtn.classList.toggle('smart-mode', desc.mode === 'smart');

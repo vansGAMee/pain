@@ -138,51 +138,193 @@
 
   /**
    * Calculates harmonic tempo similarity between two BPM values.
-   * Checks direct match, double-time, and half-time.
+   * Checks direct match, double-time, half-time, and 3:2 / 2:3 polyrhythms.
    */
   function harmonicBpmDistance(bpmA, bpmB) {
     if (!bpmA || !bpmB) return 50;
     const d1 = Math.abs(bpmA - bpmB);
     const d2 = Math.abs(bpmA * 2 - bpmB);
     const d3 = Math.abs(bpmA - bpmB * 2);
-    return Math.min(d1, d2, d3);
+    const d4 = Math.abs(bpmA * 1.5 - bpmB);
+    const d5 = Math.abs(bpmA - bpmB * 1.5);
+    return Math.min(d1, d2, d3, d4, d5);
+  }
+
+  const VIBE_MOODS = {
+    CHILL: 'chill',
+    ENERGETIC: 'energy',
+    LIVE: 'live',
+    NEUTRAL: 'neutral'
+  };
+
+  /**
+   * Detects track mood / atmosphere based on tags, title, and metadata.
+   */
+  function detectTrackVibe(track) {
+    if (!track) return VIBE_MOODS.NEUTRAL;
+    const str = `${track.title || ''} ${track.album || ''} ${track.artist || ''}`.toLowerCase();
+    if (/\b(acoustic|unplugged|piano|lo-?fi|chill|ambient|slow|slowed|sleep|quiet|calm|ballad)\b/i.test(str)) {
+      return VIBE_MOODS.CHILL;
+    }
+    if (/\b(phonk|remix|club|speed|fast|hard|bass|drop|dance|rave|drill|electro|house|techno|trap)\b/i.test(str)) {
+      return VIBE_MOODS.ENERGETIC;
+    }
+    if (/\b(live|concert|tour|acoustic version)\b/i.test(str)) {
+      return VIBE_MOODS.LIVE;
+    }
+    return VIBE_MOODS.NEUTRAL;
   }
 
   /**
-   * Computes a match score for transition: currentTrack -> candidateTrack.
+   * Circadian rhythm profiling: adjusts flow based on time of day.
    */
-  function scoreSmartTransition(currentTrack, candidate, stats, bpmStore) {
+  function getCircadianVibe(hour = (new Date()).getHours()) {
+    if (hour >= 23 || hour < 6) {
+      return { phase: 'night', preferredBpmRange: [70, 110], labelRu: 'Ночной чилл', labelEn: 'Late Night Chill' };
+    }
+    if (hour >= 6 && hour < 11) {
+      return { phase: 'morning', preferredBpmRange: [95, 128], labelRu: 'Утренний подъём', labelEn: 'Morning Flow' };
+    }
+    if (hour >= 11 && hour < 18) {
+      return { phase: 'day', preferredBpmRange: [100, 135], labelRu: 'Дневной фокус', labelEn: 'Daytime Groove' };
+    }
+    return { phase: 'evening', preferredBpmRange: [110, 150], labelRu: 'Вечерний вайб', labelEn: 'Evening Anthems' };
+  }
+
+  /**
+   * Multi-dimensional Smart DJ transition scoring: currentTrack -> candidateTrack.
+   * Considers harmonic BPM, energy progression, multi-track artist spacing, vibe match,
+   * circadian context, listen completion rates, and skip penalties.
+   */
+  function scoreSmartTransition(currentTrack, candidate, stats, bpmStore, contextOptions = {}) {
     const curBpm = (bpmStore && bpmStore[currentTrack.id]) || currentTrack.bpm || estimateBpm(currentTrack);
     const candBpm = (bpmStore && bpmStore[candidate.id]) || candidate.bpm || estimateBpm(candidate);
 
     const dist = harmonicBpmDistance(curBpm, candBpm);
-    // Tempo score: 0 to 100
+    const reasons = [];
+
+    // 1. Base Tempo Score (0 to 100)
     let score = Math.max(0, 100 - dist * 3.5);
-
-    // Artist alternation: strong preference to not repeat the exact same artist immediately
-    if (candidate.artist && currentTrack.artist && candidate.artist.toLowerCase() !== currentTrack.artist.toLowerCase()) {
-      score += 40;
+    if (dist <= 3) {
+      reasons.push(candBpm === curBpm ? `Темп ${candBpm} BPM` : `Близкий темп (${candBpm} BPM)`);
+    } else if (dist <= 8) {
+      reasons.push(`Гармоничный темп (${candBpm} BPM)`);
     }
 
-    // Favorite bonus
-    if (candidate.favorite) {
+    // Energy progression: slight lift keeps flow dynamic and engaging
+    const bpmDiff = candBpm - curBpm;
+    if (bpmDiff >= 1 && bpmDiff <= 6) {
       score += 15;
+      reasons.push(`Подъём энергии (+${bpmDiff} BPM)`);
+    } else if (dist === 0 && Math.abs(curBpm - candBpm) > 20) {
+      score += 20;
+      reasons.push(`Гармонический скачок (${candBpm} BPM)`);
+    } else if (dist > 25) {
+      score -= 30;
     }
 
-    // Engagement bonus from stats
+    // 2. Multi-track Artist Spacing
+    const curArtist = (currentTrack.artist || '').trim().toLowerCase();
+    const candArtist = (candidate.artist || '').trim().toLowerCase();
+    const recentArtists = contextOptions.recentArtists || [];
+
+    if (candArtist && curArtist) {
+      if (candArtist === curArtist) {
+        score -= 45; // Do not repeat same artist immediately
+      } else {
+        const recentIdx = recentArtists.lastIndexOf(candArtist);
+        if (recentIdx !== -1) {
+          const songsAgo = recentArtists.length - recentIdx;
+          if (songsAgo <= 2) {
+            score -= 25;
+          } else if (songsAgo <= 4) {
+            score -= 10;
+          } else {
+            score += 25;
+            reasons.push(`Смена артиста (${candidate.artist})`);
+          }
+        } else {
+          score += 40;
+          reasons.push(`Смена артиста (${candidate.artist})`);
+        }
+      }
+    }
+
+    // 3. Album Diversity
+    if (candidate.album && currentTrack.album && candidate.album.toLowerCase() === currentTrack.album.toLowerCase()) {
+      if (candArtist === curArtist) {
+        score -= 15;
+      }
+    }
+
+    // 4. Vibe & Mood Affinity
+    const curVibe = detectTrackVibe(currentTrack);
+    const candVibe = detectTrackVibe(candidate);
+    if (curVibe !== VIBE_MOODS.NEUTRAL && candVibe !== VIBE_MOODS.NEUTRAL) {
+      if (curVibe === candVibe) {
+        score += 18;
+        reasons.push(`Вайб: ${candVibe}`);
+      }
+    }
+
+    // 5. Circadian / Time-of-Day Rhythm
+    const hour = typeof contextOptions.hour === 'number' ? contextOptions.hour : (new Date()).getHours();
+    const circadian = getCircadianVibe(hour);
+    if (circadian.phase === 'night') {
+      if (candBpm >= 70 && candBpm <= 110) {
+        score += 15;
+        reasons.push('Ночной чилл');
+      } else if (candBpm > 135 && !candidate.favorite) {
+        score -= 20;
+      }
+    } else if (circadian.phase === 'evening') {
+      if (candidate.favorite || candBpm >= 115) {
+        score += 12;
+      }
+    }
+
+    // 6. Favorite Bonus
+    if (candidate.favorite) {
+      score += 20;
+      reasons.push('Любимый трек');
+    }
+
+    // 7. Listening Stats & Skip Intelligence
     if (stats && Array.isArray(stats.plays)) {
       const plays = stats.plays.filter(p => p.track === candidate.id);
       if (plays.length > 0) {
         const fullPlays = plays.filter(p => p.completed || p.coverage >= 0.75).length;
         const completionRate = fullPlays / plays.length;
-        score += completionRate * 20;
+        score += completionRate * 25;
+        if (completionRate >= 0.8) {
+          reasons.push('Высокая дослушиваемость');
+        }
+
+        // Replay bonus
+        if (plays.length >= 3) {
+          score += Math.min(20, plays.length * 4);
+          reasons.push('Часто слушают');
+        }
+
+        // Early skip penalty
+        const earlySkips = plays.filter(p => !p.completed && (p.coverage || 0) < 0.25).length;
+        if (earlySkips > 0) {
+          const skipRatio = earlySkips / plays.length;
+          score -= skipRatio * 35;
+        }
       } else {
         // Discovery bonus for tracks never played
-        score += 10;
+        score += 12;
+        reasons.push('Свежая находка');
       }
     }
 
-    return { score, bpm: candBpm, dist };
+    return {
+      score: Math.round(score * 10) / 10,
+      bpm: candBpm,
+      dist,
+      reasons: reasons.slice(0, 3)
+    };
   }
 
   /**
@@ -200,6 +342,8 @@
       this.shuffleMode = options.shuffleMode || 'off'; // 'off' | 'random' | 'smart'
       this.loopMode = options.loopMode || 'all'; // 'off' | 'all' | 'one'
       this.playedHistory = [];
+      this.recentArtists = [];
+      this.lastTransition = null;
       this.unplayedIndices = new Set();
       this.bpmCache = options.bpmCache || {};
       this.stats = options.stats || null;
@@ -223,6 +367,10 @@
     getTrackBpm(track) {
       if (!track) return 120;
       return this.bpmCache[track.id] || track.bpm || estimateBpm(track);
+    }
+
+    getLastTransition() {
+      return this.lastTransition;
     }
 
     /**
@@ -263,6 +411,13 @@
       this.playedHistory.push(index);
       if (this.playedHistory.length > 500) {
         this.playedHistory.shift();
+      }
+      const trk = this.tracks[index];
+      if (trk && trk.artist) {
+        this.recentArtists.push(trk.artist.trim().toLowerCase());
+        if (this.recentArtists.length > 30) {
+          this.recentArtists.shift();
+        }
       }
     }
 
@@ -391,20 +546,41 @@
         } else if (!current) {
           nextIndex = candidates[0];
         } else {
-          // Score all candidates
+          const contextOpts = {
+            recentArtists: (this.recentArtists || []).slice(-10),
+            hour: (new Date()).getHours()
+          };
+
+          // Score all candidates with multi-factor engine
           const scored = candidates.map(idx => {
             const cand = this.tracks[idx];
-            const { score, bpm, dist } = scoreSmartTransition(current, cand, this.stats, this.bpmCache);
-            return { index: idx, score, bpm, dist };
+            const result = scoreSmartTransition(current, cand, this.stats, this.bpmCache, contextOpts);
+            return { index: idx, ...result };
           });
 
           // Sort descending by score
           scored.sort((a, b) => b.score - a.score);
 
-          // To avoid absolute determinism, randomly choose among top 3 highest scores
+          // Score-weighted choice among top candidates for natural DJ feel
           const topSlice = scored.slice(0, Math.min(3, scored.length));
-          const chosen = topSlice[Math.floor(Math.random() * topSlice.length)];
+          const weights = [0.65, 0.25, 0.10].slice(0, topSlice.length);
+          const r = Math.random();
+          let cum = 0;
+          let chosen = topSlice[0];
+          for (let i = 0; i < topSlice.length; i++) {
+            cum += weights[i];
+            if (r <= cum) {
+              chosen = topSlice[i];
+              break;
+            }
+          }
           nextIndex = chosen.index;
+          this.lastTransition = {
+            fromTrack: current,
+            toTrack: this.tracks[nextIndex],
+            reasons: chosen.reasons || [],
+            bpm: chosen.bpm
+          };
         }
       } else {
         // Sequential (off)
@@ -451,10 +627,14 @@
       if (this.shuffleMode === 'smart') {
         const current = this.getCurrentTrack();
         if (!current) return this.tracks[candidates[0]];
+        const contextOpts = {
+          recentArtists: (this.recentArtists || []).slice(-10),
+          hour: (new Date()).getHours()
+        };
         let best = candidates[0];
         let bestScore = -Infinity;
         for (const idx of candidates) {
-          const { score } = scoreSmartTransition(current, this.tracks[idx], this.stats, this.bpmCache);
+          const { score } = scoreSmartTransition(current, this.tracks[idx], this.stats, this.bpmCache, contextOpts);
           if (score > bestScore) {
             bestScore = score;
             best = idx;
@@ -530,6 +710,8 @@
   QueueEngine.detectBpmFromPcm = detectBpmFromPcm;
   QueueEngine.harmonicBpmDistance = harmonicBpmDistance;
   QueueEngine.scoreSmartTransition = scoreSmartTransition;
+  QueueEngine.detectTrackVibe = detectTrackVibe;
+  QueueEngine.getCircadianVibe = getCircadianVibe;
 
   return QueueEngine;
 });

@@ -5,7 +5,9 @@ const {
   estimateBpm,
   detectBpmFromPcm,
   harmonicBpmDistance,
-  scoreSmartTransition
+  scoreSmartTransition,
+  detectTrackVibe,
+  getCircadianVibe
 } = require('../src/queue-engine.js');
 
 test('context isolation: favorites queue plays and loops only favorites', () => {
@@ -192,5 +194,84 @@ test('context switching: transitioning from library to favorites and playlists s
   assert.equal(plNext.id, '1');
   const plLoop = engine.next();
   assert.equal(plLoop.id, '4');
+});
+
+test('vibe detection identifies chill, energy, and live tags', () => {
+  assert.equal(detectTrackVibe({ title: 'Morning Coffee Lofi Chill', artist: 'Producer' }), 'chill');
+  assert.equal(detectTrackVibe({ title: 'Tokyo Drift Workout Phonk', artist: 'DJ' }), 'energy');
+  assert.equal(detectTrackVibe({ title: 'Hotel California (Live in Tokyo 1994)', artist: 'Eagles' }), 'live');
+  assert.equal(detectTrackVibe({ title: 'Simple Song', artist: 'Artist' }), 'neutral');
+});
+
+test('circadian rhythm adapts preferred tempo ranges across 24h cycle', () => {
+  const night = getCircadianVibe(2);
+  assert.equal(night.phase, 'night');
+  assert.deepEqual(night.preferredBpmRange, [70, 110]);
+
+  const morning = getCircadianVibe(8);
+  assert.equal(morning.phase, 'morning');
+
+  const day = getCircadianVibe(14);
+  assert.equal(day.phase, 'day');
+
+  const evening = getCircadianVibe(20);
+  assert.equal(evening.phase, 'evening');
+});
+
+test('harmonic tempo distance recognizes 3:2 and 2:3 polyrhythms', () => {
+  // 80 * 1.5 = 120 -> perfect polyrhythm
+  assert.equal(harmonicBpmDistance(80, 120), 0);
+  assert.equal(harmonicBpmDistance(120, 80), 0);
+  // 70 * 2 = 140 -> octave harmonic
+  assert.equal(harmonicBpmDistance(70, 140), 0);
+});
+
+test('smart DJ transition scoring handles multi-track artist spacing, skip penalty, and reasons', () => {
+  const cur = { id: 't-cur', title: 'Cur Track', artist: 'The Beatles', bpm: 120 };
+  const candSame = { id: 't-same', title: 'Hey Jude', artist: 'The Beatles', bpm: 120 };
+  const candFresh = { id: 't-fresh', title: 'Bohemian Rhapsody', artist: 'Queen', bpm: 122 };
+
+  const sSame = scoreSmartTransition(cur, candSame, null, {}, { recentArtists: ['the beatles'] });
+  const sFresh = scoreSmartTransition(cur, candFresh, null, {}, { recentArtists: ['the beatles'] });
+
+  assert.ok(sFresh.score > sSame.score, 'Fresh artist should score significantly higher than repeating artist');
+  assert.ok(Array.isArray(sFresh.reasons), 'Reasons array must be present');
+  assert.ok(sFresh.reasons.length > 0, 'Should explain why track was picked');
+
+  // Stats testing: early skip vs high completion
+  const badCandidate = { id: 't-bad', title: 'Skipped Track', artist: 'Unknown', bpm: 120 };
+  const goodCandidate = { id: 't-good', title: 'Loved Track', artist: 'Unknown', bpm: 120 };
+  const stats = {
+    plays: [
+      { track: 't-bad', completed: false, coverage: 0.1 },
+      { track: 't-bad', completed: false, coverage: 0.15 },
+      { track: 't-good', completed: true, coverage: 1.0 },
+      { track: 't-good', completed: true, coverage: 0.95 },
+      { track: 't-good', completed: true, coverage: 0.99 }
+    ]
+  };
+
+  const sBad = scoreSmartTransition(cur, badCandidate, stats, {});
+  const sGood = scoreSmartTransition(cur, goodCandidate, stats, {});
+  assert.ok(sGood.score > sBad.score + 30, 'Completed track must be prioritized over skipped track');
+});
+
+test('smart shuffle records lastTransition with explainable DJ rationale and track references', () => {
+  const engine = new QueueEngine({ shuffleMode: 'smart', loopMode: 'all' });
+  const tracks = [
+    { id: '1', title: 'Song Alpha', artist: 'Artist One', bpm: 120 },
+    { id: '2', title: 'Song Beta', artist: 'Artist Two', bpm: 122, favorite: true },
+    { id: '3', title: 'Song Gamma', artist: 'Artist Three', bpm: 121 }
+  ];
+  engine.setContext('library', tracks, 0, 'Library');
+
+  const nextTrack = engine.next();
+  assert.ok(nextTrack);
+  const lastTrans = engine.getLastTransition();
+  assert.ok(lastTrans, 'lastTransition must be populated in smart shuffle mode');
+  assert.equal(lastTrans.fromTrack.id, '1');
+  assert.equal(lastTrans.toTrack.id, nextTrack.id);
+  assert.ok(Array.isArray(lastTrans.reasons));
+  assert.ok(lastTrans.reasons.length > 0);
 });
 

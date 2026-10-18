@@ -1692,13 +1692,33 @@ body {
 }
 
 .shuffle-badge.smart-badge {
-  background: #d97706;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
   color: #ffffff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.45);
 }
 
 .ctrl-btn-subtle.smart-mode {
-  color: #d97706;
-  background: var(--card-relief);
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.12);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.ctrl-btn-subtle.smart-mode:hover {
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.22);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+}
+
+.bottom-track-context.smart-active {
+  color: #9333ea;
+  opacity: 1;
+  font-weight: 600;
+}
+
+[data-theme="oled"] .bottom-track-context.smart-active,
+[data-theme="dark"] .bottom-track-context.smart-active {
+  color: #c084fc;
 }
 
 .bottom-play-btn {
