@@ -788,6 +788,8 @@
       list = list.filter(t => !!t.favorite);
     } else if (state.categoryFilter === 'albums') {
       list = list.filter(t => !!t.album);
+    } else if (state.categoryFilter === 'cached') {
+      list = list.filter(t => state.cachedTracks && state.cachedTracks.has(t.id.replace(/[/\\?%*:|"<>]/g, '_')));
     }
 
     // 3. Sorting
@@ -2623,10 +2625,17 @@
 
     for (let i = 0; i < total; i++) {
       const track = state.tracks[i];
-      DOM.progressTaskTitle.textContent = `${state.lang === 'ru' ? 'Кэширование' : 'Caching'}: ${track.title} (${i+1}/${total})`;
+      const safeId = track.id.replace(/[/\\?%*:|"<>]/g, '_');
       const pct = Math.round(((i + 1) / total) * 100);
       DOM.syncProgressFill.style.width = `${pct}%`;
       DOM.progressPercent.textContent = `${pct}%`;
+
+      if (state.cachedTracks && state.cachedTracks.has(safeId)) {
+        DOM.progressTaskTitle.textContent = `${state.lang === 'ru' ? 'В кэше' : 'Cached'}: ${track.title} (${i+1}/${total})`;
+        continue;
+      }
+
+      DOM.progressTaskTitle.textContent = `${state.lang === 'ru' ? 'Кэширование' : 'Caching'}: ${track.title} (${i+1}/${total})`;
 
       try {
         const streamUrl = `${state.phoneUrl}/api/track/${encodeURIComponent(track.id)}`;
@@ -2635,14 +2644,23 @@
           const blob = await res.blob();
           const ext = track.path ? track.path.split('.').pop() : 'mp3';
           const filename = `${track.artist} - ${track.title}.${ext}`;
-          await fetch('/api/save-audio', {
+          const saveRes = await fetch('/api/save-audio', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/octet-stream',
+              'X-Track-Id': encodeURIComponent(track.id),
               'X-Filename': encodeURIComponent(filename)
             },
             body: blob
           });
+          if (saveRes.ok) {
+            state.cachedTracks.add(safeId);
+            if (DOM.cacheStatsDesc) {
+              DOM.cacheStatsDesc.textContent = state.lang === 'ru'
+                ? `${state.cachedTracks.size} файлов сохранено на диске`
+                : `${state.cachedTracks.size} audio files cached on disk`;
+            }
+          }
         }
       } catch (e) {}
     }

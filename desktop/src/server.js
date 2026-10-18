@@ -307,25 +307,78 @@ function getMobilePhoneBaseUrl() {
 }
 
 let trackMimeCache = new Map();
+let libraryFileMtime = 0;
+let libraryTracksCache = [];
+
+function getLibraryTracks() {
+  try {
+    const libFile = path.join(DATA_DIR, 'library.json');
+    if (!fs.existsSync(libFile)) return [];
+    const stat = fs.statSync(libFile);
+    if (stat.mtimeMs !== libraryFileMtime) {
+      libraryFileMtime = stat.mtimeMs;
+      const parsed = JSON.parse(fs.readFileSync(libFile, 'utf8'));
+      libraryTracksCache = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+    }
+    return libraryTracksCache;
+  } catch (e) {
+    return libraryTracksCache;
+  }
+}
+
+function getResolvedAudioFilePath(trackId) {
+  const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+  const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
+
+  try {
+    if (fs.existsSync(cachedFile)) {
+      const sz = fs.statSync(cachedFile).size;
+      if (sz >= 4096) {
+        return cachedFile;
+      }
+      try { fs.unlinkSync(cachedFile); } catch (_) {}
+    }
+  } catch (_) {}
+
+  try {
+    const tracks = getLibraryTracks();
+    const track = tracks.find(t => String(t.id) === String(trackId));
+    if (track) {
+      const ext = track.path ? track.path.split('.').pop() : 'mp3';
+      const rawName = `${track.artist} - ${track.title}.${ext}`;
+      const safeFilename = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
+      const dlPath = path.join(DOWNLOADS_DIR, safeFilename);
+      if (fs.existsSync(dlPath) && fs.statSync(dlPath).size >= 4096) {
+        try {
+          if (!fs.existsSync(cachedFile)) {
+            try {
+              fs.linkSync(dlPath, cachedFile);
+            } catch (_) {
+              fs.copyFileSync(dlPath, cachedFile);
+            }
+          }
+        } catch (_) {}
+        return dlPath;
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 function getTrackMimeType(trackId) {
   if (trackMimeCache.has(trackId)) {
     return trackMimeCache.get(trackId);
   }
   try {
-    const libFile = path.join(DATA_DIR, 'library.json');
-    if (fs.existsSync(libFile)) {
-      const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
-      if (lib.tracks && Array.isArray(lib.tracks)) {
-        for (const t of lib.tracks) {
-          if (t.id && t.mime) {
-            trackMimeCache.set(t.id, t.mime);
-          }
-        }
-        if (trackMimeCache.has(trackId)) {
-          return trackMimeCache.get(trackId);
-        }
+    const tracks = getLibraryTracks();
+    for (const t of tracks) {
+      if (t.id && t.mime) {
+        trackMimeCache.set(t.id, t.mime);
       }
+    }
+    if (trackMimeCache.has(trackId)) {
+      return trackMimeCache.get(trackId);
     }
   } catch (e) {}
   return 'audio/mpeg';
@@ -462,17 +515,49 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/save-audio' && req.method === 'POST') {
+    const rawTrackId = req.headers['x-track-id'] ? decodeURIComponent(req.headers['x-track-id']) : null;
     const rawName = req.headers['x-filename'] ? decodeURIComponent(req.headers['x-filename']) : `track-${Date.now()}.mp3`;
-    // Clean filename for Windows (illegal chars: \ / : * ? " < > |)
     const safeFilename = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
-    const dest = path.join(DOWNLOADS_DIR, safeFilename);
-    const fileStream = fs.createWriteStream(dest);
+    
+    let dest;
+    if (rawTrackId) {
+      const safeId = rawTrackId.replace(/[/\\?%*:|"<>]/g, '_');
+      dest = path.join(CACHE_DIR, `${safeId}.mp3`);
+    } else {
+      const tracks = getLibraryTracks();
+      const matched = tracks.find(t => {
+        const ext = t.path ? t.path.split('.').pop() : 'mp3';
+        const name = `${t.artist} - ${t.title}.${ext}`.replace(/[/\\?%*:|"<>]/g, '_').trim();
+        return name === safeFilename;
+      });
+      if (matched) {
+        const safeId = matched.id.replace(/[/\\?%*:|"<>]/g, '_');
+        dest = path.join(CACHE_DIR, `${safeId}.mp3`);
+      } else {
+        dest = path.join(DOWNLOADS_DIR, safeFilename);
+      }
+    }
+    const tmpDest = `${dest}.${require('crypto').randomUUID()}.tmp`;
+    const fileStream = fs.createWriteStream(tmpDest);
     req.pipe(fileStream);
     fileStream.on('finish', () => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', filename: safeFilename }));
+      try {
+        const sz = fs.existsSync(tmpDest) ? fs.statSync(tmpDest).size : 0;
+        if (sz >= 4096) {
+          fs.renameSync(tmpDest, dest);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', filename: path.basename(dest), size: sz }));
+          return;
+        }
+        try { fs.unlinkSync(tmpDest); } catch (_) {}
+      } catch (e) {
+        try { fs.unlinkSync(tmpDest); } catch (_) {}
+      }
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'File too small or corrupted' }));
     });
     fileStream.on('error', (err) => {
+      try { fs.unlinkSync(tmpDest); } catch (_) {}
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     });
@@ -484,12 +569,12 @@ const server = http.createServer((req, res) => {
     const trackId = decodeURIComponent(pathname.substring('/api/cached-track/'.length));
     const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
     const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
-    const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
     const mime = getTrackMimeType(trackId);
 
-    // If fully cached on disk, stream with HTTP 206 Range support
-    if (fs.existsSync(cachedFile) && fs.statSync(cachedFile).size > 1000) {
-      streamFileWithRange(cachedFile, req, res, mime);
+    // If cached on disk in CACHE_DIR or DOWNLOADS_DIR (>64KB), stream with HTTP 206 Range support
+    const localAudioPath = getResolvedAudioFilePath(trackId);
+    if (localAudioPath) {
+      streamFileWithRange(localAudioPath, req, res, mime);
       return;
     }
 
@@ -517,7 +602,7 @@ const server = http.createServer((req, res) => {
         try{
           const size=fs.statSync(temp).size;
           const expected=Number(phoneRes.headers['content-length'])||0;
-          if(phoneRes.complete&&size>0&&(!expected||expected===size))fs.renameSync(temp,cachedFile);else discard();
+          if(phoneRes.complete&&size>=4096&&(!expected||expected===size))fs.renameSync(temp,cachedFile);else discard();
         }catch(_){discard();}
       });
       phoneRes.pipe(output);
@@ -533,7 +618,8 @@ const server = http.createServer((req, res) => {
     const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
     const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
     const tmpFile = path.join(CACHE_DIR, `${safeId}.${require("crypto").randomUUID()}.tmp`);
-    if (fs.existsSync(cachedFile) && fs.statSync(cachedFile).size > 1000) {
+    const localAudioPath = getResolvedAudioFilePath(trackId);
+    if (localAudioPath) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'already_cached' }));
       return;
@@ -548,7 +634,7 @@ const server = http.createServer((req, res) => {
         phoneRes.pipe(fileStream);
         fileStream.on('finish', () => {
           try {
-            if (phoneRes.complete && fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 1000 && (!phoneRes.headers['content-length'] || fs.statSync(tmpFile).size === Number(phoneRes.headers['content-length']))) {
+            if (phoneRes.complete && fs.existsSync(tmpFile) && fs.statSync(tmpFile).size >= 4096 && (!phoneRes.headers['content-length'] || fs.statSync(tmpFile).size === Number(phoneRes.headers['content-length']))) {
               fs.renameSync(tmpFile, cachedFile);
             }
           } catch (e) {}
@@ -570,10 +656,39 @@ const server = http.createServer((req, res) => {
   // List cached tracks on disk
   if (pathname === '/api/cached-tracks' && req.method === 'GET') {
     try {
-      const files = fs.readdirSync(CACHE_DIR);
-      const cached = files.filter(f => f.endsWith('.mp3')).map(f => f.replace(/\.mp3$/, ''));
+      const cachedSet = new Set();
+      if (fs.existsSync(CACHE_DIR)) {
+        const files = fs.readdirSync(CACHE_DIR);
+        for (const f of files) {
+          if (f.endsWith('.mp3')) {
+            try {
+              if (fs.statSync(path.join(CACHE_DIR, f)).size >= 4096) {
+                cachedSet.add(f.replace(/\.mp3$/, ''));
+              }
+            } catch (_) {}
+          }
+        }
+      }
+      if (fs.existsSync(DOWNLOADS_DIR)) {
+        const dlFiles = new Set(fs.readdirSync(DOWNLOADS_DIR));
+        const tracks = getLibraryTracks();
+        for (const t of tracks) {
+          const safeId = t.id.replace(/[/\\?%*:|"<>]/g, '_');
+          if (cachedSet.has(safeId)) continue;
+          const ext = t.path ? t.path.split('.').pop() : 'mp3';
+          const rawName = `${t.artist} - ${t.title}.${ext}`;
+          const safeFilename = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
+          if (dlFiles.has(safeFilename)) {
+            try {
+              if (fs.statSync(path.join(DOWNLOADS_DIR, safeFilename)).size >= 4096) {
+                cachedSet.add(safeId);
+              }
+            } catch (_) {}
+          }
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ cached }));
+      res.end(JSON.stringify({ cached: Array.from(cachedSet) }));
     } catch (e) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ cached: [] }));
@@ -591,14 +706,17 @@ const server = http.createServer((req, res) => {
         const { trackId, clearAll } = parsed;
 
         if (clearAll) {
-          const files = fs.readdirSync(CACHE_DIR);
           let count = 0;
-          for (const f of files) {
-            if (f !== '.gitkeep') {
-              try {
-                fs.unlinkSync(path.join(CACHE_DIR, f));
-                count++;
-              } catch (ignored) {}
+          for (const dir of [CACHE_DIR, DOWNLOADS_DIR]) {
+            if (fs.existsSync(dir)) {
+              for (const f of fs.readdirSync(dir)) {
+                if (f !== '.gitkeep') {
+                  try {
+                    fs.unlinkSync(path.join(dir, f));
+                    count++;
+                  } catch (ignored) {}
+                }
+              }
             }
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -608,17 +726,26 @@ const server = http.createServer((req, res) => {
 
         if (trackId) {
           const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
-          const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
-          const tmpFile = path.join(CACHE_DIR, `${safeId}.tmp`);
           let removed = false;
-          if (fs.existsSync(cachedFile)) {
-            fs.unlinkSync(cachedFile);
-            removed = true;
+          for (const ext of ['.mp3', '.tmp']) {
+            const f = path.join(CACHE_DIR, `${safeId}${ext}`);
+            if (fs.existsSync(f)) {
+              try { fs.unlinkSync(f); removed = true; } catch (_) {}
+            }
           }
-          if (fs.existsSync(tmpFile)) {
-            fs.unlinkSync(tmpFile);
-            removed = true;
-          }
+          try {
+            const tracks = getLibraryTracks();
+            const track = tracks.find(t => String(t.id) === String(trackId));
+            if (track) {
+              const ext = track.path ? track.path.split('.').pop() : 'mp3';
+              const rawName = `${track.artist} - ${track.title}.${ext}`;
+              const safeFilename = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
+              const dlPath = path.join(DOWNLOADS_DIR, safeFilename);
+              if (fs.existsSync(dlPath)) {
+                try { fs.unlinkSync(dlPath); removed = true; } catch (_) {}
+              }
+            }
+          } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', removed, trackId }));
           return;
