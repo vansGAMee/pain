@@ -50,10 +50,10 @@ test('a large discography does not crowd out another artist during discovery',()
  assert.ok(solo>220&&solo<380,`Expected balanced artist exposure, got ${solo}/600`);
 });
 test('sustained recent taste shifts beat old habits, but one contrary play does not',()=>{
- const now=Date.now(),tracks=[{id:'a',artist:'A'},{id:'b',artist:'B'},{id:'na',artist:'A'},{id:'nb',artist:'B'}],history=[];
+ const now=new Date(2026,9,18,15).getTime(),tracks=[{id:'a',artist:'A'},{id:'b',artist:'B'},{id:'na',artist:'A'},{id:'nb',artist:'B'}],history=[];
  for(let i=0;i<160;i++)for(const id of ['a','b'])history.push({track:id,started:now-(40+i/20)*86400000,duration:180000,heard:id==='a'?180000:5000,finished:id==='a'?1:0});
  const recent=[];for(let i=0;i<8;i++)for(const id of ['a','b'])recent.push({track:id,started:now-(1+i/8)*86400000,duration:180000,heard:id==='b'?180000:5000,finished:id==='b'?1:0});
- const prediction=plays=>{const m=new Taste(tracks,plays,now);return [m.score(null,tracks[2]).probability,m.score(null,tracks[3]).probability];};
+ const prediction=plays=>{const m=new Taste(tracks,plays,now);return [m.score(null,tracks[2],{},{hour:15}).probability,m.score(null,tracks[3],{},{hour:15}).probability];};
  const before=prediction(history),single=prediction([...history,...recent.slice(0,2)]),after=prediction([...history,...recent]);
  assert.ok(before[0]>before[1]);assert.ok(single[0]>single[1]);assert.ok(after[1]>after[0],`Recent preference was not learned: ${after}`);
 });

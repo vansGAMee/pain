@@ -33,6 +33,8 @@
     cachedTracks: new Set(),
     devices: [],
     hasAutoSynced: false,
+    smartVolume: localStorage.getItem('pain_smart_volume') === 'true',
+    backgroundDuck: localStorage.getItem('pain_background_duck') !== 'false',
     lastVolume: 1.0,
     isMuted: false,
 
@@ -69,6 +71,8 @@
     }
   } catch (e) {}
 
+  let audioProfiles=Object.create(null);
+  try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v2'));}catch(_){}
   let initialBpmCache = {};
   try {
     const rawBpm = localStorage.getItem('pain_bpm_cache_v2');
@@ -93,6 +97,7 @@
   const queue = QueueClass ? new QueueClass({
     stats: state.stats,
     bpmCache: initialBpmCache,
+    audioProfiles,
     shuffleMode: state.shuffleMode || 'off',
     loopMode: state.loopMode || 'all',
     onQueueChange: (info) => {
@@ -104,6 +109,9 @@
   let audioCtx = null;
   let sourceNode = null;
   let preampNode = null;
+  let smartVolumeNode = null;
+  let pendingSeekTime = null;
+  let lastPlaybackSave = -Infinity;
   let filterNodes = [];
   const EQ_FREQUENCIES = [60, 170, 310, 600, 1000, 3000, 6000, 12000];
 
@@ -503,8 +511,18 @@
         return filter;
       });
 
-      lastNode.connect(audioCtx.destination);
+      try {
+        smartVolumeNode = SmartVolume.create(audioCtx);
+        lastNode.connect(smartVolumeNode.input);
+        smartVolumeNode.output.connect(audioCtx.destination);
+        applySmartVolume();
+      } catch (_) {
+        lastNode.connect(audioCtx.destination);
+      }
       applyEqualizerAudioGains();
+      try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>state.tracks.find(t=>t.id===state.currentTrackId),
+        (track,profile)=>{queue?.setAudioProfile(track.id,profile);try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}},audioProfiles);
+      }catch(_){/* Playback remains available if measurement is unsupported. */}
     } catch (err) {
       console.warn('Web Audio API Equalizer initialization deferred or unsupported:', err);
     }
@@ -649,6 +667,18 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
+  function savePlaybackPosition(force = false) {
+    if (!state.currentTrackId) return;
+    const now = performance.now();
+    if (!force && now - lastPlaybackSave < 5000) return;
+    const position = pendingSeekTime ?? audio.currentTime;
+    if (!Number.isFinite(position) || position < 0) return;
+    try {
+      localStorage.setItem('pain_last_playback', JSON.stringify({id: state.currentTrackId, position}));
+      lastPlaybackSave = now;
+    } catch (_) {}
+  }
+
   // --- DATA LOADING & PERSISTENCE ---
   async function loadLocalData() {
     try {
@@ -690,12 +720,25 @@
 
       // If library is populated, prepare first track in player bar
       if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
-        state.currentTrackIndex = 0;
-        state.currentTrackId = state.tracks[0].id;
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem('pain_last_playback')); } catch (_) {}
+        const savedIndex = state.tracks.findIndex(t => t.id === saved?.id);
+        state.currentTrackIndex = Math.max(0, savedIndex);
+        const track = state.tracks[state.currentTrackIndex];
+        state.currentTrackId = track.id;
+        const duration = Math.max(0, Number(track.duration) || 0) / 1000;
+        const position = savedIndex >= 0 && Number.isFinite(saved?.position) && saved.position >= 0
+          && (!duration || saved.position < duration) ? saved.position : 0;
+        pendingSeekTime = position;
         if (queue && queue.getTracks().length === 0) {
-          queue.setContext('library', state.tracks, 0, state.lang === 'ru' ? 'Фонотека' : 'Library');
+          queue.setContext('library', state.tracks, state.currentTrackIndex, state.lang === 'ru' ? 'Фонотека' : 'Library');
         }
-        updatePlayerBarUI(state.tracks[0], false);
+        updatePlayerBarUI(track, false);
+        DOM.currentTime.textContent = formatTime(position);
+        const pct = duration ? Math.min(100, position / duration * 100) : 0;
+        DOM.progressFill.style.width = `${pct}%`;
+        if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
+        updatePlayingRowUI();
       }
     } catch (e) {
       console.warn('Error loading local data:', e);
@@ -950,7 +993,30 @@
     });
   }
 
-  let activeTableRenderToken = 0;
+  // Each list owns its pending work: switching views must not cancel another list.
+  function cancelTrackRender(container) {
+    if (container._renderFrame != null) cancelAnimationFrame(container._renderFrame);
+    container._renderFrame = null;
+  }
+
+  function appendTrackBatches(container, trackList, createItem, firstBatchSize) {
+    let nextIndex = 0;
+    function appendBatch(limit) {
+      const start = performance.now();
+      const fragment = document.createDocumentFragment();
+      let count = 0;
+      do {
+        fragment.appendChild(createItem(trackList[nextIndex], nextIndex));
+        nextIndex++;count++;
+      } while (nextIndex < trackList.length && count < limit && performance.now() - start < 3);
+      container.appendChild(fragment);
+      if (nextIndex < trackList.length) container._renderFrame = requestAnimationFrame(() => {
+        container._renderFrame = null;
+        appendBatch(20);
+      });
+    }
+    appendBatch(firstBatchSize);
+  }
 
   function createTrackRow(track, index, enableDragAndDrop) {
     const isCurrent = state.currentTrackId === track.id;
@@ -974,7 +1040,7 @@
         </div>
       </td>
       <td class="col-cover">
-        <img class="row-thumb-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
+        <img class="row-thumb-img" src="${getCoverUrl(track)}" alt="" loading="lazy" decoding="async">
       </td>
       <td class="col-title">
         <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
@@ -999,6 +1065,7 @@
   }
 
   function renderTracksTable(container, trackList, enableDragAndDrop = true, contextInfo = null) {
+    cancelTrackRender(container);
     container.innerHTML = '';
     container._currentTrackList = trackList;
     container._currentContextInfo = contextInfo;
@@ -1015,40 +1082,8 @@
       return;
     }
 
-    const currentToken = ++activeTableRenderToken;
-    const initialBatchSize = 60;
-    const initialBatch = trackList.slice(0, initialBatchSize);
-
-    const fragment = document.createDocumentFragment();
-    for (let i = 0; i < initialBatch.length; i++) {
-      fragment.appendChild(createTrackRow(initialBatch[i], i, enableDragAndDrop));
-    }
-    container.appendChild(fragment);
-
-    // Stream remaining tracks smoothly in idle animation frames
-    if (trackList.length > initialBatchSize) {
-      let nextIndex = initialBatchSize;
-      const chunkSize = 140;
-
-      function renderNextChunk() {
-        if (currentToken !== activeTableRenderToken) return;
-        if (nextIndex >= trackList.length) return;
-
-        const chunkFragment = document.createDocumentFragment();
-        const end = Math.min(trackList.length, nextIndex + chunkSize);
-        for (let i = nextIndex; i < end; i++) {
-          chunkFragment.appendChild(createTrackRow(trackList[i], i, enableDragAndDrop));
-        }
-        container.appendChild(chunkFragment);
-        nextIndex = end;
-
-        if (nextIndex < trackList.length) {
-          requestAnimationFrame(renderNextChunk);
-        }
-      }
-
-      requestAnimationFrame(renderNextChunk);
-    }
+    appendTrackBatches(container, trackList,
+      (track, index) => createTrackRow(track, index, enableDragAndDrop), 24);
   }
 
   function ensureGridDelegation(container) {
@@ -1101,8 +1136,6 @@
     }, true);
   }
 
-  let activeGridRenderToken = 0;
-
   function createTrackCard(track) {
     const isCurrent = state.currentTrackId === track.id;
     const isPlayingCurrent = isCurrent && state.isPlaying;
@@ -1114,7 +1147,7 @@
 
     card.innerHTML = `
       <div class="track-card-cover-wrapper">
-        <img class="track-card-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
+        <img class="track-card-img" src="${getCoverUrl(track)}" alt="" loading="lazy" decoding="async">
         <div class="track-card-play-overlay">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             ${isPlayingCurrent 
@@ -1145,6 +1178,7 @@
 
   // --- RENDERING: GRID CARDS ---
   function renderTracksGrid(container, trackList, contextInfo = null) {
+    cancelTrackRender(container);
     container.innerHTML = '';
     container._currentTrackList = trackList;
     container._currentContextInfo = contextInfo;
@@ -1159,39 +1193,7 @@
       return;
     }
 
-    const currentToken = ++activeGridRenderToken;
-    const initialBatchSize = 30;
-    const initialBatch = trackList.slice(0, initialBatchSize);
-
-    const fragment = document.createDocumentFragment();
-    for (let i = 0; i < initialBatch.length; i++) {
-      fragment.appendChild(createTrackCard(initialBatch[i]));
-    }
-    container.appendChild(fragment);
-
-    if (trackList.length > initialBatchSize) {
-      let nextIndex = initialBatchSize;
-      const chunkSize = 40;
-
-      function renderNextChunk() {
-        if (currentToken !== activeGridRenderToken) return;
-        if (nextIndex >= trackList.length) return;
-
-        const chunkFragment = document.createDocumentFragment();
-        const end = Math.min(trackList.length, nextIndex + chunkSize);
-        for (let i = nextIndex; i < end; i++) {
-          chunkFragment.appendChild(createTrackCard(trackList[i]));
-        }
-        container.appendChild(chunkFragment);
-        nextIndex = end;
-
-        if (nextIndex < trackList.length) {
-          requestAnimationFrame(renderNextChunk);
-        }
-      }
-
-      requestAnimationFrame(renderNextChunk);
-    }
+    appendTrackBatches(container, trackList, createTrackCard, 12);
   }
 
   // --- DRAG AND DROP REORDERING HANDLERS ---
@@ -1717,7 +1719,7 @@
   }
 
   // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
-  function playTrackObject(track) {
+  function playTrackObject(track, startPosition = 0) {
     if (!track) return;
     initAudioNodes();
     sampleListening();
@@ -1733,7 +1735,9 @@
     DOM.progressFill.style.width = '0%';
     if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
 
+    pendingSeekTime = startPosition > 0 ? startPosition : null;
     audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+    savePlaybackPosition(true);
     audio.play().then(() => {
       if (request === playbackRequest) syncPlaybackState();
     }).catch(async err => {
@@ -1970,7 +1974,7 @@
     if (!audio.getAttribute('src')) {
       const target = (queue ? queue.getCurrentTrack() : null) || state.tracks[0];
       if (target) {
-        playTrackObject(target);
+        playTrackObject(target, pendingSeekTime ?? 0);
         return;
       }
     }
@@ -2488,7 +2492,15 @@
     }
   }
 
+  function applySmartVolume() {
+    smartVolumeNode?.update(state.smartVolume, state.backgroundDuck,
+      document.hidden || !document.hasFocus());
+  }
+
   function initSettingsUI() {
+    document.getElementById('smartVolumeSwitch').checked = state.smartVolume;
+    document.getElementById('backgroundDuckSwitch').checked = state.backgroundDuck;
+    document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
     applyFluidColor(state.fluidColor);
     if (DOM.fluidBpmSyncSwitch) {
       DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
@@ -3091,15 +3103,21 @@
       applyTheme(state.theme === 'paper' ? 'dark' : 'paper');
     });
 
+    // Coalesce fast typing instead of rebuilding the whole library for every key.
+    let searchTimer = null;
     // Search
     DOM.searchInput.addEventListener('input', (e) => {
       state.searchQuery = e.target.value;
       DOM.searchClearBtn.style.display = state.searchQuery ? 'block' : 'none';
       state.libraryDirty = true;
-      renderLibrary();
+      clearTimeout(searchTimer);
+      cancelTrackRender(DOM.tracksGrid);
+      cancelTrackRender(DOM.tracksTableBody);
+      searchTimer = setTimeout(() => renderLibrary(), 120);
     });
 
     DOM.searchClearBtn.addEventListener('click', () => {
+      clearTimeout(searchTimer);
       DOM.searchInput.value = '';
       state.searchQuery = '';
       DOM.searchClearBtn.style.display = 'none';
@@ -3242,7 +3260,6 @@
 
     // --- AUDIO TIMELINE, SEEKING & POINTER SCRUBBING ---
     let isScrubbing = false;
-    let pendingSeekTime = null;
 
     function getScrubPercent(e) {
       const rect = DOM.progressTrack.getBoundingClientRect();
@@ -3278,11 +3295,12 @@
       listening?.anchor(performance.now(),audio.currentTime,!audio.muted&&audio.volume>0);
       syncPlaybackState();
     });
-    audio.addEventListener('pause',()=>{sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);syncPlaybackState();});
+    audio.addEventListener('pause',()=>{savePlaybackPosition(true);sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);syncPlaybackState();});
     audio.addEventListener('waiting',()=>{sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);});
     audio.addEventListener('seeking',()=>listening?.anchor(performance.now(),audio.currentTime,false));
+    audio.addEventListener('seeked',()=>savePlaybackPosition(true));
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
-    window.addEventListener('pagehide',()=>{sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId);});
+    window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId);});
     audio.addEventListener('error',()=>{state.isPlaying=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     audio.addEventListener('ratechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused));
@@ -3306,6 +3324,7 @@
 
     // Audio Timeline & Prefetching
     audio.addEventListener('timeupdate', () => {
+      savePlaybackPosition();
       sampleListening();
       if (isScrubbing) return;
 
@@ -3495,6 +3514,19 @@
         applyFluidColor('#7c4dff');
       });
     }
+
+    for (const [id, key, storageKey] of [
+      ['smartVolumeSwitch', 'smartVolume', 'pain_smart_volume'],
+      ['backgroundDuckSwitch', 'backgroundDuck', 'pain_background_duck']
+    ]) document.getElementById(id).addEventListener('change', e => {
+      state[key] = e.target.checked;
+      try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
+      document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
+      applySmartVolume();
+    });
+    window.addEventListener('focus', applySmartVolume);
+    window.addEventListener('blur', applySmartVolume);
+    document.addEventListener('visibilitychange', applySmartVolume);
 
     // BPM Sync Switch
     if (DOM.fluidBpmSyncSwitch) {

@@ -1,0 +1,116 @@
+/* Measured audio descriptors, collected from playback before EQ. No model downloads. */
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.AudioProfile=factory();})(globalThis,()=>{
+ const clamp=n=>Math.max(0,Math.min(1,n));
+ const VERSION=2,MAX_FRAMES=360,MAX_CACHE=750;
+ function frame(wave,spectrumDb,sampleRate){
+  if(!wave?.length||wave.length>32768||!spectrumDb?.length||spectrumDb.length>16384||!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>384000)return null;
+  let mean=0;for(const x of wave){if(!Number.isFinite(x))return null;mean+=x;}mean/=wave.length;
+  let energy=0,peak=0;for(const x of wave){const centered=x-mean;energy+=centered*centered;peak=Math.max(peak,Math.abs(centered));}
+  const rms=Math.sqrt(energy/wave.length);if(!Number.isFinite(rms)||rms<.0001)return null;
+  let total=0,bass=0,mid=0,high=0,centroid=0,logs=0,bins=0;
+  for(let i=1;i<spectrumDb.length;i++){
+   const hz=i*sampleRate/(2*spectrumDb.length);if(hz<40||hz>10000)continue;
+   const db=spectrumDb[i];if(typeof db!=='number'||Number.isNaN(db)||db===Infinity)return null;
+   const power=db===-Infinity?0:Math.pow(10,Math.max(-120,Math.min(0,db))/10);
+   total+=power;centroid+=hz*power;logs+=Math.log(Math.max(power,1e-12));bins++;
+   if(hz<250)bass+=power;else if(hz<2000)mid+=power;else high+=power;
+  }
+  if(!bins||total<1e-9)return null;
+  // Crest shape is gain independent: volume changes must not redefine a song's character.
+  return [clamp(rms/peak),bass/total,mid/total,high/total,clamp(centroid/total/8000),clamp(Math.exp(logs/bins)/(total/bins))];
+ }
+ function shape(p){return !!p&&Array.isArray(p.vector)&&p.vector.length===6&&p.vector.every(n=>Number.isFinite(n)&&n>=0&&n<=1)&&Number.isInteger(p.frames)&&p.frames>0&&p.frames<=MAX_FRAMES&&Number.isFinite(p.seconds)&&p.seconds>0&&p.seconds<=p.frames*1.5;}
+ function valid(p){return shape(p)&&p.frames>=20&&p.seconds>=10;}
+ function stored(p){return shape(p)&&p.version===VERSION&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
+ function similarity(a,b){
+  if(!valid(a)||!valid(b))return null;
+  const weights=[.5,1,1,1,1,.5];let distance=0;
+  for(let i=0;i<6;i++)distance+=weights[i]*(a.vector[i]-b.vector[i])**2;
+  return Math.exp(-3*distance);
+ }
+ const signature=t=>JSON.stringify([t?.duration||0,t?.bytes||0,t?.mime||'',t?.modified||t?.dateModified||t?.lastModified||0,t?.uri||t?.path||'']);
+ function read(store,track){if(!track||track.id==null||!store||!Object.hasOwn(store,track.id))return null;const p=store[track.id];return stored(p)&&p.signature===signature(track)?p:null;}
+ function get(store,track){const p=read(store,track);return valid(p)?p:null;}
+ function prune(store,limit=MAX_CACHE){
+  const keys=Object.keys(store).sort((a,b)=>(store[b]?.updatedAt||0)-(store[a]?.updatedAt||0));
+  for(const id of keys.slice(limit))delete store[id];
+ }
+ function restore(raw){
+  const result=Object.create(null);
+  try{const data=JSON.parse(raw||'{}');if(data&&typeof data==='object'&&!Array.isArray(data))for(const [id,p] of Object.entries(data))if(id.length<=1024&&stored(p))Object.defineProperty(result,id,{value:p,enumerable:true,writable:true,configurable:true});}catch(_){}
+  prune(result);return result;
+ }
+ function persist(store,storage,key='pain_audio_profiles_v2'){
+  prune(store);
+  try{storage.setItem(key,JSON.stringify(store));return true;}catch(_){}
+  // Keep recent evidence usable if the browser quota is shared with other application data.
+  const snapshot=Object.assign(Object.create(null),store),half=Math.floor(Object.keys(snapshot).length/2);
+  for(const limit of [half,Math.min(64,Math.floor(half/2))]){
+   if(limit<1)break;prune(snapshot,limit);try{storage.setItem(key,JSON.stringify(snapshot));return true;}catch(_){}
+  }
+  return false;
+ }
+ function observe(context,source,audio,getTrack,onProfile,store,options={}){
+  const now=options.now||(()=>performance.now()),schedule=options.setInterval||setInterval,cancel=options.clearInterval||clearInterval;
+  const nodes=[],listeners=[];let splitter=null;
+  function analyser(){const node=context.createAnalyser();node.fftSize=2048;node.smoothingTimeConstant=0;nodes.push(node);return node;}
+  try{
+   const first=analyser();
+   if(typeof context.createChannelSplitter==='function'){
+    splitter=context.createChannelSplitter(2);source.connect(splitter);splitter.connect(first,0);splitter.connect(analyser(),1);
+   }else source.connect(first);
+  }catch(error){try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();}catch(_){}throw error;}
+  const buffers=nodes.map(node=>({wave:new Float32Array(node.fftSize),spectrum:new Float32Array(node.frequencyBinCount)}));
+  let timer=null,previous=null,trackKey=null,activeTrack=null,profile=null,positions=new Set(),dirty=false,disposed=false,src=null;
+  function listen(target,event,fn){if(target.addEventListener){target.addEventListener(event,fn);listeners.push(()=>target.removeEventListener(event,fn));}}
+  function flush(){
+   if(!dirty||!profile||!activeTrack)return;dirty=false;
+   const saved={...profile,version:VERSION,vector:profile.vector.map(n=>Math.round(n*100000)/100000),positions:[...positions],updatedAt:Date.now()};
+   if(!stored(saved))return;
+   try{Object.defineProperty(store,activeTrack.id,{value:saved,enumerable:true,writable:true,configurable:true});prune(store);}catch(_){}
+   try{onProfile(activeTrack,saved);}catch(_){} // Analysis must never interrupt playback.
+  }
+  function boundary(){flush();previous=null;}
+  function sample(){
+   if(disposed)return;
+   try{
+    const track=getTrack();
+    if(!track||track.id==null){boundary();return;}
+    const key=JSON.stringify([track.id,signature(track)]),sourceUrl=audio.currentSrc||audio.src||'';
+    if(key!==trackKey){
+     boundary();trackKey=key;activeTrack={...track};const cached=read(store,track);
+     profile=cached?{...cached,vector:[...cached.vector]}:{version:VERSION,signature:signature(track),vector:[0,0,0,0,0,0],frames:0,seconds:0};positions=new Set(cached?.positions||[]);
+    }
+    if(src!==sourceUrl){boundary();src=sourceUrl;}
+    const mediaTime=audio.currentTime;
+    if(audio.paused||audio.seeking||audio.readyState<3||context.state!=='running'||audio.muted||audio.volume===0||audio.playbackRate!==1||!Number.isFinite(mediaTime)||mediaTime<0){boundary();return;}
+    if(profile.frames>=MAX_FRAMES){boundary();return;}
+    const current={wall:now(),media:mediaTime},last=previous;previous=current;
+    if(!last||!Number.isFinite(current.wall))return;
+    const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
+    if(wall<=0||wall>1.5||media<=0||Math.abs(media-wall)>.35)return;
+    const position=Math.floor(mediaTime*2);if(!Number.isSafeInteger(position)||positions.has(position))return;
+    let vector=null,totalPower=0;
+    nodes.forEach((node,i)=>{
+     const buffer=buffers[i];node.getFloatTimeDomainData(buffer.wave);node.getFloatFrequencyData(buffer.spectrum);
+     const v=frame(buffer.wave,buffer.spectrum,context.sampleRate);if(!v)return;
+     let power=0;for(const x of buffer.wave)power+=x*x;
+     if(!vector)vector=v;else vector=vector.map((x,j)=>(x*totalPower+v[j]*power)/(totalPower+power));totalPower+=power;
+    });
+    if(!vector)return;
+    profile.vector=profile.vector.map((v,i)=>(v*profile.frames+vector[i])/(profile.frames+1));profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
+    if(profile.frames%20===0)flush();
+   }catch(_){boundary();}
+  }
+  function start(){if(!disposed&&timer===null)timer=schedule(sample,500);}
+  function stop(){if(timer!==null)cancel(timer);timer=null;boundary();}
+  listen(audio,'playing',start);
+  for(const event of ['pause','ended','emptied','abort','error'])listen(audio,event,stop);
+  for(const event of ['seeking','seeked','loadstart','ratechange','volumechange','waiting','stalled'])listen(audio,event,boundary);
+  listen(context,'statechange',()=>{if(context.state==='running'&&!audio.paused)start();else stop();});
+  if(typeof window!=='undefined')listen(window,'pagehide',stop);
+  if(!audio.paused)start();
+  return ()=>{if(disposed)return;disposed=true;stop();for(const remove of listeners)remove();try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();for(const node of nodes)node.disconnect();}catch(_){};};
+ }
+ return {frame,valid,similarity,signature,get,observe,restore,persist};
+});

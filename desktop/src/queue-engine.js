@@ -214,6 +214,7 @@
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
       this.bpmCache = options.bpmCache || {};
+      this.audioProfiles=options.audioProfiles||{};
       this.stats = options.stats || null;
       this.onQueueChange = options.onQueueChange || null;
     }
@@ -225,7 +226,7 @@
 
     smartScore(current, candidate, context) {
       if (!this._taste || this._tasteTracks !== this.tracks) {
-        this._taste = new Taste(this.tracks, this.stats?.plays || []);
+        this._taste = new Taste(this.tracks, this.stats?.plays || [], Date.now(),this.audioProfiles);
         this._tasteTracks = this.tracks;
       }
       return this._taste.score(current,candidate,this.bpmCache,context);
@@ -239,6 +240,8 @@
       });
       return {...chosen,index:indices.find(i=>this.tracks[i]===chosen.track)};
     }
+
+    setAudioProfile(id,profile){this.audioProfiles[id]=profile;this._taste=null;}
 
     setBpmCache(cache) {
       this.bpmCache = Object.assign(this.bpmCache, cache);

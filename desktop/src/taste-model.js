@@ -1,6 +1,7 @@
 /* Personal logistic ranker. Fits only local listening evidence; no remote model. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.TasteModel=factory();})(globalThis,()=>{
  const SessionGraph=typeof module==='object'&&module.exports?require('./session-graph'):globalThis.SessionGraph;
+ const Sound=typeof module==='object'&&module.exports?require('./audio-profile'):globalThis.AudioProfile;
  const clean=s=>String(s||'').trim().toLowerCase();
  // Untrusted source/placeholder tags must never create a shared artist preference.
  const trustedArtist=value=>{
@@ -18,7 +19,8 @@
  const sigmoid=x=>1/(1+Math.exp(-Math.max(-20,Math.min(20,x))));
  const knownBpm=(t,cache)=>{const n=Number(cache?.[t.id]||t.bpm);return n>=40&&n<=240?n:null;};
  class TasteModel {
-  constructor(tracks=[],plays=[],now=Date.now()){
+  constructor(tracks=[],plays=[],now=Date.now(),audioProfiles={}){
+   this.audioProfiles=audioProfiles;
    this.weights=new Map();this.counts=new Map();this.artistCounts=new Map();this.now=now;this.evidence=new Map();this.recentSkips=[];
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
    const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
@@ -70,6 +72,8 @@
    if(album&&artist)f.push(['album:'+artist+':'+album,.65]);
    if(genre)f.push(['genre:'+genre,.65]);
    if(from&&artist&&trustedArtist(from.artist))f.push(['transition:'+trustedArtist(from.artist)+'>'+artist,.7]);
+   const sound=Sound.get(this.audioProfiles,track);
+   if(sound) sound.vector.forEach((value,i)=>f.push(['sound:'+i,(value-.5)*.8]));
    // Hearts do not become a shortcut: learn from actual listening instead.
    return f;
   }
@@ -141,6 +145,14 @@
    const a=current?knownBpm(current,cache):null,b=knownBpm(candidate,cache);
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
+   const currentSound=(this.lastQuality.get(String(current?.id))??1)>=.75?Sound.get(this.audioProfiles,current):null,candidateSound=Sound.get(this.audioProfiles,candidate);
+   const soundSimilarity=Sound.similarity(currentSound,candidateSound);
+   if(soundSimilarity!==null){
+    const confidence=Math.min(1,currentSound.seconds/30,candidateSound.seconds/30);
+    // A modest transition signal preserves discovery and stronger personal evidence.
+    score+=10*confidence*(soundSimilarity-.5);
+    if(soundSimilarity>.8&&confidence>.6)reasons.push('Близкое звучание');
+   }
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
    return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity};
   }
