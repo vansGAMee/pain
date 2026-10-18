@@ -280,6 +280,8 @@ public final class MainActivity extends Activity {
         Collections.addAll(h, "22:61", "22:62", "22:63", "22:71", "22:72", "22:84", "22:85");
         break;
     }
+    int navStart = p==0?2:p==2?13:p==3?24:p==4?35:p==5?46:-1;
+    if(navStart>=0)for(int i=navStart;i<navStart+11;i++)h.add("13:"+i);
     return h;
   }
 
@@ -353,11 +355,33 @@ public final class MainActivity extends Activity {
     target.put(image,x,y,w,h);return image;
   }
   private void setupDock(float start) {
-    String[] names = isRu()?new String[]{"Главная","Библиотека","Инсайты","Устройства"}:new String[]{"Home","Library","Insights","Devices"};
-    int[] targets = {0, 2, 3, 4};
-    for (int i = 0; i < 4; i++) {
-      final int target = targets[i];
-      dock.action(names[i], 8 + i * 88, 778, 76, 54, () -> show(target, true));
+    // The original relief capsule stays; icon and caption share one measured column.
+    for(String id:new String[]{"3:37","3:38","3:39","3:40","3:41","3:42","3:43","3:44",
+        "3:130","3:131","3:132","3:133","3:134","3:135","3:136","3:137",
+        "3:203","3:204","3:205","3:206","3:207","3:208","3:209","3:210",
+        "3:240","3:241","3:242","3:243","3:244","3:245","3:246","3:247",
+        "9:125","9:126","9:127","9:128","9:129","9:130","9:131","9:132"})dock.removeText(id);
+    String[] names=isRu()?new String[]{"Главная","Библиотека","Инсайты","Устройства"}:new String[]{"Home","Library","Insights","Devices"};
+    String[] icons={"home","library","stats","device"};int[] targets={0,2,3,4};
+    LinearLayout nav=new LinearLayout(this);nav.setGravity(Gravity.CENTER_VERTICAL);
+    dock.put(nav,18,780,354,54);
+    for(int i=0;i<4;i++){
+      final int target=targets[i];boolean selected=page==target||(page==5&&target==3);
+      LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);
+      item.setPadding(0,sx(4),0,sx(3));
+      IconView icon=new IconView(this,icons[i],ink());icon.setAlpha(selected?1f:.62f);
+      icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+      item.addView(icon,new LinearLayout.LayoutParams(sx(23),sx(23)));
+      TextView caption=label(names[i],10);caption.setGravity(Gravity.CENTER);caption.setSingleLine(true);
+      caption.setTypeface(DesignScene.font(this,selected?"SemiBold":"Medium"));
+      caption.setTextSize(TypedValue.COMPLEX_UNIT_PX,10*scale*app.prefs.getFloat("textScale",1));
+      caption.setAlpha(selected?1f:.7f);caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+      caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+      LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-1,sx(17));textParams.topMargin=sx(2);item.addView(caption,textParams);
+      item.setContentDescription(names[i]);item.setSelected(selected);item.setFocusable(true);
+      item.setOnClickListener(v->{if(page!=target)show(target,true);});
+      MicroMotion.press(item,icon,.965f);
+      nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));
     }
     if (start < 712) {
       miniArt=cover(dock,33,724,30,36,4);

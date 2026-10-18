@@ -236,7 +236,7 @@ public final class SyncServer {
         sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"playId\":\"" + playId + "\"}");
         notifyListener("play_recorded", trackId + " (" + (heard / 1000) + "s)");
       } else if (path.startsWith("/api/track/") && ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method))) {
-        String trackId = URLDecoder.decode(path.substring("/api/track/".length()), StandardCharsets.UTF_8);
+        String trackId = URLDecoder.decode(path.substring("/api/track/".length()), StandardCharsets.UTF_8.name());
         streamTrack(trackId, out);
       } else {
         sendResponse(out, 404, "Not Found", "text/plain", "Not Found");

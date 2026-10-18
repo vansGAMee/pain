@@ -82,11 +82,7 @@ public final class DesignScene extends FrameLayout {
             n.optJSONObject("fontName") == null
                 ? ""
                 : n.getJSONObject("fontName").optString("style");
-        int weight = style.contains("Bold") ? 600 : style.contains("Medium") ? 500 : 400;
-        t.setTypeface(
-            android.os.Build.VERSION.SDK_INT >= 28
-                ? Typeface.create(face, weight, false)
-                : Typeface.create(face, weight >= 600 ? Typeface.BOLD : Typeface.NORMAL));
+        t.setTypeface(font(context, style));
         JSONArray fills = n.optJSONArray("fillPaints");
         int color =
             fills != null && fills.length() > 0 ? paintColor(fills.getJSONObject(0)) : 0xff11110f;
@@ -169,6 +165,21 @@ public final class DesignScene extends FrameLayout {
   public static Typeface font(Context c) {
     if (face == null) face = Typeface.createFromAsset(c.getAssets(), "Geist.ttf");
     return face;
+  }
+
+  private static final Map<String, Typeface> fontFaces = new HashMap<>();
+
+  public static synchronized Typeface font(Context context, String style) {
+    String name = "Bold".equals(style) ? "Bold"
+        : "SemiBold".equals(style) ? "SemiBold"
+        : "Medium".equals(style) ? "Medium" : "Regular";
+    if (name.equals("Regular")) return font(context);
+    Typeface loaded = fontFaces.get(name);
+    if (loaded == null) {
+      loaded = Typeface.createFromAsset(context.getAssets(), "Geist-" + name + ".ttf");
+      fontFaces.put(name, loaded);
+    }
+    return loaded;
   }
 
   public int paper() {
