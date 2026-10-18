@@ -242,6 +242,9 @@
               <div class="hero-label" data-en="Playlist" data-ru="Плейлист">Playlist</div>
               <h1 class="hero-title" data-en="Liked Songs" data-ru="Избранное">Liked Songs</h1>
               <div class="hero-meta" id="favoritesHeroMeta">0 liked tracks</div>
+              <div class="playlist-actions-row">
+                <button class="btn-minimal primary" id="playFavoritesBtn" data-en="Play All" data-ru="Слушать всё">Play All</button>
+              </div>
             </div>
           </div>
 
@@ -285,6 +288,7 @@
               <h1 class="hero-title" id="customPlaylistTitle">Playlist</h1>
               <div class="hero-meta" id="customPlaylistMeta">0 tracks</div>
               <div class="playlist-actions-row">
+                <button class="btn-minimal primary" id="playPlaylistBtn" data-en="Play All" data-ru="Слушать всё">Play All</button>
                 <button class="btn-minimal danger-outline" id="deletePlaylistBtn" data-en="Delete Playlist" data-ru="Удалить плейлист">Delete Playlist</button>
               </div>
             </div>
@@ -534,6 +538,7 @@
             <span class="bottom-track-title" id="bottomTrackTitle">Choose music</span>
           </div>
           <div class="bottom-track-artist" id="bottomTrackArtist">Pain Audio</div>
+          <div class="bottom-track-context" id="bottomTrackContext"></div>
         </div>
         <button class="bottom-heart-btn" id="bottomFavoriteBtn" title="Favorite">
           <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
@@ -546,6 +551,7 @@
           <!-- Shuffle -->
           <button class="ctrl-btn-subtle" id="bottomShuffleBtn" title="Shuffle">
             <svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            <span class="shuffle-badge" id="bottomShuffleBadge"></span>
           </button>
           <!-- Prev -->
           <button class="ctrl-btn-subtle" id="bottomPrevBtn" title="Previous">
@@ -748,6 +754,7 @@
   <audio id="audioEngine" crossorigin="anonymous"></audio>
 
   <script src="listening.js"></script>
+  <script src="queue-engine.js"></script>
   <script src="app.js"></script>
   <script src="presentation.js"></script>
   <script src="karaoke.js"></script>

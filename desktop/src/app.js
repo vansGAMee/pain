@@ -16,8 +16,9 @@
     currentTrackIndex: -1,
     currentTrackId: null,
     isPlaying: false,
-    loopMode: 'off', // 'off' | 'all' | 'one'
+    loopMode: 'all', // 'off' | 'all' | 'one'
     shuffle: false,
+    shuffleMode: 'off', // 'off' | 'random' | 'smart'
     shuffledOrder: [],
     searchQuery: '',
     categoryFilter: 'all', // 'all' | 'favorites' | 'albums' | 'artists'
@@ -53,7 +54,17 @@
 
   // --- AUDIO & WEB AUDIO NODES ---
   const audio = document.getElementById('audioEngine');
-  window.PainPlayer = { getTrack:()=>state.tracks[state.currentTrackIndex] || null };
+  const QueueClass = (typeof QueueEngine !== 'undefined' && (QueueEngine.QueueEngine || QueueEngine)) || null;
+  const queue = QueueClass ? new QueueClass({
+    stats: state.stats,
+    shuffleMode: state.shuffleMode || 'off',
+    loopMode: state.loopMode || 'all',
+    onQueueChange: (info) => {
+      updateQueueContextUI(info);
+    }
+  }) : null;
+  window.painQueue = queue;
+  window.PainPlayer = { getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null };
   let audioCtx = null;
   let sourceNode = null;
   let preampNode = null;
@@ -104,11 +115,13 @@
     // Favorites View
     favoritesHeroMeta: document.getElementById('favoritesHeroMeta'),
     favoritesTableBody: document.getElementById('favoritesTableBody'),
+    playFavoritesBtn: document.getElementById('playFavoritesBtn'),
 
     // Custom Playlist View
     customPlaylistTitle: document.getElementById('customPlaylistTitle'),
     customPlaylistMeta: document.getElementById('customPlaylistMeta'),
     deletePlaylistBtn: document.getElementById('deletePlaylistBtn'),
+    playPlaylistBtn: document.getElementById('playPlaylistBtn'),
     playlistTableBody: document.getElementById('playlistTableBody'),
 
     // Vinyl Player View
@@ -158,8 +171,10 @@
     bottomCoverImg: document.getElementById('bottomCoverImg'),
     bottomTrackTitle: document.getElementById('bottomTrackTitle'),
     bottomTrackArtist: document.getElementById('bottomTrackArtist'),
+    bottomTrackContext: document.getElementById('bottomTrackContext'),
     bottomFavoriteBtn: document.getElementById('bottomFavoriteBtn'),
     bottomShuffleBtn: document.getElementById('bottomShuffleBtn'),
+    bottomShuffleBadge: document.getElementById('bottomShuffleBadge'),
     bottomPrevBtn: document.getElementById('bottomPrevBtn'),
     bottomPlayBtn: document.getElementById('bottomPlayBtn'),
     bottomPlayIcon: document.getElementById('bottomPlayIcon'),
@@ -318,6 +333,12 @@
 
     DOM.phoneIpInput.value = state.phoneUrl;
     initEqualizerUI();
+
+    if (state.loopMode === 'all') {
+      DOM.bottomRepeatBtn.classList.add('active');
+      DOM.bottomRepeatBtn.title = 'Repeat All';
+      if (DOM.bottomLoopBadge) DOM.bottomLoopBadge.style.display = 'none';
+    }
 
     await loadLocalData();
     await loadCachedTracksList();
@@ -547,7 +568,10 @@
       const statsRes = await fetch('/api/saved-stats');
       if (statsRes.ok) {
         const st = await statsRes.json();
-        if (st) state.stats = st;
+        if (st) {
+          state.stats = st;
+          if (queue) queue.setStats(st);
+        }
       }
 
       // Refresh UI components
@@ -560,6 +584,9 @@
       if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
         state.currentTrackIndex = 0;
         state.currentTrackId = state.tracks[0].id;
+        if (queue && queue.getTracks().length === 0) {
+          queue.setContext('library', state.tracks, 0, state.lang === 'ru' ? 'Фонотека' : 'Library');
+        }
         updatePlayerBarUI(state.tracks[0], false);
       }
     } catch (e) {
@@ -701,15 +728,16 @@
       ? `${processed.length} из ${state.tracks.length} треков · ${gb} ГБ · синхронизировано с телефоном`
       : `${processed.length} of ${state.tracks.length} tracks · ${gb} GB · synced with phone`;
 
+    const contextInfo = { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library' };
     if (state.viewMode === 'grid') {
-      renderTracksGrid(DOM.tracksGrid, processed);
+      renderTracksGrid(DOM.tracksGrid, processed, contextInfo);
     } else {
-      renderTracksTable(DOM.tracksTableBody, processed, true);
+      renderTracksTable(DOM.tracksTableBody, processed, true, contextInfo);
     }
   }
 
   // --- RENDERING: LIST TABLE WITH DRAG & DROP ---
-  function renderTracksTable(container, trackList, enableDragAndDrop = true) {
+  function renderTracksTable(container, trackList, enableDragAndDrop = true, contextInfo = null) {
     container.innerHTML = '';
 
     if (trackList.length === 0) {
@@ -779,7 +807,7 @@
       // Click to play
       tr.addEventListener('click', (e) => {
         if (!e.target.closest('button')) {
-          playTrackById(track.id);
+          playTrackInContext(track, trackList, contextInfo);
         }
       });
 
@@ -818,7 +846,7 @@
   }
 
   // --- RENDERING: GRID CARDS ---
-  function renderTracksGrid(container, trackList) {
+  function renderTracksGrid(container, trackList, contextInfo = null) {
     container.innerHTML = '';
 
     if (trackList.length === 0) {
@@ -879,14 +907,14 @@
 
       card.addEventListener('click', (e) => {
         if (!e.target.closest('button')) {
-          playTrackById(track.id);
+          playTrackInContext(track, trackList, contextInfo);
         }
       });
 
       const playOverlay = card.querySelector('.track-card-play-overlay');
       playOverlay.addEventListener('click', (e) => {
         e.stopPropagation();
-        playTrackById(track.id);
+        playTrackInContext(track, trackList, contextInfo);
       });
 
       const favBtn = card.querySelector('.card-fav-btn');
@@ -1011,7 +1039,8 @@
       ? `${likedTracks.length} треков в избранном`
       : `${likedTracks.length} liked tracks`;
 
-    renderTracksTable(DOM.favoritesTableBody, likedTracks, false);
+    const contextInfo = { type: 'favorites', title: state.lang === 'ru' ? 'Избранное' : 'Favorites', id: 'favorites' };
+    renderTracksTable(DOM.favoritesTableBody, likedTracks, false, contextInfo);
   }
 
   // --- CUSTOM PLAYLISTS ---
@@ -1052,7 +1081,8 @@
       : `${trackCount} tracks · custom playlist`;
 
     const plTracks = (pl.trackIds || []).map(id => state.tracks.find(t => t.id === id)).filter(Boolean);
-    renderTracksTable(DOM.playlistTableBody, plTracks, true);
+    const contextInfo = { type: 'playlist', title: pl.name, id: pl.id };
+    renderTracksTable(DOM.playlistTableBody, plTracks, true, contextInfo);
   }
 
   function createNewPlaylist(name) {
@@ -1145,13 +1175,17 @@
 
   // --- VINYL PLAYER VIEW ---
   function renderVinylPlayerView() {
-    const track = state.tracks.find(t => t.id === state.currentTrackId) || state.tracks[0];
+    const track = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId) || state.tracks[0];
     if (!track) return;
 
     DOM.bigTrackTitle.textContent = track.title || 'Untitled';
     DOM.bigTrackArtist.textContent = track.artist || 'Unknown Artist';
     DOM.bigTrackAlbum.textContent = track.album || '';
-    DOM.bigOriginBadge.textContent = 'PAIN · EMBEDDED AUDIO · ' + (track.mime || 'audio/mpeg');
+
+    const ctx = queue ? queue.getContext() : null;
+    const ctxTitle = ctx ? ctx.title : 'PAIN AUDIO';
+    const bpm = queue ? queue.getTrackBpm(track) : (track.bpm || 120);
+    DOM.bigOriginBadge.textContent = `${ctxTitle.toUpperCase()} · ${bpm} BPM · ${track.mime || 'audio/mpeg'}`;
 
     DOM.vinylBigCoverImg.src = getCoverUrl(track);
     DOM.vinylBigCoverImg.onerror = function() {
@@ -1426,11 +1460,105 @@
     }
   }
 
-  // --- AUDIO PLAYBACK ENGINE & SLEEP-RESISTANT BUFFERING ---
+  // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
+  function playTrackObject(track) {
+    if (!track) return;
+    initAudioNodes();
+    sampleListening();
+    if (state.currentTrackId) recordTrackFinished(state.currentTrackId);
+    const request = ++playbackRequest;
+    state.currentTrackId = track.id;
+    state.currentTrackIndex = state.tracks.findIndex(t => t.id === track.id);
+    state.hasPrefetchedNext = false;
+    beginListening(track);
+    state.isPlaying = false;
+    DOM.currentTime.textContent = '0:00';
+    DOM.totalTime.textContent = formatTime(Math.max(0, Number(track.duration) || 0) / 1000);
+    DOM.progressFill.style.width = '0%';
+    if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
+
+    audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+    audio.play().then(() => {
+      if (request === playbackRequest) syncPlaybackState();
+    }).catch(async err => {
+      // A superseded play or explicit pause must never restore an older source.
+      if (request !== playbackRequest || err.name === 'AbortError') return;
+      if (state.phoneUrl) {
+        audio.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+        try { await audio.play(); } catch (e) {
+          if (request === playbackRequest) console.warn('Audio unavailable:', e);
+        }
+      }
+      if (request === playbackRequest) syncPlaybackState();
+    });
+
+    updatePlayerBarUI(track, false);
+    updatePlayBtnUI();
+    updatePlayingRowUI();
+    if (queue) {
+      updateQueueContextUI({
+        context: queue.getContext(),
+        track: track,
+        index: queue.getCurrentIndex(),
+        total: queue.getTracks().length,
+        shuffleMode: queue.getShuffleMode(),
+        loopMode: queue.getLoopMode()
+      });
+    }
+    if (state.currentView === 'player') renderVinylPlayerView();
+  }
+
+  function playTrackInContext(track, trackList, contextInfo) {
+    if (!track) return;
+    if (queue) {
+      const list = Array.isArray(trackList) && trackList.length > 0 ? trackList : state.tracks;
+      const idx = list.findIndex(t => t.id === track.id);
+      queue.setContext(contextInfo?.type || 'library', list, idx !== -1 ? idx : 0, contextInfo?.title);
+    }
+    playTrackObject(track);
+  }
+
   function playTrackById(trackId) {
-    const idx = state.tracks.findIndex(t => t.id === trackId);
-    if (idx === -1) return;
-    playTrackIndex(idx);
+    if (queue) {
+      const inQueue = queue.jumpToTrack(trackId);
+      if (inQueue) {
+        playTrackObject(inQueue);
+        return;
+      }
+    }
+    const track = state.tracks.find(t => t.id === trackId);
+    if (!track) return;
+    if (queue) {
+      const idx = state.tracks.findIndex(t => t.id === trackId);
+      queue.setContext('library', state.tracks, idx !== -1 ? idx : 0, state.lang === 'ru' ? 'Фонотека' : 'Library');
+    }
+    playTrackObject(track);
+  }
+
+  function playTrackIndex(index) {
+    if (index < 0 || index >= state.tracks.length) return;
+    playTrackById(state.tracks[index].id);
+  }
+
+  function updateQueueContextUI(info) {
+    if (!DOM.bottomTrackContext) return;
+    if (!info || !info.context || !info.total) {
+      DOM.bottomTrackContext.textContent = '';
+      return;
+    }
+    const isRu = state.lang === 'ru';
+    let ctxName = info.context.title;
+    if (!ctxName) {
+      ctxName = info.context.type === 'favorites' ? (isRu ? 'Избранное' : 'Favorites') : (isRu ? 'Фонотека' : 'Library');
+    }
+    const pos = info.index >= 0 ? info.index + 1 : 1;
+    let badge = '';
+    if (info.shuffleMode === 'smart') {
+      badge = ' · ⚡ Smart BPM';
+    } else if (info.shuffleMode === 'random') {
+      badge = isRu ? ' · 🔀 Случайно' : ' · 🔀 Shuffle';
+    }
+    DOM.bottomTrackContext.textContent = `${ctxName} · ${pos} ${isRu ? 'из' : 'of'} ${info.total}${badge}`;
   }
 
   function getCurrentTrackDuration() {
@@ -1478,38 +1606,14 @@
     DOM.vinylBigDisc.classList.toggle('spinning',state.isPlaying);
     updatePlayingRowUI();
   }
-  function playTrackIndex(index) {
-    if (index < 0 || index >= state.tracks.length) return;
-    initAudioNodes();
-    sampleListening();
-    if(state.currentTrackId)recordTrackFinished(state.currentTrackId);
-    const request=++playbackRequest;
-    state.currentTrackIndex=index;
-    const track=state.tracks[index];state.currentTrackId=track.id;state.hasPrefetchedNext=false;
-    beginListening(track);
-    state.isPlaying=false;
-    DOM.currentTime.textContent='0:00';
-    DOM.totalTime.textContent=formatTime(Math.max(0,Number(track.duration)||0)/1000);
-    DOM.progressFill.style.width='0%';if(DOM.progressThumb)DOM.progressThumb.style.left='0%';
-    audio.src=`/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
-    audio.play().then(()=>{if(request===playbackRequest)syncPlaybackState();}).catch(async err=>{
-      // A superseded play or explicit pause must never restore an older source.
-      if(request!==playbackRequest||err.name==='AbortError')return;
-      if(state.phoneUrl){
-        audio.src=`${state.phoneUrl.replace(/\/+$/,'')}/api/track/${encodeURIComponent(track.id)}`;
-        try{await audio.play();}catch(e){if(request===playbackRequest)console.warn('Audio unavailable:',e);}
-      }
-      if(request===playbackRequest)syncPlaybackState();
-    });
-    updatePlayerBarUI(track,false);updatePlayBtnUI();updatePlayingRowUI();
-    if(state.currentView==='player')renderVinylPlayerView();
-  }
-
   function togglePlay() {
     initAudioNodes();
-    if (!audio.getAttribute('src') && state.tracks.length > 0) {
-      playTrackIndex(Math.max(0,state.currentTrackIndex));
-      return;
+    if (!audio.getAttribute('src')) {
+      const target = (queue ? queue.getCurrentTrack() : null) || state.tracks[0];
+      if (target) {
+        playTrackObject(target);
+        return;
+      }
     }
 
     if (audio.paused) {
@@ -1629,6 +1733,7 @@
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
+    if (queue) queue.setStats(state.stats);
 
     // 1. Immediately update live DOM play count for all rows showing this track
     const newPlayCount = getTrackPlayCount(track.id);
@@ -1667,6 +1772,9 @@
   }
 
   function getNextTrack() {
+    if (queue) {
+      return queue.peekNext();
+    }
     if (state.tracks.length === 0) return null;
     let nextIdx = state.currentTrackIndex + 1;
     if (nextIdx >= state.tracks.length) nextIdx = 0;
@@ -1674,20 +1782,39 @@
   }
 
   function playNextTrack() {
+    if (queue) {
+      const nextTrack = queue.next();
+      if (nextTrack) {
+        playTrackObject(nextTrack);
+      } else {
+        state.isPlaying = false;
+        updatePlayBtnUI();
+        DOM.vinylBigDisc.classList.remove('spinning');
+        updatePlayingRowUI();
+      }
+      return;
+    }
+
     if (state.tracks.length === 0) return;
     let nextIdx;
-
     if (state.shuffle) {
       nextIdx = Math.floor(Math.random() * state.tracks.length);
     } else {
       nextIdx = state.currentTrackIndex + 1;
       if (nextIdx >= state.tracks.length) nextIdx = 0;
     }
-
     playTrackIndex(nextIdx);
   }
 
   function playPrevTrack() {
+    if (queue) {
+      const prevTrack = queue.prev();
+      if (prevTrack) {
+        playTrackObject(prevTrack);
+      }
+      return;
+    }
+
     if (state.tracks.length === 0) return;
     let prevIdx = state.currentTrackIndex - 1;
     if (prevIdx < 0) prevIdx = state.tracks.length - 1;
@@ -1698,22 +1825,28 @@
   function cycleRepeatMode() {
     if (state.loopMode === 'off') {
       state.loopMode = 'all';
+      if (queue) queue.setLoopMode('all');
       audio.loop = false;
       DOM.bottomRepeatBtn.classList.add('active');
       DOM.bottomLoopBadge.style.display = 'none';
       DOM.bottomRepeatBtn.title = 'Repeat All';
+      showToast(state.lang === 'ru' ? 'Повтор всех треков' : 'Repeat All', '🔁');
     } else if (state.loopMode === 'all') {
       state.loopMode = 'one';
+      if (queue) queue.setLoopMode('one');
       audio.loop = false; // NEVER set native audio.loop = true: HTML5 spec suppresses 'ended' event when audio.loop is true!
       DOM.bottomRepeatBtn.classList.add('active');
       DOM.bottomLoopBadge.style.display = 'block';
       DOM.bottomRepeatBtn.title = 'Repeat One';
+      showToast(state.lang === 'ru' ? 'Повтор одного трека' : 'Repeat One', '🔂');
     } else {
       state.loopMode = 'off';
+      if (queue) queue.setLoopMode('off');
       audio.loop = false;
       DOM.bottomRepeatBtn.classList.remove('active');
       DOM.bottomLoopBadge.style.display = 'none';
       DOM.bottomRepeatBtn.title = 'Repeat Off';
+      showToast(state.lang === 'ru' ? 'Повтор выключен' : 'Repeat Off', '➡️');
     }
   }
 
@@ -1842,7 +1975,10 @@
           body: JSON.stringify(statsData)
         });
         const merged=await fetch('/api/saved-stats');
-        if(merged.ok)state.stats=await merged.json();
+        if(merged.ok) {
+          state.stats=await merged.json();
+          if (queue) queue.setStats(state.stats);
+        }
       }
 
       DOM.syncProgressFill.style.width = '100%';
@@ -1962,9 +2098,28 @@
     DOM.playAllBtn.addEventListener('click', () => {
       const processed = getProcessedTracks(state.tracks);
       if (processed.length > 0) {
-        playTrackById(processed[0].id);
+        playTrackInContext(processed[0], processed, { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library' });
       }
     });
+
+    if (DOM.playFavoritesBtn) {
+      DOM.playFavoritesBtn.addEventListener('click', () => {
+        const likedTracks = state.tracks.filter(t => !!t.favorite);
+        if (likedTracks.length > 0) {
+          playTrackInContext(likedTracks[0], likedTracks, { type: 'favorites', title: state.lang === 'ru' ? 'Избранное' : 'Favorites', id: 'favorites' });
+        }
+      });
+    }
+
+    if (DOM.playPlaylistBtn) {
+      DOM.playPlaylistBtn.addEventListener('click', () => {
+        const pl = state.playlists.find(p => p.id === state.activePlaylistId);
+        const plTracks = (pl?.trackIds || []).map(id => state.tracks.find(t => t.id === id)).filter(Boolean);
+        if (plTracks.length > 0) {
+          playTrackInContext(plTracks[0], plTracks, { type: 'playlist', title: pl.name, id: pl.id });
+        }
+      });
+    }
 
     // Bottom Player Controls
     DOM.bottomPlayBtn.addEventListener('click', togglePlay);
@@ -1973,8 +2128,35 @@
     DOM.bottomRepeatBtn.addEventListener('click', cycleRepeatMode);
 
     DOM.bottomShuffleBtn.addEventListener('click', () => {
-      state.shuffle = !state.shuffle;
-      DOM.bottomShuffleBtn.classList.toggle('active', state.shuffle);
+      if (queue) {
+        const desc = queue.cycleShuffleMode();
+        state.shuffle = desc.mode !== 'off';
+        state.shuffleMode = desc.mode;
+
+        DOM.bottomShuffleBtn.classList.toggle('active', desc.mode !== 'off');
+        DOM.bottomShuffleBtn.classList.toggle('smart-mode', desc.mode === 'smart');
+
+        if (DOM.bottomShuffleBadge) {
+          DOM.bottomShuffleBadge.textContent = desc.badge;
+          DOM.bottomShuffleBadge.classList.toggle('active', !!desc.badge);
+          DOM.bottomShuffleBadge.classList.toggle('smart-badge', desc.mode === 'smart');
+        }
+
+        showToast(state.lang === 'ru' ? desc.labelRu : desc.labelEn, desc.badge || '🔀');
+        if (queue.getCurrentTrack()) {
+          updateQueueContextUI({
+            context: queue.getContext(),
+            track: queue.getCurrentTrack(),
+            index: queue.getCurrentIndex(),
+            total: queue.getTracks().length,
+            shuffleMode: queue.getShuffleMode(),
+            loopMode: queue.getLoopMode()
+          });
+        }
+      } else {
+        state.shuffle = !state.shuffle;
+        DOM.bottomShuffleBtn.classList.toggle('active', state.shuffle);
+      }
     });
 
     DOM.bottomFavoriteBtn.addEventListener('click', () => {
@@ -2112,20 +2294,11 @@
         recordTrackFinished(state.currentTrackId);
       }
 
-      if (state.loopMode === 'one') {
+      if (state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one')) {
         audio.currentTime = 0;
         audio.play().catch(() => {});
-      } else if (state.loopMode === 'all') {
-        playNextTrack();
       } else {
-        if (state.currentTrackIndex < state.tracks.length - 1) {
-          playNextTrack();
-        } else {
-          state.isPlaying = false;
-          updatePlayBtnUI();
-          DOM.vinylBigDisc.classList.remove('spinning');
-          updatePlayingRowUI();
-        }
+        playNextTrack();
       }
     });
 

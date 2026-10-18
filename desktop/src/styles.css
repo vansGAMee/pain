@@ -1564,6 +1564,16 @@ body {
   text-overflow: ellipsis;
 }
 
+.bottom-track-context {
+  font-size: 10px;
+  color: var(--ink-secondary);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
 .bottom-heart-btn {
   background: none;
   border: none;
@@ -1659,6 +1669,36 @@ body {
 
 .loop-one-badge.active {
   display: block;
+}
+
+.shuffle-badge {
+  position: absolute;
+  top: 1px;
+  right: -2px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 4px;
+  display: none;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.shuffle-badge.active {
+  display: inline-block;
+}
+
+.shuffle-badge.smart-badge {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.ctrl-btn-subtle.smart-mode {
+  color: #d97706;
+  background: var(--card-relief);
 }
 
 .bottom-play-btn {
