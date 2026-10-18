@@ -23,6 +23,7 @@
     searchQuery: '',
     categoryFilter: 'all', // 'all' | 'favorites' | 'albums' | 'artists'
     sortOption: 'default',
+    libraryDirty: true,
     draggedTrackId: null,
     hasPrefetchedNext: false,
     phoneUrl: (localStorage.getItem('pain_phone_url') && localStorage.getItem('pain_phone_url') !== 'http://localhost:8865') 
@@ -370,6 +371,9 @@
           ? `«${trackTitle || 'Трек'}» удалён из кэша` 
           : `"${trackTitle || 'Track'}" removed from cache`;
         showToast(msg, '🗑️');
+        if (state.categoryFilter === 'cached') {
+          state.libraryDirty = true;
+        }
         renderCurrentView();
       }
     } catch (e) {
@@ -654,6 +658,7 @@
         const lib = await libRes.json();
         if (lib.tracks && Array.isArray(lib.tracks)) {
           state.tracks = lib.tracks;
+          state.libraryDirty = true;
         }
       }
 
@@ -672,6 +677,7 @@
         const st = await statsRes.json();
         if (st) {
           state.stats = st;
+          invalidatePlayCountsCache();
           if (queue) setQueueTasteStats(st);
         }
       }
@@ -758,6 +764,7 @@
       DOM.tracksTableWrapper.style.display = 'block';
     }
 
+    state.libraryDirty = true;
     renderLibrary();
   }
 
@@ -817,13 +824,37 @@
     return list;
   }
 
+  let playCountsCache = null;
   function getTrackPlayCount(trackId) {
     if (!trackId || !state.stats || !state.stats.plays) return 0;
-    return state.stats.plays.filter(p => p.track === trackId).length;
+    if (!playCountsCache) {
+      playCountsCache = new Map();
+      const plays = state.stats.plays;
+      for (let i = 0; i < plays.length; i++) {
+        const tid = plays[i] && plays[i].track;
+        if (tid) playCountsCache.set(tid, (playCountsCache.get(tid) || 0) + 1);
+      }
+    }
+    return playCountsCache.get(trackId) || 0;
+  }
+
+  function invalidatePlayCountsCache() {
+    playCountsCache = null;
   }
 
   // --- LIBRARY RENDERING ---
-  function renderLibrary() {
+  function renderLibrary(force = false) {
+    const hasRendered = state.viewMode === 'grid'
+      ? (DOM.tracksGrid && DOM.tracksGrid.children.length > 0)
+      : (DOM.tracksTableBody && DOM.tracksTableBody.children.length > 0);
+
+    // If not dirty and already rendered in DOM, avoid wiping and re-rendering all rows
+    if (!state.libraryDirty && !force && hasRendered) {
+      updatePlayingRowUI();
+      return;
+    }
+
+    state.libraryDirty = false;
     const processed = getProcessedTracks(state.tracks);
 
     // Update Header Counter
@@ -846,6 +877,7 @@
     if (container._hasDelegatedListener) return;
     container._hasDelegatedListener = true;
 
+    // Single delegated click listener for play, fav, add to playlist, uncache
     container.addEventListener('click', (e) => {
       const tr = e.target.closest('tr[data-track-id]');
       if (!tr) return;
@@ -880,6 +912,88 @@
         playTrackInContext(track, trackList, contextInfo);
       }
     });
+
+    // Single delegated capture listener for image error fallback (zero per-row querySelectors)
+    container.addEventListener('error', (e) => {
+      const img = e.target;
+      if (img && img.classList && img.classList.contains('row-thumb-img')) {
+        img.onerror = null;
+        const tr = img.closest('tr');
+        if (tr && tr.dataset.trackId) {
+          const track = (container._currentTrackList || []).find(t => t.id === tr.dataset.trackId) || state.tracks.find(t => t.id === tr.dataset.trackId);
+          if (track) img.src = getProceduralCoverSvg(track);
+        }
+      }
+    }, true);
+
+    // Delegated Drag & Drop listeners (eliminating 3800+ individual row listeners)
+    container.addEventListener('dragstart', (e) => {
+      const tr = e.target.closest('tr[draggable="true"]');
+      if (tr) handleDragStart(e);
+    });
+    container.addEventListener('dragover', (e) => {
+      const tr = e.target.closest('tr');
+      if (tr) handleDragOver(e);
+    });
+    container.addEventListener('dragleave', (e) => {
+      const tr = e.target.closest('tr');
+      if (tr) handleDragLeave(e);
+    });
+    container.addEventListener('drop', (e) => {
+      const tr = e.target.closest('tr');
+      if (tr) handleDrop(e);
+    });
+    container.addEventListener('dragend', (e) => {
+      handleDragEnd(e);
+    });
+  }
+
+  let activeTableRenderToken = 0;
+
+  function createTrackRow(track, index, enableDragAndDrop) {
+    const isCurrent = state.currentTrackId === track.id;
+    const isPlayingCurrent = isCurrent && state.isPlaying;
+    const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
+    const plays = getTrackPlayCount(track.id);
+
+    const tr = document.createElement('tr');
+    tr.dataset.trackId = track.id;
+    tr.dataset.index = index;
+    if (enableDragAndDrop && state.sortOption === 'default' && !state.searchQuery) {
+      tr.draggable = true;
+    }
+    if (isCurrent) tr.classList.add('playing-row');
+
+    tr.innerHTML = `
+      <td class="col-index">
+        <div class="index-cell-wrapper">
+          <svg class="drag-grip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+          <span class="index-num">${isPlayingCurrent ? '▶' : index + 1}</span>
+        </div>
+      </td>
+      <td class="col-cover">
+        <img class="row-thumb-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
+      </td>
+      <td class="col-title">
+        <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
+        <div class="track-row-sub">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+      </td>
+      <td class="col-album">${escapeHtml(track.album || '—')}</td>
+      <td class="col-plays">${plays}</td>
+      <td class="col-time">${formatTime(durationSec)}</td>
+      <td class="col-actions">
+        <button class="row-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
+          <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+        <button class="row-more-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="row-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        </button>
+      </td>
+    `;
+    return tr;
   }
 
   function renderTracksTable(container, trackList, enableDragAndDrop = true, contextInfo = null) {
@@ -899,74 +1013,40 @@
       return;
     }
 
+    const currentToken = ++activeTableRenderToken;
+    const initialBatchSize = 60;
+    const initialBatch = trackList.slice(0, initialBatchSize);
+
     const fragment = document.createDocumentFragment();
-
-    trackList.forEach((track, index) => {
-      const isCurrent = state.currentTrackId === track.id;
-      const isPlayingCurrent = isCurrent && state.isPlaying;
-      const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
-      const plays = getTrackPlayCount(track.id);
-
-      const tr = document.createElement('tr');
-      tr.dataset.trackId = track.id;
-      tr.dataset.index = index;
-      if (enableDragAndDrop && state.sortOption === 'default' && !state.searchQuery) {
-        tr.draggable = true;
-      }
-      if (isCurrent) tr.classList.add('playing-row');
-
-      tr.innerHTML = `
-        <td class="col-index">
-          <div class="index-cell-wrapper">
-            <svg class="drag-grip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
-            <span class="index-num">${isPlayingCurrent ? '▶' : index + 1}</span>
-          </div>
-        </td>
-        <td class="col-cover">
-          <img class="row-thumb-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
-        </td>
-        <td class="col-title">
-          <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
-          <div class="track-row-sub">${escapeHtml(track.artist || 'Unknown Artist')}</div>
-        </td>
-        <td class="col-album">${escapeHtml(track.album || '—')}</td>
-        <td class="col-plays">${plays}</td>
-        <td class="col-time">${formatTime(durationSec)}</td>
-        <td class="col-actions">
-          <button class="row-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
-            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-          </button>
-          <button class="row-more-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <button class="row-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-          </button>
-        </td>
-      `;
-
-      // Thumbnail error fallback
-      const thumbImg = tr.querySelector('.row-thumb-img');
-      if (thumbImg) {
-        thumbImg.onerror = () => {
-          thumbImg.onerror = null;
-          thumbImg.src = getProceduralCoverSvg(track);
-        };
-      }
-
-      // Drag and drop reordering
-      if (tr.draggable) {
-        tr.addEventListener('dragstart', handleDragStart);
-        tr.addEventListener('dragover', handleDragOver);
-        tr.addEventListener('dragleave', handleDragLeave);
-        tr.addEventListener('drop', handleDrop);
-        tr.addEventListener('dragend', handleDragEnd);
-      }
-
-      fragment.appendChild(tr);
-    });
-
+    for (let i = 0; i < initialBatch.length; i++) {
+      fragment.appendChild(createTrackRow(initialBatch[i], i, enableDragAndDrop));
+    }
     container.appendChild(fragment);
+
+    // Stream remaining tracks smoothly in idle animation frames
+    if (trackList.length > initialBatchSize) {
+      let nextIndex = initialBatchSize;
+      const chunkSize = 140;
+
+      function renderNextChunk() {
+        if (currentToken !== activeTableRenderToken) return;
+        if (nextIndex >= trackList.length) return;
+
+        const chunkFragment = document.createDocumentFragment();
+        const end = Math.min(trackList.length, nextIndex + chunkSize);
+        for (let i = nextIndex; i < end; i++) {
+          chunkFragment.appendChild(createTrackRow(trackList[i], i, enableDragAndDrop));
+        }
+        container.appendChild(chunkFragment);
+        nextIndex = end;
+
+        if (nextIndex < trackList.length) {
+          requestAnimationFrame(renderNextChunk);
+        }
+      }
+
+      requestAnimationFrame(renderNextChunk);
+    }
   }
 
   function ensureGridDelegation(container) {
@@ -1005,6 +1085,60 @@
 
       playTrackInContext(track, trackList, contextInfo);
     });
+
+    container.addEventListener('error', (e) => {
+      const img = e.target;
+      if (img && img.classList && img.classList.contains('track-card-img')) {
+        img.onerror = null;
+        const card = img.closest('.track-card');
+        if (card && card.dataset.trackId) {
+          const track = (container._currentTrackList || []).find(t => t.id === card.dataset.trackId) || state.tracks.find(t => t.id === card.dataset.trackId);
+          if (track) img.src = getProceduralCoverSvg(track);
+        }
+      }
+    }, true);
+  }
+
+  let activeGridRenderToken = 0;
+
+  function createTrackCard(track) {
+    const isCurrent = state.currentTrackId === track.id;
+    const isPlayingCurrent = isCurrent && state.isPlaying;
+    const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
+
+    const card = document.createElement('div');
+    card.className = `track-card ${isCurrent ? 'playing-card' : ''}`;
+    card.dataset.trackId = track.id;
+
+    card.innerHTML = `
+      <div class="track-card-cover-wrapper">
+        <img class="track-card-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
+        <div class="track-card-play-overlay">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            ${isPlayingCurrent 
+              ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>' 
+              : '<polygon points="6 3 20 12 6 21 6 3"/>'}
+          </svg>
+        </div>
+      </div>
+      <div class="track-card-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
+      <div class="track-card-artist">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+      <div class="track-card-footer">
+        <span class="track-card-duration">${formatTime(durationSec)}</span>
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <button class="card-add-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="card-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+          <button class="card-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="${track.favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+    return card;
   }
 
   // --- RENDERING: GRID CARDS ---
@@ -1023,59 +1157,39 @@
       return;
     }
 
+    const currentToken = ++activeGridRenderToken;
+    const initialBatchSize = 30;
+    const initialBatch = trackList.slice(0, initialBatchSize);
+
     const fragment = document.createDocumentFragment();
+    for (let i = 0; i < initialBatch.length; i++) {
+      fragment.appendChild(createTrackCard(initialBatch[i]));
+    }
+    container.appendChild(fragment);
 
-    trackList.forEach(track => {
-      const isCurrent = state.currentTrackId === track.id;
-      const isPlayingCurrent = isCurrent && state.isPlaying;
-      const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
+    if (trackList.length > initialBatchSize) {
+      let nextIndex = initialBatchSize;
+      const chunkSize = 40;
 
-      const card = document.createElement('div');
-      card.className = `track-card ${isCurrent ? 'playing-card' : ''}`;
-      card.dataset.trackId = track.id;
+      function renderNextChunk() {
+        if (currentToken !== activeGridRenderToken) return;
+        if (nextIndex >= trackList.length) return;
 
-      card.innerHTML = `
-        <div class="track-card-cover-wrapper">
-          <img class="track-card-img" src="${getCoverUrl(track)}" alt="" loading="lazy">
-          <div class="track-card-play-overlay">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-              ${isPlayingCurrent 
-                ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>' 
-                : '<polygon points="6 3 20 12 6 21 6 3"/>'}
-            </svg>
-          </div>
-        </div>
-        <div class="track-card-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
-        <div class="track-card-artist">${escapeHtml(track.artist || 'Unknown Artist')}</div>
-        <div class="track-card-footer">
-          <span class="track-card-duration">${formatTime(durationSec)}</span>
-          <div style="display: flex; gap: 4px; align-items: center;">
-            <button class="card-add-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-            <button class="card-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-            <button class="card-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="${track.favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-            </button>
-          </div>
-        </div>
-      `;
+        const chunkFragment = document.createDocumentFragment();
+        const end = Math.min(trackList.length, nextIndex + chunkSize);
+        for (let i = nextIndex; i < end; i++) {
+          chunkFragment.appendChild(createTrackCard(trackList[i]));
+        }
+        container.appendChild(chunkFragment);
+        nextIndex = end;
 
-      // Cover error fallback
-      const cardImg = card.querySelector('.track-card-img');
-      if (cardImg) {
-        cardImg.onerror = () => {
-          cardImg.onerror = null;
-          cardImg.src = getProceduralCoverSvg(track);
-        };
+        if (nextIndex < trackList.length) {
+          requestAnimationFrame(renderNextChunk);
+        }
       }
 
-      fragment.appendChild(card);
-    });
-
-    container.appendChild(fragment);
+      requestAnimationFrame(renderNextChunk);
+    }
   }
 
   // --- DRAG AND DROP REORDERING HANDLERS ---
@@ -1153,6 +1267,7 @@
 
         // Persist to local library.json
         saveLibraryToServer();
+        state.libraryDirty = true;
         renderLibrary();
       }
     }
@@ -1929,7 +2044,23 @@
       updateFavoriteUI(track.favorite);
     }
 
-    renderCurrentView();
+    // Direct DOM updates for instant feedback without re-rendering all rows
+    const isFav = !!track.favorite;
+    document.querySelectorAll(`tr[data-track-id="${track.id}"] .row-fav-btn`).forEach(btn => {
+      btn.classList.toggle('active', isFav);
+      const svg = btn.querySelector('svg');
+      if (svg) svg.style.fill = isFav ? 'currentColor' : 'none';
+    });
+    document.querySelectorAll(`.track-card[data-track-id="${track.id}"] .card-fav-btn`).forEach(btn => {
+      btn.classList.toggle('active', isFav);
+      const svg = btn.querySelector('svg');
+      if (svg) svg.setAttribute('fill', isFav ? 'currentColor' : 'none');
+    });
+
+    if (state.currentView === 'favorites' || state.sortOption === 'favorites-first' || state.categoryFilter === 'favorites') {
+      state.libraryDirty = true;
+      renderCurrentView();
+    }
 
     // 1. Relay to backend & mobile phone via server
     try {
@@ -1990,12 +2121,13 @@
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
+    invalidatePlayCountsCache();
     if (queue) setQueueTasteStats(state.stats);
 
     // 1. Immediately update live DOM play count for all rows showing this track
     const newPlayCount = getTrackPlayCount(track.id);
-    document.querySelectorAll('tr[data-track-id]').forEach(row => {
-      if(row.dataset.trackId===track.id){const el=row.querySelector('.col-plays');if(el)el.textContent=newPlayCount;}
+    document.querySelectorAll(`tr[data-track-id="${track.id}"] .col-plays`).forEach(el => {
+      el.textContent = newPlayCount;
     });
 
     // 2. Relay to server
@@ -2434,6 +2566,8 @@
       if (!libRes.ok) throw new Error('Library fetch failed');
       const libData = await libRes.json();
       state.tracks = libData.tracks || [];
+      state.libraryDirty = true;
+      invalidatePlayCountsCache();
 
       // Save locally
       await fetch('/api/save-library', {
@@ -2458,6 +2592,7 @@
         const merged=await fetch('/api/saved-stats');
         if(merged.ok) {
           state.stats=await merged.json();
+          invalidatePlayCountsCache();
           if (queue) setQueueTasteStats(state.stats);
         }
       }
@@ -2942,6 +3077,7 @@
     DOM.searchInput.addEventListener('input', (e) => {
       state.searchQuery = e.target.value;
       DOM.searchClearBtn.style.display = state.searchQuery ? 'block' : 'none';
+      state.libraryDirty = true;
       renderLibrary();
     });
 
@@ -2949,6 +3085,7 @@
       DOM.searchInput.value = '';
       state.searchQuery = '';
       DOM.searchClearBtn.style.display = 'none';
+      state.libraryDirty = true;
       renderLibrary();
     });
 
@@ -2958,6 +3095,7 @@
         DOM.filterChips.forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         state.categoryFilter = chip.dataset.filter;
+        state.libraryDirty = true;
         renderLibrary();
       });
     });
@@ -2965,6 +3103,7 @@
     // Sort Selector
     DOM.sortSelect.addEventListener('change', (e) => {
       state.sortOption = e.target.value;
+      state.libraryDirty = true;
       renderLibrary();
     });
 

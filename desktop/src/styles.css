@@ -137,9 +137,6 @@ body,
 .top-bar,
 .bottom-player-bar,
 .tracks-table-wrapper,
-.tracks-table th,
-.tracks-table td,
-.track-card,
 .card,
 .joint-card,
 .song-card,
@@ -1006,8 +1003,6 @@ body,
 .tracks-table tbody tr {
   cursor: pointer;
   transition: background-color 0.12s ease;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 54px;
 }
 
 .tracks-table tbody tr:hover {
