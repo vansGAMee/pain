@@ -9,10 +9,14 @@
 ## ⚡ Главные фишки
 
 - **Полная синхронизация ПК ↔ Телефон**:
-  - Всё синхронизируется в реальном времени: треки, кастомные плейлисты, лайки и история.
+  - Всё синхронизируется в реальном времени по локальному Wi-Fi: треки, кастомные плейлисты, лайки и история.
   - Лайкнул трек на компьютере — он моментально появился в «Избранном» на телефоне.
   - Статистика объединяется: где бы ты ни слушал музыку, чарты и часы прослушивания актуальны везде.
-  - Стриминг аудио напрямую с телефона по сети без проводов + кэширование на ПК для офлайн-игры.
+  - Стриминг аудио напрямую с телефона по сети без проводов + умное кэширование на ПК для офлайн-игры.
+
+- **Караоке и текст песен**:
+  - Синхронизированный построчный текст (.lrc и локальное хранилище) с плавной подсветкой текущей строки.
+  - Встроенный редактор отметок времени прямо во время прослушивания — полностью автономно и без интернета.
 
 - **Медиатека и умное управление**:
   - Два режима отображения: крупная сетка карточек с обложками или аккуратный список строк.
@@ -39,22 +43,28 @@
 
 ### Компьютер (Windows & Linux)
 <p align="center">
-  <img src="docs/screenshots/desktop_library.png" width="49%" alt="Библиотека" />
-  <img src="docs/screenshots/desktop_favorites.png" width="49%" alt="Избранное" />
+  <img src="docs/screenshots/desktop_library.png" width="49%" alt="Фонотека ПК" />
+  <img src="docs/screenshots/desktop_favorites.png" width="49%" alt="Избранное с аурой" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/desktop_insights.png" width="49%" alt="Статистика" />
+  <img src="docs/screenshots/desktop_insights.png" width="49%" alt="Статистика и аналитика" />
+  <img src="docs/screenshots/desktop_karaoke.png" width="49%" alt="Караоке и текст песен" />
+</p>
+<p align="center">
   <img src="docs/screenshots/desktop_player.png" width="49%" alt="Виниловый плеер" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/desktop_equalizer.png" width="60%" alt="Эквалайзер" />
+  <img src="docs/screenshots/desktop_equalizer.png" width="49%" alt="10-полосный эквалайзер" />
 </p>
 
 ### Телефон (Android)
 <p align="center">
-  <img src="docs/screenshots/android_home.png" width="31%" alt="Android Главная" />
-  <img src="docs/screenshots/android_player.png" width="31%" alt="Android Плеер" />
-  <img src="docs/screenshots/android_library.png" width="31%" alt="Android Фонотека" />
+  <img src="docs/screenshots/android_home.png" width="32%" alt="Android Главная" />
+  <img src="docs/screenshots/android_player.png" width="32%" alt="Android Плеер" />
+  <img src="docs/screenshots/android_library.png" width="32%" alt="Android Фонотека" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/android_insights.png" width="32%" alt="Android Инсайты" />
+  <img src="docs/screenshots/android_karaoke.png" width="32%" alt="Android Караоке" />
+  <img src="docs/screenshots/android_sync.png" width="32%" alt="Android Синхронизация" />
 </p>
 
 ---
@@ -62,12 +72,12 @@
 ## 🚀 Установка и запуск
 
 ### 📱 Android
-Скачай свежий [**`Pain-v1.1.1-Android.apk`**](../../releases/latest) и установи на телефон.
+Скачай свежий [**`Pain-v1.2.0-Android.apk`**](../../releases/latest) и установи на телефон.
 
 ### 💻 Windows
 В [Releases](../../releases/latest) доступны:
 - **`Pain.exe`** — автономный файл, запускается двойным кликом (установка не требуется, Node.js не нужен).
-- **`Pain-v1.1.1-Windows.zip`** — переносной архив с ярлыком на рабочий стол.
+- **`Pain-v1.2.0-Windows.zip`** — переносной архив с ярлыком на рабочий стол.
 
 ### 🐧 Linux (Arch / Ubuntu / Debian / Fedora)
 - **Установка в системное меню приложений:**
@@ -83,3 +93,4 @@
 ## Лицензия
 
 MIT License.
+
