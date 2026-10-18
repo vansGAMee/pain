@@ -384,6 +384,20 @@ function getTrackMimeType(trackId) {
   return 'audio/mpeg';
 }
 
+function safeAtomicRename(src, dst) {
+  try {
+    if (fs.existsSync(dst)) {
+      try { fs.unlinkSync(dst); } catch (_) {}
+    }
+    fs.renameSync(src, dst);
+  } catch (err) {
+    try {
+      fs.copyFileSync(src, dst);
+      try { fs.unlinkSync(src); } catch (_) {}
+    } catch (_) {}
+  }
+}
+
 function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
   try {
     const stat = fs.statSync(filePath);
@@ -411,6 +425,9 @@ function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
       stream.on('error', () => {
         try { res.end(); } catch (e) {}
       });
+      res.on('close', () => {
+        try { stream.destroy(); } catch (_) {}
+      });
       stream.pipe(res);
     } else {
       res.writeHead(200, {
@@ -426,6 +443,9 @@ function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
       const stream = fs.createReadStream(filePath);
       stream.on('error', () => {
         try { res.end(); } catch (e) {}
+      });
+      res.on('close', () => {
+        try { stream.destroy(); } catch (_) {}
       });
       stream.pipe(res);
     }
@@ -544,7 +564,7 @@ const server = http.createServer((req, res) => {
       try {
         const sz = fs.existsSync(tmpDest) ? fs.statSync(tmpDest).size : 0;
         if (sz >= 4096) {
-          fs.renameSync(tmpDest, dest);
+          safeAtomicRename(tmpDest, dest);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', filename: path.basename(dest), size: sz }));
           return;
@@ -602,7 +622,7 @@ const server = http.createServer((req, res) => {
         try{
           const size=fs.statSync(temp).size;
           const expected=Number(phoneRes.headers['content-length'])||0;
-          if(phoneRes.complete&&size>=4096&&(!expected||expected===size))fs.renameSync(temp,cachedFile);else discard();
+          if(phoneRes.complete&&size>=4096&&(!expected||expected===size))safeAtomicRename(temp,cachedFile);else discard();
         }catch(_){discard();}
       });
       phoneRes.pipe(output);
@@ -635,7 +655,7 @@ const server = http.createServer((req, res) => {
         fileStream.on('finish', () => {
           try {
             if (phoneRes.complete && fs.existsSync(tmpFile) && fs.statSync(tmpFile).size >= 4096 && (!phoneRes.headers['content-length'] || fs.statSync(tmpFile).size === Number(phoneRes.headers['content-length']))) {
-              fs.renameSync(tmpFile, cachedFile);
+              safeAtomicRename(tmpFile, cachedFile);
             }
           } catch (e) {}
           res.writeHead(200, { 'Content-Type': 'application/json' });
