@@ -105,18 +105,18 @@ test('cycleShuffleMode toggles through off -> random -> smart -> off with labels
 
   const r2 = engine.cycleShuffleMode();
   assert.equal(r2.mode, 'smart');
-  assert.equal(r2.badge, 'BPM');
+  assert.equal(r2.badge, 'DJ');
 
   const r3 = engine.cycleShuffleMode();
   assert.equal(r3.mode, 'off');
   assert.equal(r3.badge, '');
 });
 
-test('estimateBpm returns deterministic realistic range', () => {
+test('unknown BPM remains unknown', () => {
   const b1 = estimateBpm({ id: '1', title: 'Song 1', artist: 'Artist' });
   const b2 = estimateBpm({ id: '1', title: 'Song 1', artist: 'Artist' });
   assert.equal(b1, b2);
-  assert.ok(b1 >= 70 && b1 <= 170);
+  assert.equal(b1, null);
 });
 
 test('detectBpmFromPcm detects tempo from generated pulse train', () => {
@@ -251,6 +251,7 @@ test('smart DJ transition scoring handles multi-track artist spacing, skip penal
     ]
   };
 
+  stats.plays = stats.plays.map((p,i)=>({...p,started:Date.now()-(10-i)*60000,heard:p.coverage*180000,duration:180000,finished:p.completed?1:0}));
   const sBad = scoreSmartTransition(cur, badCandidate, stats, {});
   const sGood = scoreSmartTransition(cur, goodCandidate, stats, {});
   assert.ok(sGood.score > sBad.score + 30, 'Completed track must be prioritized over skipped track');

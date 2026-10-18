@@ -18,6 +18,8 @@
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 
+  const Taste = typeof module === 'object' && module.exports ? require('./taste-model') : globalThis.TasteModel;
+
   /**
    * Deterministic fast hash string -> number
    */
@@ -31,18 +33,10 @@
   }
 
   /**
-   * Estimates a realistic BPM (72 - 164) if audio has not been decoded yet.
+   * Returns only measured or tagged BPM; unknown tempo stays unknown.
    */
   function estimateBpm(track) {
-    if (!track) return 120;
-    if (typeof track.bpm === 'number' && track.bpm > 40 && track.bpm < 240) {
-      return Math.round(track.bpm);
-    }
-    const seedStr = `${track.artist || ''}::${track.title || ''}::${track.duration || 0}`;
-    const h = hashString(seedStr);
-    // Common music tempo range: 75 to 160 BPM
-    const bpm = 75 + (h % 86);
-    return bpm;
+    return track ? Taste.knownBpm(track,{}) : null;
   }
 
   /**
@@ -50,7 +44,7 @@
    * Uses energy peak detection and inter-peak interval autocorrelation.
    */
   function detectBpmFromPcm(samples, sampleRate) {
-    if (!samples || samples.length === 0 || !sampleRate) return 120;
+    if (!samples || samples.length === 0 || !sampleRate) return null;
 
     // Decimate to roughly 4000-8000 Hz for fast onset energy calculation
     const downsampleStep = Math.max(1, Math.floor(sampleRate / 4410));
@@ -62,7 +56,7 @@
     const hopSize = Math.floor(windowSize / 2);
     const numFrames = Math.floor((decimatedLen - windowSize) / hopSize);
 
-    if (numFrames < 10) return 120;
+    if (numFrames < 10) return null;
 
     const energies = new Float32Array(numFrames);
     for (let f = 0; f < numFrames; f++) {
@@ -104,7 +98,7 @@
       }
     }
 
-    if (peakIndices.length < 4) return 120;
+    if (peakIndices.length < 4) return null;
 
     for (let i = 0; i < peakIndices.length; i++) {
       for (let j = i + 1; j < peakIndices.length; j++) {
@@ -126,7 +120,7 @@
       }
     }
 
-    if (maxCount === 0) return 120;
+    if (maxCount === 0) return null;
 
     let detectedBpm = Math.round((60 * frameRate) / bestInterval);
     // Keep in canonical 70-160 range
@@ -197,134 +191,7 @@
    * circadian context, listen completion rates, and skip penalties.
    */
   function scoreSmartTransition(currentTrack, candidate, stats, bpmStore, contextOptions = {}) {
-    const curBpm = (bpmStore && bpmStore[currentTrack.id]) || currentTrack.bpm || estimateBpm(currentTrack);
-    const candBpm = (bpmStore && bpmStore[candidate.id]) || candidate.bpm || estimateBpm(candidate);
-
-    const dist = harmonicBpmDistance(curBpm, candBpm);
-    const reasons = [];
-
-    // 1. Base Tempo Score (0 to 100)
-    let score = Math.max(0, 100 - dist * 3.5);
-    if (dist <= 3) {
-      reasons.push(candBpm === curBpm ? `Темп ${candBpm} BPM` : `Близкий темп (${candBpm} BPM)`);
-    } else if (dist <= 8) {
-      reasons.push(`Гармоничный темп (${candBpm} BPM)`);
-    }
-
-    // Energy progression: slight lift keeps flow dynamic and engaging
-    const bpmDiff = candBpm - curBpm;
-    if (bpmDiff >= 1 && bpmDiff <= 6) {
-      score += 15;
-      reasons.push(`Подъём энергии (+${bpmDiff} BPM)`);
-    } else if (dist === 0 && Math.abs(curBpm - candBpm) > 20) {
-      score += 20;
-      reasons.push(`Гармонический скачок (${candBpm} BPM)`);
-    } else if (dist > 25) {
-      score -= 30;
-    }
-
-    // 2. Multi-track Artist Spacing
-    const curArtist = (currentTrack.artist || '').trim().toLowerCase();
-    const candArtist = (candidate.artist || '').trim().toLowerCase();
-    const recentArtists = contextOptions.recentArtists || [];
-
-    if (candArtist && curArtist) {
-      if (candArtist === curArtist) {
-        score -= 45; // Do not repeat same artist immediately
-      } else {
-        const recentIdx = recentArtists.lastIndexOf(candArtist);
-        if (recentIdx !== -1) {
-          const songsAgo = recentArtists.length - recentIdx;
-          if (songsAgo <= 2) {
-            score -= 25;
-          } else if (songsAgo <= 4) {
-            score -= 10;
-          } else {
-            score += 25;
-            reasons.push(`Смена артиста (${candidate.artist})`);
-          }
-        } else {
-          score += 40;
-          reasons.push(`Смена артиста (${candidate.artist})`);
-        }
-      }
-    }
-
-    // 3. Album Diversity
-    if (candidate.album && currentTrack.album && candidate.album.toLowerCase() === currentTrack.album.toLowerCase()) {
-      if (candArtist === curArtist) {
-        score -= 15;
-      }
-    }
-
-    // 4. Vibe & Mood Affinity
-    const curVibe = detectTrackVibe(currentTrack);
-    const candVibe = detectTrackVibe(candidate);
-    if (curVibe !== VIBE_MOODS.NEUTRAL && candVibe !== VIBE_MOODS.NEUTRAL) {
-      if (curVibe === candVibe) {
-        score += 18;
-        reasons.push(`Вайб: ${candVibe}`);
-      }
-    }
-
-    // 5. Circadian / Time-of-Day Rhythm
-    const hour = typeof contextOptions.hour === 'number' ? contextOptions.hour : (new Date()).getHours();
-    const circadian = getCircadianVibe(hour);
-    if (circadian.phase === 'night') {
-      if (candBpm >= 70 && candBpm <= 110) {
-        score += 15;
-        reasons.push('Ночной чилл');
-      } else if (candBpm > 135 && !candidate.favorite) {
-        score -= 20;
-      }
-    } else if (circadian.phase === 'evening') {
-      if (candidate.favorite || candBpm >= 115) {
-        score += 12;
-      }
-    }
-
-    // 6. Favorite Bonus
-    if (candidate.favorite) {
-      score += 20;
-      reasons.push('Любимый трек');
-    }
-
-    // 7. Listening Stats & Skip Intelligence
-    if (stats && Array.isArray(stats.plays)) {
-      const plays = stats.plays.filter(p => p.track === candidate.id);
-      if (plays.length > 0) {
-        const fullPlays = plays.filter(p => p.completed || p.coverage >= 0.75).length;
-        const completionRate = fullPlays / plays.length;
-        score += completionRate * 25;
-        if (completionRate >= 0.8) {
-          reasons.push('Высокая дослушиваемость');
-        }
-
-        // Replay bonus
-        if (plays.length >= 3) {
-          score += Math.min(20, plays.length * 4);
-          reasons.push('Часто слушают');
-        }
-
-        // Early skip penalty
-        const earlySkips = plays.filter(p => !p.completed && (p.coverage || 0) < 0.25).length;
-        if (earlySkips > 0) {
-          const skipRatio = earlySkips / plays.length;
-          score -= skipRatio * 35;
-        }
-      } else {
-        // Discovery bonus for tracks never played
-        score += 12;
-        reasons.push('Свежая находка');
-      }
-    }
-
-    return {
-      score: Math.round(score * 10) / 10,
-      bpm: candBpm,
-      dist,
-      reasons: reasons.slice(0, 3)
-    };
+    return new Taste([currentTrack,candidate],stats?.plays||[]).score(currentTrack,candidate,bpmStore,contextOptions);
   }
 
   /**
@@ -352,6 +219,15 @@
 
     setStats(stats) {
       this.stats = stats;
+      this._taste = null;
+    }
+
+    smartScore(current, candidate, context) {
+      if (!this._taste || this._tasteTracks !== this.tracks) {
+        this._taste = new Taste(this.tracks, this.stats?.plays || []);
+        this._tasteTracks = this.tracks;
+      }
+      return this._taste.score(current,candidate,this.bpmCache,context);
     }
 
     setBpmCache(cache) {
@@ -365,7 +241,7 @@
     }
 
     getTrackBpm(track) {
-      if (!track) return 120;
+      if (!track) return null;
       return this.bpmCache[track.id] || track.bpm || estimateBpm(track);
     }
 
@@ -492,9 +368,9 @@
         },
         smart: {
           mode: 'smart',
-          labelRu: 'Умный по BPM и стилю',
-          labelEn: 'Smart BPM & Vibe',
-          badge: 'BPM'
+          labelRu: 'По вашему вкусу',
+          labelEn: 'Learns your taste',
+          badge: 'DJ'
         }
       };
 
@@ -554,26 +430,15 @@
           // Score all candidates with multi-factor engine
           const scored = candidates.map(idx => {
             const cand = this.tracks[idx];
-            const result = scoreSmartTransition(current, cand, this.stats, this.bpmCache, contextOpts);
+            const result = this.smartScore(current, cand, contextOpts);
             return { index: idx, ...result };
           });
 
           // Sort descending by score
           scored.sort((a, b) => b.score - a.score);
 
-          // Score-weighted choice among top candidates for natural DJ feel
-          const topSlice = scored.slice(0, Math.min(3, scored.length));
-          const weights = [0.65, 0.25, 0.10].slice(0, topSlice.length);
-          const r = Math.random();
-          let cum = 0;
-          let chosen = topSlice[0];
-          for (let i = 0; i < topSlice.length; i++) {
-            cum += weights[i];
-            if (r <= cum) {
-              chosen = topSlice[i];
-              break;
-            }
-          }
+          // Identical ranking in peekNext and next keeps prefetch accurate.
+          const chosen = scored[0];
           nextIndex = chosen.index;
           this.lastTransition = {
             fromTrack: current,
@@ -634,7 +499,7 @@
         let best = candidates[0];
         let bestScore = -Infinity;
         for (const idx of candidates) {
-          const { score } = scoreSmartTransition(current, this.tracks[idx], this.stats, this.bpmCache, contextOpts);
+          const { score } = this.smartScore(current, this.tracks[idx], contextOpts);
           if (score > bestScore) {
             bestScore = score;
             best = idx;

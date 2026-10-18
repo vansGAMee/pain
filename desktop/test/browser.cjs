@@ -26,6 +26,7 @@ const assert=require('node:assert/strict');
  await page.evaluate(()=>document.querySelector('.app-layout').requestFullscreen=()=>Promise.reject(new Error('denied')));
  await page.click('#fullscreenPlayerBtn');await page.waitForSelector('.player-fullscreen');await page.click('#exitFullscreenBtn');await page.waitForFunction(()=>!document.querySelector('.player-fullscreen'));
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('#bottomPlayBtn').evaluate(v=>getComputedStyle(v).transitionDuration),'0s');
+ await page.evaluate(()=>window.painQueue?.setLoopMode('off'));
  await page.waitForFunction(()=>document.querySelector('audio').ended,{},{timeout:12000});
  assert.equal(records.length,1);assert.equal(records[0].track,'b');assert.ok(records[0].heard>=5400&&records[0].heard<=6500);assert.equal(records[0].finished,1);
  assert.deepEqual(errors,[]);console.log('PASS: restored play, rapid track change, fullscreen/Escape, denied-fullscreen fallback, metallic gradient, reduced motion, no JS errors');

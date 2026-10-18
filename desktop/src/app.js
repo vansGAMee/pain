@@ -54,7 +54,7 @@
 
   let initialBpmCache = {};
   try {
-    const rawBpm = localStorage.getItem('pain_bpm_cache');
+    const rawBpm = localStorage.getItem('pain_bpm_cache_v2');
     if (rawBpm) initialBpmCache = JSON.parse(rawBpm);
   } catch (e) {}
 
@@ -372,7 +372,7 @@
       DOM.bottomShuffleBtn.classList.toggle('smart-mode', mode === 'smart');
       if (DOM.bottomShuffleBadge) {
         let badge = '';
-        if (mode === 'smart') badge = 'BPM';
+        if (mode === 'smart') badge = 'DJ';
         else if (mode === 'random') badge = '🔀';
         DOM.bottomShuffleBadge.textContent = badge;
         DOM.bottomShuffleBadge.classList.toggle('active', !!badge);
@@ -610,7 +610,7 @@
         const st = await statsRes.json();
         if (st) {
           state.stats = st;
-          if (queue) queue.setStats(st);
+          if (queue) setQueueTasteStats(st);
         }
       }
 
@@ -1225,7 +1225,7 @@
     const ctx = queue ? queue.getContext() : null;
     const ctxTitle = ctx ? ctx.title : 'PAIN AUDIO';
     const bpm = queue ? queue.getTrackBpm(track) : (track.bpm || 120);
-    DOM.bigOriginBadge.textContent = `${ctxTitle.toUpperCase()} · ${bpm} BPM · ${track.mime || 'audio/mpeg'}`;
+    DOM.bigOriginBadge.textContent = `${ctxTitle.toUpperCase()} · ${bpm ? bpm + ' BPM · ' : ''}${track.mime || 'audio/mpeg'}`;
 
     DOM.vinylBigCoverImg.src = getCoverUrl(track);
     DOM.vinylBigCoverImg.onerror = function() {
@@ -1505,7 +1505,7 @@
     if (!track) return;
     initAudioNodes();
     sampleListening();
-    if (state.currentTrackId) recordTrackFinished(state.currentTrackId);
+    if (state.currentTrackId) recordTrackFinished(state.currentTrackId,true);
     const request = ++playbackRequest;
     state.currentTrackId = track.id;
     state.currentTrackIndex = state.tracks.findIndex(t => t.id === track.id);
@@ -1571,7 +1571,7 @@
       if (detected && detected >= 60 && detected <= 200) {
         queue.bpmCache[track.id] = detected;
         try {
-          localStorage.setItem('pain_bpm_cache', JSON.stringify(queue.bpmCache));
+          localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache));
         } catch (e) {}
         if (state.currentTrackId === track.id) {
           updateQueueContextUI({
@@ -1586,7 +1586,7 @@
         }
       }
     } catch (e) {
-      // Non-fatal, keeps deterministic acoustic estimate
+      // Unknown tempo stays unknown when decoding fails.
     } finally {
       track._bpmAnalyzing = false;
     }
@@ -1818,17 +1818,32 @@
     saveLibraryToServer();
   }
 
-  async function recordTrackFinished(trackId) {
-    if(!listening||listening.id!==trackId)return;
+  function setQueueTasteStats(stats){
+    let skips=[];try{skips=JSON.parse(localStorage.getItem('pain_taste_skips')||'[]');}catch(_){}
+    queue.setStats({plays:[...(stats.plays||[]),...skips]});
+  }
+
+  async function recordTrackFinished(trackId,explicitSkip=false) {
+    if(!listening||listening.id!==trackId||listening.closed)return;
     const audible=listening.finish();
-    if(!audible)return;
+    if(!audible){
+      if(explicitSkip && listening.heard>=1000 && listening.duration>0 && !listening._tasteRecorded){
+        listening._tasteRecorded=true;
+        const feedback={track:trackId,started:listening.started,heard:Math.round(listening.heard),duration:listening.duration,skipped:1};
+        let skips=[];try{skips=JSON.parse(localStorage.getItem('pain_taste_skips')||'[]');}catch(_){}
+        skips.push(feedback);skips=skips.slice(-2000);
+        try{localStorage.setItem('pain_taste_skips',JSON.stringify(skips));}catch(_){}
+        if(queue)queue.setStats({plays:[...(state.stats.plays||[]),...skips]});
+      }
+      return;
+    }
     const now=Date.now();
     const playRecord={...audible,id:'pc_'+(globalThis.crypto?.randomUUID?.() || now+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',at:now,timestamp:now};
     const track=state.tracks.find(t=>t.id===trackId);
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
-    if (queue) queue.setStats(state.stats);
+    if (queue) setQueueTasteStats(state.stats);
 
     // 1. Immediately update live DOM play count for all rows showing this track
     const newPlayCount = getTrackPlayCount(track.id);
@@ -1877,6 +1892,8 @@
   }
 
   function playNextTrack() {
+    sampleListening();
+    if(state.currentTrackId)recordTrackFinished(state.currentTrackId,!audio.ended);
     if (queue) {
       const nextTrack = queue.next();
       if (nextTrack) {
@@ -2075,7 +2092,7 @@
         const merged=await fetch('/api/saved-stats');
         if(merged.ok) {
           state.stats=await merged.json();
-          if (queue) queue.setStats(state.stats);
+          if (queue) setQueueTasteStats(state.stats);
         }
       }
 
