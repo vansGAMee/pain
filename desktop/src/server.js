@@ -868,8 +868,9 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
         const started = parsed.started || (parsed.play && parsed.play.started) || (Date.now() - heard);
         const finished = (parsed.finished === true || parsed.finished === 1 || (parsed.play && parsed.play.finished == 1)) ? 1 : 0;
 
+        const playId = parsed.id || (parsed.play && parsed.play.id) || ('pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000));
         const playObj = parsed.play || {
-          id: 'pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+          id: playId,
           track: trackId,
           session: 'pc_companion',
           started: started,
@@ -879,8 +880,12 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
           finished: finished,
           skipped: 0
         };
-        stats.plays.push(playObj);
-        fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
+
+        const alreadyExists = stats.plays.some(p => p.id === playObj.id || (p.track === playObj.track && Math.abs(p.started - playObj.started) < 2000));
+        if (!alreadyExists) {
+          stats.plays.push(playObj);
+          fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
+        }
 
         // Relay to mobile phone
         const rawPhone = parsed.phoneUrl || getMobilePhoneBaseUrl();

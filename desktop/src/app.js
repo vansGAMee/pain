@@ -1466,6 +1466,11 @@
     if (index < 0 || index >= state.tracks.length) return;
     initAudioNodes();
 
+    // If previous track was listened for >= 50% or >= 30s before switching, record it
+    if (state.currentTrackId && audio.currentTime >= Math.min(30, (audio.duration || 180) * 0.5)) {
+      recordTrackFinished(state.currentTrackId);
+    }
+
     state.currentTrackIndex = index;
     const track = state.tracks[index];
     state.currentTrackId = track.id;
@@ -1618,41 +1623,54 @@
     saveLibraryToServer();
   }
 
+  let lastRecordTimestamp = 0;
   async function recordTrackFinished(trackId) {
     const track = state.tracks.find(t => t.id === trackId);
     if (!track) return;
 
-    const playDuration = Math.round(audio.duration * 1000) || 180000;
+    // Prevent double-recording within 2.5s
+    const now = Date.now();
+    if (now - lastRecordTimestamp < 2500) return;
+    lastRecordTimestamp = now;
+
+    const playDuration = Math.round((audio.duration || 180) * 1000);
     const playRecord = {
-      id: 'pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+      id: 'pc_' + now + '_' + Math.floor(Math.random() * 10000),
       track: track.id,
       session: 'pc_companion',
-      started: Date.now() - playDuration,
+      started: now - playDuration,
       duration: playDuration,
-      at: Date.now(),
+      at: now,
       heard: playDuration,
       media_heard: playDuration,
       finished: 1,
       skipped: 0,
-      timestamp: Date.now()
+      timestamp: now
     };
 
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
 
-    // Relay to backend & mobile phone via server
+    // 1. Immediately update live DOM play count for all rows showing this track
+    const newPlayCount = getTrackPlayCount(track.id);
+    document.querySelectorAll(`tr[data-track-id="${track.id}"] .col-plays`).forEach(el => {
+      el.textContent = newPlayCount;
+    });
+
+    // 2. Relay to server
     try {
       await fetch('/api/sync-stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          play: playRecord,
           ...playRecord,
           phoneUrl: state.phoneUrl
         })
       });
     } catch (e) {}
 
-    // Direct relay to phone
+    // 3. Direct relay to phone
     if (state.phoneUrl) {
       try {
         const cleanUrl = state.phoneUrl.replace(/\/+$/, '');
@@ -1669,15 +1687,6 @@
         }).catch(() => {});
       } catch (e) {}
     }
-
-    // Persist local stats
-    try {
-      await fetch('/api/save-stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state.stats)
-      });
-    } catch (e) {}
 
     renderInsights();
   }
@@ -1732,7 +1741,7 @@
       DOM.bottomRepeatBtn.title = 'Repeat All';
     } else if (state.loopMode === 'all') {
       state.loopMode = 'one';
-      audio.loop = true;
+      audio.loop = false; // NEVER set native audio.loop = true: HTML5 spec suppresses 'ended' event when audio.loop is true!
       DOM.bottomRepeatBtn.classList.add('active');
       DOM.bottomLoopBadge.style.display = 'block';
       DOM.bottomRepeatBtn.title = 'Repeat One';
@@ -2097,19 +2106,30 @@
     });
 
     // Audio Timeline & Prefetching
+    let prevPlayheadTime = 0;
     audio.addEventListener('timeupdate', () => {
       if (isScrubbing) return;
 
       const dur = getCurrentTrackDuration();
-      DOM.currentTime.textContent = formatTime(audio.currentTime);
+      const cur = audio.currentTime;
+
+      // Fallback: detect wrap-around repeat if track jumped from near end back to 0
+      if (state.loopMode === 'one' && dur > 5 && prevPlayheadTime > (dur - 2) && cur < 1.5) {
+        if (state.currentTrackId) {
+          recordTrackFinished(state.currentTrackId);
+        }
+      }
+      prevPlayheadTime = cur;
+
+      DOM.currentTime.textContent = formatTime(cur);
       if (dur > 0) {
         DOM.totalTime.textContent = formatTime(dur);
-        const pct = Math.max(0, Math.min(100, (audio.currentTime / dur) * 100));
+        const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
         DOM.progressFill.style.width = `${pct}%`;
         if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
 
         // Sleep-resistant prefetch next song halfway or 20s before end
-        if (audio.currentTime > dur * 0.5 || (dur - audio.currentTime < 20)) {
+        if (cur > dur * 0.5 || (dur - cur < 20)) {
           prefetchNextTrack();
         }
       }
