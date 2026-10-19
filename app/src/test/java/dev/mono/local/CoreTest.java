@@ -72,4 +72,17 @@ public class CoreTest {
     assertEquals("[01:02.34]", Lrc.stamp(62340));
     assertEquals(0, Lrc.parse("[00:00.00]Start").get(0).ms);
   }
+
+  @Test
+  public void updateVersionsAndChecksumsAreStrict() {
+    assertTrue(UpdateChecker.newer("v1.4.8", "1.4.7"));
+    assertTrue(UpdateChecker.newer("2.0.0", "1.99.99"));
+    assertFalse(UpdateChecker.newer("1.4.7", "1.4.8"));
+    assertFalse(UpdateChecker.newer("latest", "1.4.8"));
+    assertFalse(UpdateChecker.newer("1.4.-1", "1.4.8"));
+    assertFalse(UpdateChecker.newer("01.4.9", "1.4.8"));
+    String hash = "a".repeat(64);
+    assertEquals(hash, UpdateChecker.checksum(hash + "  Pain-v1.4.8-Android.apk\n", "Pain-v1.4.8-Android.apk"));
+    assertNull(UpdateChecker.checksum(hash + "  another.apk\n", "Pain-v1.4.8-Android.apk"));
+  }
 }

@@ -3576,3 +3576,37 @@ input:checked + .switch-slider:before {
   font-weight: 600;
   padding: 6px 10px;
 }
+
+.update-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.update-status-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ink-muted);
+  transition: background-color .25s ease, box-shadow .25s ease;
+}
+
+.update-status-dot.available {
+  background: #6f7f5e;
+  box-shadow: 0 0 0 4px rgba(111, 127, 94, .12);
+}
+
+.update-status-dot.error { background: #a66a5d; }
+
+@media (max-width: 520px) {
+  .update-setting-row { align-items: flex-start; flex-direction: column; }
+}

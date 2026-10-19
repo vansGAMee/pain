@@ -315,12 +315,17 @@
     viewExcludedTracksBtn: document.getElementById('viewExcludedTracksBtn'),
     clearExcludedTracksBtn: document.getElementById('clearExcludedTracksBtn'),
     excludedTracksListContainer: document.getElementById('excludedTracksListContainer'),
-    excludedTracksListContent: document.getElementById('excludedTracksListContent')
+    excludedTracksListContent: document.getElementById('excludedTracksListContent'),
+    updateStatusDot: document.getElementById('updateStatusDot'),
+    updateStatusText: document.getElementById('updateStatusText'),
+    updateActionBtn: document.getElementById('updateActionBtn')
   };
 
 
 
   let pendingAddToPlaylistTrackId = null;
+  let updateStatus = null;
+  let updateNoticeShown = false;
 
   // --- TOAST NOTIFICATIONS ---
   function showToast(message, icon = '✓') {
@@ -474,6 +479,8 @@
     await loadCachedTracksList();
     updateGreeting();
     setupEventListeners();
+    setTimeout(() => checkForUpdates(false, true), 800);
+    setInterval(() => checkForUpdates(true, true), 6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
     startDiscoveryPolling();
 
@@ -2448,6 +2455,7 @@
     updateGreeting();
     renderCurrentView();
     updateFluidBpmTempo();
+    renderUpdateStatus();
   }
 
   // --- SETTINGS MODAL & AMBIENT FLUID CONTROLLER ---
@@ -2466,6 +2474,72 @@
   function closeSettingsModal() {
     if (DOM.settingsModalBackdrop) {
       DOM.settingsModalBackdrop.style.display = 'none';
+    }
+  }
+
+  function renderUpdateStatus() {
+    if (!DOM.updateStatusText || !DOM.updateActionBtn) return;
+    const ru = state.lang === 'ru', status = updateStatus;
+    DOM.updateStatusDot?.classList.toggle('available', !!status?.available);
+    DOM.updateStatusDot?.classList.toggle('error', status?.status === 'error');
+    DOM.updateActionBtn.disabled = status?.status === 'checking' || status?.status === 'downloading';
+    if (!status || status.status === 'checking') {
+      DOM.updateStatusText.textContent = ru ? 'Проверка обновлений…' : 'Checking for updates…';
+      DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
+    } else if (status.status === 'downloading' || status.status === 'downloaded') {
+      DOM.updateStatusText.textContent = ru ? 'Загрузка и проверка обновления…' : 'Downloading and verifying update…';
+      DOM.updateActionBtn.textContent = ru ? 'Загрузка…' : 'Downloading…';
+    } else if (status.status === 'error') {
+      DOM.updateStatusText.textContent = ru ? 'Не удалось проверить обновления' : 'Could not check for updates';
+      DOM.updateActionBtn.textContent = ru ? 'Повторить' : 'Retry';
+    } else if (status.available) {
+      DOM.updateStatusText.textContent = ru
+        ? `Доступна версия ${status.latestVersion} · сейчас ${status.currentVersion}`
+        : `Version ${status.latestVersion} available · current ${status.currentVersion}`;
+      DOM.updateActionBtn.textContent = status.canInstall ? (ru ? 'Обновить' : 'Update') : (ru ? 'Открыть релиз' : 'Open release');
+    } else {
+      DOM.updateStatusText.textContent = ru ? `Установлена свежая версия ${status.currentVersion}` : `Version ${status.currentVersion} is up to date`;
+      DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
+    }
+  }
+
+  async function checkForUpdates(force = false, notify = false) {
+    updateStatus = { ...(updateStatus || {}), status: 'checking' };
+    renderUpdateStatus();
+    try {
+      const response = await fetch(`/api/update-status${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Update check failed');
+      updateStatus = await response.json();
+      renderUpdateStatus();
+      if (notify && updateStatus.available && !updateNoticeShown) {
+        updateNoticeShown = true;
+        showToast(state.lang === 'ru' ? `Доступно обновление ${updateStatus.latestVersion}` : `Update ${updateStatus.latestVersion} is available`, '↑');
+      }
+    } catch (_) {
+      updateStatus = { ...(updateStatus || {}), status: 'error' };
+      renderUpdateStatus();
+    }
+  }
+
+  async function handleUpdateAction() {
+    if (!updateStatus?.available) { await checkForUpdates(true, true); return; }
+    if (!updateStatus.canInstall) {
+      if (updateStatus.page) window.open(updateStatus.page, '_blank', 'noopener');
+      return;
+    }
+    updateStatus = { ...updateStatus, status: 'downloading' };
+    renderUpdateStatus();
+    try {
+      const response = await fetch('/api/install-update', { method: 'POST', headers: { 'X-Pain-Update': 'install' } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Update failed');
+      updateStatus = result;
+      renderUpdateStatus();
+      showToast(state.lang === 'ru' ? 'Обновление готово. Pain перезапускается…' : 'Update ready. Restarting Pain…', '↑');
+    } catch (error) {
+      updateStatus = { ...updateStatus, status: 'error', error: error.message };
+      renderUpdateStatus();
+      showToast(state.lang === 'ru' ? 'Не удалось установить обновление' : 'Could not install update', '⚠');
     }
   }
 
@@ -3745,6 +3819,8 @@
         showToast(state.lang === 'ru' ? 'Все треки возвращены в рекомендации' : 'All tracks restored to recommendations');
       });
     }
+
+    if (DOM.updateActionBtn) DOM.updateActionBtn.addEventListener('click', handleUpdateAction);
 
     // New Playlist Modal
     DOM.newPlaylistBtn.addEventListener('click', () => {

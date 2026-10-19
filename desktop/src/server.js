@@ -9,6 +9,8 @@ const { exec } = require('child_process');
 const lyricsRoute = require('./lyrics-store');
 const parseRange = require('./range');
 const mergeStats = require('./stats-store');
+const { Updater } = require('./updater');
+const { version: APP_VERSION } = require('../package.json');
 const PORT = 3000;
 const MOBILE_HTTP_PORT = 8865;
 const UDP_PORT = 8866;
@@ -19,6 +21,11 @@ const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
 const CACHE_DIR = path.join(BASE_DATA_DIR, 'cache');
 const COVERS_DIR = path.join(BASE_DATA_DIR, 'covers');
 const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
+const updater = new Updater({
+  currentVersion: APP_VERSION,
+  appRoot: path.join(__dirname, '..'),
+  dataDir: DATA_DIR
+});
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -458,7 +465,7 @@ function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Filename, Range');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Filename, X-Pain-Update, Range');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
@@ -472,6 +479,34 @@ const server = http.createServer((req, res) => {
   if (lyricsRoute(req,res,url,DATA_DIR)) return;
 
   // API endpoints
+  if (pathname === '/api/update-status' && req.method === 'GET') {
+    updater.check(url.searchParams.get('refresh') === '1').then(status => {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(status));
+    });
+    return;
+  }
+
+  if (pathname === '/api/install-update' && req.method === 'POST') {
+    let localOrigin = true;
+    try {
+      if (req.headers.origin) localOrigin = ['localhost', '127.0.0.1', '::1'].includes(new URL(req.headers.origin).hostname);
+    } catch (_) { localOrigin = false; }
+    if (!localOrigin || req.headers['x-pain-update'] !== 'install') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Local confirmation required' }));
+      return;
+    }
+    updater.prepareInstall().then(({ state, restart }) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(state), () => setTimeout(restart, 300));
+    }).catch(error => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: error.message || 'Update failed' }));
+    });
+    return;
+  }
+
   if (pathname === '/api/devices') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(discoveredDevices));
@@ -1138,6 +1173,7 @@ server.on('error', (err) => {
 });
 
 startServer(currentPort);
+setTimeout(() => updater.check().catch(() => {}), 3000).unref();
 
 
 module.exports = server;

@@ -160,6 +160,7 @@ public final class MainActivity extends Activity {
     handler.removeCallbacks(ticker);
     handler.post(ticker);
     app.refreshStats();
+    UpdateChecker.resume(this);
   }
 
   @Override

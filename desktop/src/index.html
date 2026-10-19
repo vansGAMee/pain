@@ -981,6 +981,20 @@
             <div id="excludedTracksListContent" style="display:flex; flex-direction:column; gap:6px;"></div>
           </div>
         </div>
+
+        <div class="settings-section update-settings-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Application updates" data-ru="Обновления приложения">Обновления приложения</div>
+            <div class="settings-section-desc" data-en="Pain checks official GitHub releases and verifies every download before installing it." data-ru="Pain проверяет официальные релизы GitHub и сверяет контрольную сумму перед установкой.">Pain проверяет официальные релизы GitHub и сверяет контрольную сумму перед установкой.</div>
+          </div>
+          <div class="update-setting-row">
+            <div class="update-status-copy">
+              <span class="update-status-dot" id="updateStatusDot"></span>
+              <span class="fluid-row-hint" id="updateStatusText">Проверка обновлений…</span>
+            </div>
+            <button type="button" class="btn-minimal" id="updateActionBtn" data-en="Check" data-ru="Проверить">Проверить</button>
+          </div>
+        </div>
       </div>
 
       <div class="settings-modal-footer">
@@ -1043,4 +1057,3 @@
   <script src="karaoke.js"></script>
 </body>
 </html>
-

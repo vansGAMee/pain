@@ -106,7 +106,9 @@ realTest('Разрядка исполнителей (Artist Spacing): штраф
 });
 
 realTest('Смена настроения (Pivot) при двух пропусках подряд', () => {
-  const now = Date.now();
+  // Keep the synthetic skips after a live fixture that may have grown since this test was written.
+  const latestFixturePlay = plays.reduce((latest, play) => Math.max(latest, Number(play?.started || play?.timestamp || 0) || 0), 0);
+  const now = Math.max(Date.now(), latestFixturePlay + 600001);
   const testTrack1 = tracks[0];
   const testTrack2 = tracks[1];
   
