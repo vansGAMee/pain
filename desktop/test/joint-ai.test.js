@@ -85,7 +85,9 @@ test('JointAI parseFileContent handles JSON, CSV, TSV, TXT, and M3U formats', ()
   assert.equal(resM3u[0].title, 'Song 2');
 });
 
-test('JointAI generates exactly 50 tracks with bounded match percentages and variety options', async () => {
+test('JointAI generates exactly 50 tracks with bounded match percentages and variety options', {
+  skip: !require('node:fs').existsSync(require('node:path').join(__dirname, '../joint-model/manifest.json')) ? 'Optional JointAI model is absent' : false
+}, async () => {
   // Test with sparse graph seeds that previously stalled at 4 tracks
   const seeds = [
     { artist: 'FACE', title: 'ЛАБИРИНТ' },
@@ -112,5 +114,4 @@ test('JointAI generates exactly 50 tracks with bounded match percentages and var
   const artists = new Set(result.tracks.map(t => t.artist.toLowerCase()));
   assert.equal(artists.size, 50, 'Expected 50 distinct artists when maxPerArtist = 1');
 });
-
 

@@ -143,7 +143,9 @@ realTest('Реальная библиотека: исключение самог
   assert.equal(queue.isExcluded(topTrackId), false, 'Трек должен быть разархивирован');
 });
 
-test('JointAI: generateJointPlaylist отфильтровывает исключённые треки', async () => {
+test('JointAI: generateJointPlaylist отфильтровывает исключённые треки', {
+  skip: !fs.existsSync(path.join(__dirname, '../joint-model/manifest.json')) ? 'Optional JointAI model is absent' : false
+}, async () => {
   const localExcludedTrackId = 'local_999';
 
   const mockLocalTracks = [
