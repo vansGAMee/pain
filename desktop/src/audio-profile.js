@@ -1,7 +1,8 @@
 /* Measured audio descriptors, collected from playback before EQ. No model downloads. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.AudioProfile=factory();})(globalThis,()=>{
+ const Timbre=typeof module==='object'&&module.exports?require('./audio-timbre'):globalThis.AudioTimbre;
  const clamp=n=>Math.max(0,Math.min(1,n));
- const VERSION=3,MAX_FRAMES=360,MAX_CACHE=750;
+ const VERSION=4,MAX_FRAMES=360,MAX_CACHE=750;
  function frame(wave,spectrumDb,sampleRate){
   if(!wave?.length||wave.length>32768||!spectrumDb?.length||spectrumDb.length>16384||!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>384000)return null;
   let mean=0;for(const x of wave){if(!Number.isFinite(x))return null;mean+=x;}mean/=wave.length;
@@ -21,15 +22,19 @@
  }
  function shape(p){return !!p&&Array.isArray(p.vector)&&p.vector.length===6&&p.vector.every(n=>Number.isFinite(n)&&n>=0&&n<=1)&&Number.isInteger(p.frames)&&p.frames>0&&p.frames<=MAX_FRAMES&&Number.isFinite(p.seconds)&&p.seconds>0&&p.seconds<=p.frames*1.5;}
  function valid(p){return shape(p)&&p.frames>=20&&p.seconds>=10;}
- const validVariance=v=>Array.isArray(v)&&v.length===6&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=.25);
+ const validVariance=(v,size=6)=>Array.isArray(v)&&v.length===size&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=.25);
  function variation(p){return valid(p)&&validVariance(p.variance)?p.variance.map(v=>2*Math.sqrt(v)):null;}
- function stored(p){return shape(p)&&validVariance(p.variance)&&p.version===VERSION&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
+ const validTimbre=v=>Array.isArray(v)&&v.length===12&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=1);
+ function texture(p){return valid(p)&&validTimbre(p.timbre)&&validVariance(p.timbreVariance,12)?{mean:p.timbre,variation:p.timbreVariance.map(v=>2*Math.sqrt(v))}:null;}
+ function stored(p){return shape(p)&&validVariance(p.variance)&&p.version===VERSION&&(p.timbre===null&&p.timbreVariance===null||validTimbre(p.timbre)&&validVariance(p.timbreVariance,12))&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
  function similarity(a,b){
   if(!valid(a)||!valid(b))return null;
   const weights=[.5,1,1,1,1,.5];let distance=0;
   for(let i=0;i<6;i++)distance+=weights[i]*(a.vector[i]-b.vector[i])**2;
   const av=variation(a),bv=variation(b);
   if(av&&bv)for(let i=0;i<6;i++)distance+=.2*(av[i]-bv[i])**2;
+  const at=texture(a),bt=texture(b);
+  if(at&&bt)for(let i=0;i<12;i++)distance+=.12*(at.mean[i]-bt.mean[i])**2+.04*(at.variation[i]-bt.variation[i])**2;
   return Math.exp(-3*distance);
  }
  const signature=t=>JSON.stringify([t?.duration||0,t?.bytes||0,t?.mime||'',t?.modified||t?.dateModified||t?.lastModified||0,t?.uri||t?.path||'']);
@@ -44,7 +49,7 @@
   try{const data=JSON.parse(raw||'{}');if(data&&typeof data==='object'&&!Array.isArray(data))for(const [id,p] of Object.entries(data))if(id.length<=1024&&stored(p))Object.defineProperty(result,id,{value:p,enumerable:true,writable:true,configurable:true});}catch(_){}
   prune(result);return result;
  }
- function persist(store,storage,key='pain_audio_profiles_v3'){
+ function persist(store,storage,key='pain_audio_profiles_v4'){
   prune(store);
   try{storage.setItem(key,JSON.stringify(store));return true;}catch(_){}
   // Keep recent evidence usable if the browser quota is shared with other application data.
@@ -83,7 +88,7 @@
     const key=JSON.stringify([track.id,signature(track)]),sourceUrl=audio.currentSrc||audio.src||'';
     if(key!==trackKey){
      boundary();trackKey=key;activeTrack={...track};const cached=read(store,track);
-     profile=cached?{...cached,vector:[...cached.vector]}:{version:VERSION,signature:signature(track),vector:[0,0,0,0,0,0],variance:[0,0,0,0,0,0],frames:0,seconds:0};positions=new Set(cached?.positions||[]);
+     profile=cached?{...cached,vector:[...cached.vector]}:{version:VERSION,signature:signature(track),vector:[0,0,0,0,0,0],variance:[0,0,0,0,0,0],timbre:null,timbreVariance:null,frames:0,seconds:0};positions=new Set(cached?.positions||[]);
     }
     if(src!==sourceUrl){boundary();src=sourceUrl;}
     const mediaTime=audio.currentTime;
@@ -93,12 +98,17 @@
     if(!last||!Number.isFinite(current.wall))return;
     const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
     if(wall<=0||wall>1.5||media<=0||Math.abs(media-wall)>.35)return;
-    const position=Math.floor(mediaTime*2);if(!Number.isSafeInteger(position)||positions.has(position))return;
-    let vector=null,totalPower=0;
+    // Spread the fixed measurement budget across long tracks instead of spending it on the intro.
+    const duration=Number(track.duration)/1000;
+    const step=Number.isFinite(duration)&&duration>0?Math.max(.5,Math.ceil(duration/MAX_FRAMES*2)/2):.5;
+    const position=Math.floor(mediaTime/step);if(!Number.isSafeInteger(position)||positions.has(position))return;
+    let vector=null,timbre=null,timbrePower=0,totalPower=0;
     nodes.forEach((node,i)=>{
      const buffer=buffers[i];node.getFloatTimeDomainData(buffer.wave);node.getFloatFrequencyData(buffer.spectrum);
      const v=frame(buffer.wave,buffer.spectrum,context.sampleRate);if(!v)return;
      let power=0;for(const x of buffer.wave)power+=x*x;
+     const tone=Timbre.frame(buffer.spectrum,context.sampleRate);
+     if(tone){timbre=timbre?timbre.map((x,j)=>(x*timbrePower+tone[j]*power)/(timbrePower+power)):tone;timbrePower+=power;}
      if(!vector)vector=v;else vector=vector.map((x,j)=>(x*totalPower+v[j]*power)/(totalPower+power));totalPower+=power;
     });
     if(!vector)return;
@@ -106,6 +116,14 @@
     // Online population variance preserves contrast between sections without retaining PCM.
     profile.variance=profile.variance.map((v,i)=>Math.max(0,Math.min(.25,
       (v*profile.frames+(vector[i]-profile.vector[i])*(vector[i]-mean[i]))/n)));
+    if(timbre){
+     if(!profile.frames){profile.timbre=timbre;profile.timbreVariance=Array(12).fill(0);}
+     else if(profile.timbre){
+      const next=profile.timbre.map((v,i)=>v+(timbre[i]-v)/n);
+      profile.timbreVariance=profile.timbreVariance.map((v,i)=>Math.max(0,Math.min(.25,(v*profile.frames+(timbre[i]-profile.timbre[i])*(timbre[i]-next[i]))/n)));
+      profile.timbre=next;
+     }
+    }else {profile.timbre=null;profile.timbreVariance=null;}
     profile.vector=mean;profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
     if(profile.frames%20===0)flush();
    }catch(_){boundary();}
@@ -120,5 +138,5 @@
   if(!audio.paused)start();
   return ()=>{if(disposed)return;disposed=true;stop();for(const remove of listeners)remove();try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();for(const node of nodes)node.disconnect();}catch(_){};};
  }
- return {frame,valid,similarity,variation,signature,get,observe,restore,persist};
+ return {frame,valid,similarity,variation,texture,signature,get,observe,restore,persist};
 });

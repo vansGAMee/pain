@@ -29,14 +29,14 @@ test('missing, malformed and insufficient profiles are ignored',()=>{
 test('measured sound affects ranking; unavailable or stale profiles do not invent audio similarity',()=>{
  const Taste=require('../src/taste-model');
  const tracks=[{id:'current',duration:180000},{id:'near',duration:180000},{id:'far',duration:180000}],profiles={};
- for(const t of tracks)profiles[t.id]={version:3,variance:[0,0,0,0,0,0],positions:Array.from({length:100},(_,i)=>i),signature:Audio.signature(t),frames:100,seconds:50,vector:t.id==='far'?[.4,0,0,1,.9,.01]:[.4,1,0,0,.02,.01]};
+ for(const t of tracks)profiles[t.id]={version:4,timbre:Array(12).fill(.5),timbreVariance:Array(12).fill(0),variance:[0,0,0,0,0,0],positions:Array.from({length:100},(_,i)=>i),signature:Audio.signature(t),frames:100,seconds:50,vector:t.id==='far'?[.4,0,0,1,.9,.01]:[.4,1,0,0,.02,.01]};
  const model=new Taste(tracks,[],Date.now(),profiles);
  assert.ok(model.score(tracks[0],tracks[1]).score>model.score(tracks[0],tracks[2]).score+5);
  assert.equal(Audio.get(profiles,{...tracks[1],duration:999}),null);
  const blank=new Taste(tracks);assert.equal(blank.score(tracks[0],tracks[1]).score,blank.score(tracks[0],tracks[2]).score);
 });
 
-const saved=(track={id:'a'})=>({...profile([.3,.2,.5,.3,.4,.1]),version:3,variance:[0,0,0,0,0,0],signature:Audio.signature(track),positions:Array.from({length:40},(_,i)=>i),updatedAt:1});
+const saved=(track={id:'a'})=>({...profile([.3,.2,.5,.3,.4,.1]),version:4,timbre:Array(12).fill(.5),timbreVariance:Array(12).fill(0),variance:[0,0,0,0,0,0],signature:Audio.signature(track),positions:Array.from({length:40},(_,i)=>i),updatedAt:1});
 test('DC offset is not sound evidence and does not change centered dynamics',()=>{
  const bins=spectrum(48000,50,200);
  assert.equal(Audio.frame(new Float32Array(2048).fill(.5),bins,48000),null);
@@ -51,7 +51,7 @@ test('cache restore rejects corrupt data and obsolete formats and caps its size'
 });
 test('storage quota pressure evicts old evidence; denied storage does not throw',()=>{
  const store=Object.fromEntries(Array.from({length:100},(_,i)=>[String(i),{...saved(),updatedAt:i}]));let calls=0;
- assert.equal(Audio.persist(store,{setItem(key,value){calls++;assert.equal(key,'pain_audio_profiles_v3');if(Object.keys(JSON.parse(value)).length>50)throw Error('quota');}}),true);
+ assert.equal(Audio.persist(store,{setItem(key,value){calls++;assert.equal(key,'pain_audio_profiles_v4');if(Object.keys(JSON.parse(value)).length>50)throw Error('quota');}}),true);
  assert.equal(calls,2);assert.equal(Object.keys(store).length,100);assert.ok(store['99']);assert.ok(store['0']);
  assert.equal(Audio.persist(store,{setItem(){throw Error('denied');}}),false);assert.equal(Object.keys(store).length,100);
  assert.equal(Audio.persist({a:saved()},{setItem(){throw Error('denied');}}),false);

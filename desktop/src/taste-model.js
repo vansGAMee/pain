@@ -18,6 +18,22 @@
  const skipIdentity=track=>trustedArtist(track.artist)||'track:'+track.id;
  const sigmoid=x=>1/(1+Math.exp(-Math.max(-20,Math.min(20,x))));
  const knownBpm=(t,cache)=>{const n=Number(cache?.[t.id]||t.bpm);return n>=40&&n<=240?n:null;};
+ const completed=p=>p.finished===1||p.finished===true||p.completed===true||p.completed===1;
+ function history(tracks,plays,now){
+  const rows=new Map();
+  for(const p of Array.isArray(plays)?plays:[]){
+   if(!p||typeof p!=='object')continue;
+   const track=tracks.get(p.track),stamp=Number(p.started||p.timestamp||0);
+   if(!track||!Number.isFinite(stamp)||stamp<=0||stamp>now)continue;
+   const heard=Number(p.media_heard??p.heard),duration=Number(p.duration||track.duration);
+   if(!completed(p)&&(!Number.isFinite(heard)||heard<1000||!Number.isFinite(duration)||duration<=0))continue;
+   const key=JSON.stringify([p.track,stamp]),old=rows.get(key);
+   // A relayed partial record must not replace a later completion of the same play.
+   if(!old||Number(completed(p))>Number(completed(old))||completed(p)===completed(old)&&heard>Number(old.media_heard??old.heard))rows.set(key,{...p,started:stamp});
+  }
+  // Deduplicate before bounding: repeated sync copies must not erase genuine history.
+  return [...rows.values()].sort((a,b)=>a.started-b.started).slice(-6000);
+ }
  class TasteModel {
   constructor(tracks=[],plays=[],now=Date.now(),audioProfiles={}){
    this.audioProfiles=audioProfiles;
@@ -25,15 +41,18 @@
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
    const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
    const samples=[],sessionEvents=[];this.lastQuality=new Map();let previous=null;
-   for(const p of [...plays].sort((a,b)=>(a.started||0)-(b.started||0)).slice(-6000)){
+   for(const p of history(byId,plays,now)){
     const track=byId.get(p.track),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
     if(!track||!stamp||seen.has(id))continue;seen.add(id);
     const heard=Number(p.media_heard??p.heard),duration=Number(p.duration||track.duration);
-    const explicit=p.finished===1||p.completed===true||p.completed===1;
+    const explicit=completed(p);
     // Pauses, buffering, unknown duration and sub-second accidental clicks are not dislikes.
     if(!explicit&&(!Number.isFinite(heard)||heard<1000||!(duration>0)))continue;
     const target=explicit?1:Math.min(1,heard/duration);
-    sessionEvents.push({id:track.id,started:stamp,quality:target,skipped:p.skipped===1&&target<.75});
+    sessionEvents.push({id:track.id,started:stamp,quality:target,skipped:(p.skipped===1||p.skipped===true)&&target<.75});
+    // An explicitly non-skipped partial play means interruption, not rejection.
+    // Keep legacy records without a skip field compatible with older clients.
+    if(!explicit&&(p.skipped===0||p.skipped===false)&&target<.75){previous=null;this.recentSkips=[];continue;}
     this.lastQuality.set(String(track.id),target);
     const from=previous&&stamp-previous.stamp<30*60*1000?previous.track:null;
     const features=this.features(track,new Date(stamp).getHours(),from);
@@ -47,7 +66,7 @@
     evidence.count+=weight;evidence.reward+=target*weight;evidence.last=Math.max(stamp,evidence.last);this.evidence.set(track.id,evidence);this.counts.set(track.id,(this.counts.get(track.id)||0)+weight);
     const artist=trustedArtist(track.artist);if(artist)this.artistCounts.set(artist,(this.artistCounts.get(artist)||0)+weight);
     // Temporary intent: explicit early skips can mean "not this mood right now".
-    if(p.skipped===1 && target<.25 && now-stamp>=0 && now-stamp<10*60000){
+    if((p.skipped===1||p.skipped===true) && target<.25 && now-stamp>=0 && now-stamp<10*60000){
       this.recentSkips.push(skipIdentity(track));this.recentSkips=this.recentSkips.slice(-2);
     }else this.recentSkips=[];
     previous={track,stamp};
@@ -76,6 +95,11 @@
    if(sound) sound.vector.forEach((value,i)=>f.push(['sound:'+i,(value-.5)*.8]));
    const variation=Sound.variation(sound);
    if(variation)variation.forEach((value,i)=>f.push(['sound-variation:'+i,(value-.5)*.5]));
+   const texture=Sound.texture(sound);
+   if(texture){
+    texture.mean.forEach((value,i)=>f.push(['timbre:'+i,(value-.5)*.45]));
+    texture.variation.forEach((value,i)=>f.push(['timbre-variation:'+i,(value-.5)*.3]));
+   }
    // Hearts do not become a shortcut: learn from actual listening instead.
    return f;
   }
@@ -125,7 +149,9 @@
   }
   score(current,candidate,cache={},context={}){
    const hour=context.hour??new Date().getHours(),n=this.counts.get(candidate.id)||0;
-   const features=this.features(candidate,hour,current);
+   // A rejected track must not steer tempo or learned transitions, either.
+   const reference=(this.lastQuality.get(String(current?.id))??1)>=.75?current:null;
+   const features=this.features(candidate,hour,reference);
    const support=Math.max(this.recentCounts.get(candidate.id)||0,this.recentArtistCounts.get(trustedArtist(candidate.artist))||0);
    // Recent taste earns influence through repeated evidence; one skip cannot erase history.
    const recentMix=.75*support/(support+4);
@@ -144,10 +170,10 @@
    const artist=trustedArtist(candidate.artist),recent=context.recentArtists||[];
    if(artist&&artist===trustedArtist(current?.artist))score-=9;
    else if(artist&&recent.slice(-3).includes(artist))score-=4;
-   const a=current?knownBpm(current,cache):null,b=knownBpm(candidate,cache);
+   const a=reference?knownBpm(reference,cache):null,b=knownBpm(candidate,cache);
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
-   const currentSound=(this.lastQuality.get(String(current?.id))??1)>=.75?Sound.get(this.audioProfiles,current):null,candidateSound=Sound.get(this.audioProfiles,candidate);
+   const currentSound=Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
    const soundSimilarity=Sound.similarity(currentSound,candidateSound);
    if(soundSimilarity!==null){
     const confidence=Math.min(1,currentSound.seconds/30,candidateSound.seconds/30);

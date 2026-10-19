@@ -200,6 +200,7 @@
   class QueueEngine {
     constructor(options = {}) {
       this.context = {
+        allowNew: true,
         type: 'library', // 'library' | 'favorites' | 'playlist' | 'album' | 'search'
         id: null,
         title: 'Фонотека'
@@ -209,6 +210,8 @@
       this.shuffleMode = options.shuffleMode || 'off'; // 'off' | 'random' | 'smart'
       this.loopMode = options.loopMode || 'all'; // 'off' | 'all' | 'one'
       this.playedHistory = [];
+      this.forwardHistory = [];
+      this.now = typeof options.now === 'function' ? options.now : Date.now;
       this.recentArtists = [];
       this.lastTransition = null;
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
@@ -225,8 +228,9 @@
     }
 
     smartScore(current, candidate, context) {
-      if (!this._taste || this._tasteTracks !== this.tracks) {
-        this._taste = new Taste(this.tracks, this.stats?.plays || [], Date.now(),this.audioProfiles);
+      const now = this.now();
+      if (!this._taste || this._tasteTracks !== this.tracks || now-this._taste.now>=60000 || now<this._taste.now) {
+        this._taste = new Taste(this.tracks, this.stats?.plays || [], now,this.audioProfiles);
         this._tasteTracks = this.tracks;
       }
       return this._taste.score(current,candidate,this.bpmCache,context);
@@ -239,6 +243,12 @@
         seed:(this.smartSeed+Math.imul(this.smartStep,2654435761))>>>0
       });
       return {...chosen,index:indices.find(i=>this.tracks[i]===chosen.track)};
+    }
+
+    randomChoice(indices) {
+      let z=(this.smartSeed+Math.imul(this.smartStep,2654435761)+0x6d2b79f5)>>>0;
+      z=Math.imul(z^(z>>>15),z|1);z^=z+Math.imul(z^(z>>>7),z|61);
+      return indices[Math.floor((((z^(z>>>14))>>>0)/4294967296)*indices.length)];
     }
 
     setAudioProfile(id,profile){this.audioProfiles[id]=profile;this._taste=null;}
@@ -265,15 +275,24 @@
     /**
      * Initializes or switches the active context and tracks.
      */
-    setContext(contextType, trackList, startIndex = 0, title = null) {
+    setContext(contextType, trackList, startIndex = 0, title = null, allowNew = false) {
       this.context = {
         type: contextType,
+        allowNew: contextType === 'library' && allowNew,
         id: contextType === 'playlist' ? title : null,
         title: title || (contextType === 'favorites' ? 'Избранное' : 'Фонотека')
       };
 
-      this.tracks = Array.isArray(trackList) ? [...trackList] : [];
+      const rows=Array.isArray(trackList)?trackList:[],seen=new Set();
+      const requested=rows[Math.trunc(Number(startIndex)||0)]?.id;
+      this.tracks=rows.filter(track=>{
+        if(!track||track.id==null||String(track.id)===''||seen.has(String(track.id)))return false;
+        seen.add(String(track.id));return true;
+      });
+      const selected=this.tracks.findIndex(track=>String(track.id)===String(requested));
+      startIndex=selected>=0?selected:Math.trunc(Number(startIndex)||0);
       this.resetCycle();
+      this.lastTransition = null;
 
       if (this.tracks.length > 0) {
         const idx = Math.max(0, Math.min(startIndex, this.tracks.length - 1));
@@ -287,15 +306,35 @@
       return this.getCurrentTrack();
     }
 
-    resetCycle() {
+    // Keep listened/unplayed identities when a device sync replaces track objects.
+    refreshLibrary(library, includeNew = false) {
+      const old=this.tracks,current=this.getCurrentTrack()?.id;
+      const live=new Map((Array.isArray(library)?library:[]).filter(t=>t&&t.id!=null&&String(t.id)!=='').map(t=>[String(t.id),t]));
+      const oldIds=new Set(old.map(t=>String(t.id)));
+      const selected=old.map(t=>live.get(String(t.id))).filter(Boolean);
+      if(includeNew)selected.push(...[...live.values()].filter(t=>!oldIds.has(String(t.id))));
+      const indices=new Map(selected.map((t,i)=>[String(t.id),i]));
+      const remap=index=>indices.get(String(old[index]?.id));
+      const previousIds=new Set(old.map(t=>String(t.id)));
+      this.unplayedIndices=new Set([...this.unplayedIndices].map(remap).filter(i=>i!==undefined));
+      selected.forEach((t,i)=>{if(!previousIds.has(String(t.id)))this.unplayedIndices.add(i);});
+      this.playedHistory=this.playedHistory.map(remap).filter(i=>i!==undefined);
+      this.forwardHistory=this.forwardHistory.map(remap).filter(i=>i!==undefined);
+      this.tracks=selected;this.currentIndex=indices.get(String(current))??-1;
+      if(!old.length&&selected.length){this.currentIndex=0;this.markPlayed(0);}
+      this.lastTransition=null;this._taste=null;this._notify();
+    }
+
+    resetCycle(clearHistory = true) {
       this.unplayedIndices = new Set();
       for (let i = 0; i < this.tracks.length; i++) {
         this.unplayedIndices.add(i);
       }
-      this.playedHistory = [];
+      if(clearHistory){this.playedHistory=[];this.forwardHistory=[];}
     }
 
-    markPlayed(index) {
+    markPlayed(index, clearForward = true) {
+      if(clearForward)this.forwardHistory=[];
       this.smartStep++;
       this.unplayedIndices.delete(index);
       this.playedHistory.push(index);
@@ -404,10 +443,18 @@
         return this.tracks[this.currentIndex];
       }
 
+      // Going back and then forward should replay the same navigation path.
+      if(this.forwardHistory.length){
+        this.lastTransition=null;
+        this.currentIndex=this.forwardHistory.pop();
+        this.markPlayed(this.currentIndex,false);this._notify();
+        return this.getCurrentTrack();
+      }
+
       // Check if current cycle exhausted
       if (this.unplayedIndices.size === 0) {
         if (this.loopMode === 'off') return null;
-        this.resetCycle();
+        this.resetCycle(false);
       }
 
       let nextIndex = -1;
@@ -416,7 +463,7 @@
         // Pick random from unplayed indices
         const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex);
         if (pool.length > 0) {
-          nextIndex = pool[Math.floor(Math.random() * pool.length)];
+          nextIndex = this.randomChoice(pool);
         } else if (this.unplayedIndices.size > 0) {
           nextIndex = Array.from(this.unplayedIndices)[0];
         } else {
@@ -470,6 +517,7 @@
       if (this.loopMode === 'one' && this.currentIndex >= 0) {
         return this.tracks[this.currentIndex];
       }
+      if(this.forwardHistory.length)return this.tracks[this.forwardHistory.at(-1)];
       if (this.loopMode === 'off' && this.unplayedIndices.size === 0) return null;
       if (this.shuffleMode === 'off') {
         if (this.currentIndex < this.tracks.length - 1) {
@@ -490,7 +538,7 @@
         return this.tracks[this.smartChoose(current,candidates).index];
       }
 
-      return this.tracks[candidates[0]];
+      return this.tracks[this.randomChoice(candidates)];
     }
 
     /**
@@ -498,10 +546,11 @@
      */
     prev() {
       if (this.tracks.length === 0) return null;
+      this.lastTransition=null;
 
       if (this.playedHistory.length > 1) {
         // Pop current
-        this.playedHistory.pop();
+        this.forwardHistory.push(this.playedHistory.pop());
         const prevIdx = this.playedHistory[this.playedHistory.length - 1];
         if (prevIdx >= 0 && prevIdx < this.tracks.length) {
           this.currentIndex = prevIdx;
@@ -528,6 +577,7 @@
     jumpToTrack(trackId) {
       const idx = this.tracks.findIndex(t => t.id === trackId);
       if (idx !== -1) {
+        this.lastTransition=null;
         this.currentIndex = idx;
         this.markPlayed(idx);
         this._notify();

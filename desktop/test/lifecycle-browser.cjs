@@ -1,0 +1,38 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1280,height:800}});
+ const records=[];
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{localStorage.setItem('pain_lang','ru');localStorage.setItem('pain_taste_skips','{}');localStorage.setItem('pain_phone_url','http://localhost:3099');});
+ const tracks=[{id:'a',title:'Очень длинное название трека для проверки полноэкранного режима и адаптивности',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000},{id:'b',title:'Второй трек',artist:'Исполнитель',album:'Альбом',duration:6000,bytes:10000}];
+ const samples=44100*6;const wav=Buffer.alloc(44+samples*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(44100,24);wav.writeUInt32LE(88200,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
+ for(let i=0;i<samples;i++)wav.writeInt16LE(Math.round(8000*Math.sin(2*Math.PI*330*i/44100)),44+i*2);
+ await page.route('**/api/**',async route=>{
+  const u=new URL(route.request().url());
+  if(u.pathname.startsWith('/api/cached-track/'))return route.fulfill({contentType:'audio/wav',body:wav});
+  if(u.pathname==='/api/sync-stats')records.push(route.request().postDataJSON());
+  let data={};if(u.pathname==='/api/saved-library')data={tracks};else if(u.pathname==='/api/playlists'||u.pathname==='/api/devices')data=[];else if(u.pathname==='/api/saved-stats'||u.pathname==='/api/stats')data={plays:[],slices:[]};else if(u.pathname==='/api/status')data={appName:'Pain',tracks:2};else if(u.pathname==='/api/library')data={tracks:[{...tracks[1],bytes:99999},{...tracks[0],id:'c',title:'New song'}]};else if(u.pathname==='/api/cached-tracks')data={cached:[]};
+  await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+ });
+ await page.goto(process.env.PAIN_TEST_URL||'http://localhost:3099');
+ await page.waitForSelector('tr[data-track-id="a"]');await page.click('#bottomPlayBtn');
+ await page.waitForFunction(()=>!document.querySelector('audio').paused);await page.waitForTimeout(1300);
+ await page.click('tr[data-track-id="b"]');
+ await page.waitForFunction(()=>Array.isArray(JSON.parse(localStorage.getItem('pain_taste_skips'))));
+ await page.evaluate(()=>window.painQueue.setShuffleMode('smart'));
+ await page.locator('.nav-item[data-view="sync"]').click();await page.click('#syncAllBtn');
+ await page.waitForFunction(()=>window.painQueue.getTracks().some(t=>t.id==='c'));
+ assert.deepEqual(await page.evaluate(()=>window.painQueue.getTracks().map(t=>t.id)),['b','c']);
+ assert.equal(await page.evaluate(()=>window.painQueue.getCurrentTrack().id),'b');
+ assert.equal(await page.evaluate(()=>window.painQueue.peekNext().id),'c');
+ await page.waitForTimeout(1600);
+ await page.click('#bottomPlayBtn');
+ await page.waitForFunction(()=>!!window.painQueue.audioProfiles.b,{},{timeout:2000});
+ const captured=await page.evaluate(()=>window.painQueue.audioProfiles.b);
+ assert.ok(captured);assert.equal(captured.signature,JSON.stringify([6000,10000,'',0,'']),'analysis remains bound to the playing file during metadata sync');
+ await page.click('#bottomNextBtn');await page.waitForFunction(()=>document.querySelector('audio').src.includes('/c?'));
+ assert.deepEqual(errors,[]);
+ console.log('PASS: corrupt feedback recovery, explicit skip, live library sync, deleted/new songs and next playback');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

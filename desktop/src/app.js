@@ -72,7 +72,7 @@
   } catch (e) {}
 
   let audioProfiles=Object.create(null);
-  try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v3'));}catch(_){}
+  try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v4'));}catch(_){}
   let initialBpmCache = {};
   try {
     const rawBpm = localStorage.getItem('pain_bpm_cache_v2');
@@ -108,6 +108,7 @@
   window.PainPlayer = { getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null };
   let audioCtx = null;
   let sourceNode = null;
+  let playingTrackSnapshot = null;
   let preampNode = null;
   let smartVolumeNode = null;
   let pendingSeekTime = null;
@@ -520,7 +521,7 @@
         lastNode.connect(audioCtx.destination);
       }
       applyEqualizerAudioGains();
-      try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>state.tracks.find(t=>t.id===state.currentTrackId),
+      try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>playingTrackSnapshot,
         (track,profile)=>{queue?.setAudioProfile(track.id,profile);try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}},audioProfiles);
       }catch(_){/* Playback remains available if measurement is unsupported. */}
     } catch (err) {
@@ -716,7 +717,6 @@
       renderPlaylistsSidebar();
       updateSidebarLikedCount();
       renderCurrentView();
-      renderInsights();
 
       // If library is populated, prepare first track in player bar
       if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
@@ -731,7 +731,7 @@
           && (!duration || saved.position < duration) ? saved.position : 0;
         pendingSeekTime = position;
         if (queue && queue.getTracks().length === 0) {
-          queue.setContext('library', state.tracks, state.currentTrackIndex, state.lang === 'ru' ? 'Фонотека' : 'Library');
+          queue.setContext('library', state.tracks, state.currentTrackIndex, state.lang === 'ru' ? 'Фонотека' : 'Library', true);
         }
         updatePlayerBarUI(track, false);
         DOM.currentTime.textContent = formatTime(position);
@@ -909,7 +909,7 @@
       ? `${processed.length} из ${state.tracks.length} треков · ${gb} ГБ · синхронизировано с телефоном`
       : `${processed.length} of ${state.tracks.length} tracks · ${gb} GB · synced with phone`;
 
-    const contextInfo = { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library' };
+    const contextInfo = { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library', allowNew: !state.searchQuery && state.categoryFilter === 'all' };
     if (state.viewMode === 'grid') {
       renderTracksGrid(DOM.tracksGrid, processed, contextInfo);
     } else {
@@ -1735,6 +1735,7 @@
     DOM.progressFill.style.width = '0%';
     if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
 
+    playingTrackSnapshot = {...track};
     pendingSeekTime = startPosition > 0 ? startPosition : null;
     audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
     savePlaybackPosition(true);
@@ -1817,7 +1818,7 @@
     if (queue) {
       const list = Array.isArray(trackList) && trackList.length > 0 ? trackList : state.tracks;
       const idx = list.findIndex(t => t.id === track.id);
-      queue.setContext(contextInfo?.type || 'library', list, idx !== -1 ? idx : 0, contextInfo?.title);
+      queue.setContext(contextInfo?.type || 'library', list, idx !== -1 ? idx : 0, contextInfo?.title, !!contextInfo?.allowNew);
     }
     playTrackObject(track);
   }
@@ -1834,7 +1835,7 @@
     if (!track) return;
     if (queue) {
       const idx = state.tracks.findIndex(t => t.id === trackId);
-      queue.setContext('library', state.tracks, idx !== -1 ? idx : 0, state.lang === 'ru' ? 'Фонотека' : 'Library');
+      queue.setContext('library', state.tracks, idx !== -1 ? idx : 0, state.lang === 'ru' ? 'Фонотека' : 'Library', true);
     }
     playTrackObject(track);
   }
@@ -2102,9 +2103,11 @@
     saveLibraryToServer();
   }
 
+  function readTasteSkips(){
+    try{const rows=JSON.parse(localStorage.getItem('pain_taste_skips')||'[]');return Array.isArray(rows)?rows:[];}catch(_){return [];}
+  }
   function setQueueTasteStats(stats){
-    let skips=[];try{skips=JSON.parse(localStorage.getItem('pain_taste_skips')||'[]');}catch(_){}
-    queue.setStats({plays:[...(stats.plays||[]),...skips]});
+    queue.setStats({plays:[...(Array.isArray(stats?.plays)?stats.plays:[]),...readTasteSkips()]});
   }
 
   async function recordTrackFinished(trackId,explicitSkip=false) {
@@ -2114,7 +2117,7 @@
       if(explicitSkip && listening.heard>=1000 && listening.duration>0 && !listening._tasteRecorded){
         listening._tasteRecorded=true;
         const feedback={track:trackId,started:listening.started,heard:Math.round(listening.heard),duration:listening.duration,skipped:1};
-        let skips=[];try{skips=JSON.parse(localStorage.getItem('pain_taste_skips')||'[]');}catch(_){}
+        let skips=readTasteSkips();
         skips.push(feedback);skips=skips.slice(-2000);
         try{localStorage.setItem('pain_taste_skips',JSON.stringify(skips));}catch(_){}
         if(queue)queue.setStats({plays:[...(state.stats.plays||[]),...skips]});
@@ -2150,8 +2153,8 @@
       });
     } catch (e) {}
 
-    // The server is the single relay to the phone; a second POST counted plays twice.
-    renderInsights();
+    // Insights are rendered when opened; avoid rebuilding a hidden lifetime history on each play.
+    if(state.currentView==='insights')renderInsights();
   }
 
   // --- SLEEP-RESISTANT PREFETCHING ---
@@ -2204,6 +2207,16 @@
   }
 
   function playPrevTrack() {
+    if (audio.currentTime > 3) {
+      sampleListening();
+      pendingSeekTime = null;
+      audio.currentTime = 0;
+      DOM.currentTime.textContent = formatTime(0);
+      DOM.progressFill.style.width = '0%';
+      if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
+      savePlaybackPosition(true);
+      return;
+    }
     if (queue) {
       const prevTrack = queue.prev();
       if (prevTrack) {
@@ -2579,7 +2592,11 @@
       const libRes = await fetch(`${state.phoneUrl}/api/library`);
       if (!libRes.ok) throw new Error('Library fetch failed');
       const libData = await libRes.json();
-      state.tracks = libData.tracks || [];
+      const oldIds=new Set(state.tracks.map(t=>String(t.id)));
+      const wholeLibrary=queue&&queue.getContext().allowNew&&queue.getTracks().length===oldIds.size&&queue.getTracks().every(t=>oldIds.has(String(t.id)));
+      state.tracks = Array.isArray(libData.tracks)?libData.tracks:[];
+      if(queue)queue.refreshLibrary(state.tracks,wholeLibrary);
+      state.currentTrackIndex=state.tracks.findIndex(t=>t.id===state.currentTrackId);
       state.libraryDirty = true;
       invalidatePlayCountsCache();
 
@@ -3151,7 +3168,7 @@
     DOM.playAllBtn.addEventListener('click', () => {
       const processed = getProcessedTracks(state.tracks);
       if (processed.length > 0) {
-        playTrackInContext(processed[0], processed, { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library' });
+        playTrackInContext(processed[0], processed, { type: 'library', title: state.lang === 'ru' ? 'Фонотека' : 'Library', id: 'library', allowNew: !state.searchQuery && state.categoryFilter === 'all' });
       }
     });
 

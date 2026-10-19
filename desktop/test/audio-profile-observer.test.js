@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),Audio=requi
 const wave=Float32Array.from({length:2048},(_,i)=>.25*Math.sin(i*.17));
 const bins=Float32Array.from({length:1024},(_,i)=>i*48000/2048>=50&&i*48000/2048<=200?-20:-120);
 const track=id=>({id,duration:180000,bytes:4000000,mime:'audio/wav'});
-const cached=(song,extra={})=>({version:3,variance:[0,0,0,0,0,0],signature:Audio.signature(song),vector:Audio.frame(wave,bins,48000),frames:20,seconds:10,positions:Array.from({length:20},(_,i)=>i+1),...extra});
+const cached=(song,extra={})=>({version:4,timbre:Array(12).fill(.5),timbreVariance:Array(12).fill(0),variance:[0,0,0,0,0,0],signature:Audio.signature(song),vector:Audio.frame(wave,bins,48000),frames:20,seconds:10,positions:Array.from({length:20},(_,i)=>i+1),...extra});
 
 function fixture(t,{store={},onProfile=()=>{}}={}){
  const listeners=new Map(),timers=new Map(),saved=[];let wall=0,nextTimer=0;
@@ -28,7 +28,7 @@ function fixture(t,{store={},onProfile=()=>{}}={}){
  t.after(()=>f.dispose());f.prime();return f;
 }
 function assertProfile(profile,frames){
- assert.ok(profile);assert.equal(profile.version,3);assert.equal(profile.frames,frames);assert.equal(profile.seconds,frames/2);
+ assert.ok(profile);assert.equal(profile.version,4);assert.equal(profile.frames,frames);assert.equal(profile.seconds,frames/2);
  assert.equal(profile.positions.length,frames);assert.equal(new Set(profile.positions).size,frames);
  assert.ok(profile.positions.every(n=>Number.isInteger(n)&&n>=0));
 }
@@ -130,4 +130,15 @@ test('contrast between sections survives partial saves and matches measured vari
  f.frames(10);f.pause();f.play();f.frames(10);f.pause();
  const profile=Audio.get(f.store,f.track);assert.ok(profile);
  for(let i=0;i<6;i++)assert.ok(Math.abs(profile.variance[i]-(a[i]-b[i])**2/4)<1e-6);
+});
+
+test('long tracks retain sampling budget for their later sections',t=>{
+ const f=fixture(t);f.track={...f.track,duration:600000};f.prime();f.frames(800);
+ const high=Float32Array.from({length:1024},(_,i)=>i*48000/2048>2000?-20:-120);
+ f.context.createAnalyser().getFloatFrequencyData=target=>target.set(high);
+ f.frames(400);f.pause();
+ const p=Audio.get(f.store,f.track);assert.ok(p);assert.ok(p.frames<=360);
+ assert.ok(Math.max(...p.positions)>=295,'late sections were measured');
+ assert.ok(p.vector[3]>.2,'late treble-rich section influences the profile');
+ assert.ok(p.timbreVariance.some(v=>v>.001),'texture contrast is preserved');
 });
