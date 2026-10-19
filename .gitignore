@@ -21,3 +21,4 @@ desktop/covers/*
 release-builds/
 desktop/package-lock.json
 desktop/joint-model/
+desktop/dist/
