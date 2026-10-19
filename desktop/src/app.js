@@ -69,6 +69,14 @@
         const raw = localStorage.getItem('pain_excluded_recommendations');
         return new Set(raw ? JSON.parse(raw).map(String) : []);
       } catch(e) { return new Set(); }
+    })(),
+
+    // Favorite Moment per track (trackId -> seconds)
+    favoriteMoments: (function() {
+      try {
+        const raw = localStorage.getItem('pain_favorite_moments');
+        return typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.deserialize(raw) : (raw ? JSON.parse(raw) : {});
+      } catch(e) { return {}; }
     })()
   };
 
@@ -249,6 +257,11 @@
     progressTrack: document.getElementById('progressTrack'),
     progressFill: document.getElementById('progressFill'),
     progressThumb: document.getElementById('progressThumb'),
+    progressMomentMarker: document.getElementById('progressMomentMarker'),
+    bottomMomentBtn: document.getElementById('bottomMomentBtn'),
+    seekMomentBadge: document.getElementById('seekMomentBadge'),
+    seekMomentTime: document.getElementById('seekMomentTime'),
+    seekMomentDel: document.getElementById('seekMomentDel'),
     bottomEqToggleBtn: document.getElementById('bottomEqToggleBtn'),
     bottomVinylToggleBtn: document.getElementById('bottomVinylToggleBtn'),
     bottomMuteBtn: document.getElementById('bottomMuteBtn'),
@@ -1070,6 +1083,27 @@
         return;
       }
 
+      const momentBadge = e.target.closest('.row-moment-badge');
+      if (momentBadge) {
+        e.stopPropagation();
+        const targetTrackId = momentBadge.dataset.trackId;
+        const targetMoment = typeof FavoriteMoments !== 'undefined'
+          ? FavoriteMoments.getMoment(state.favoriteMoments, targetTrackId)
+          : state.favoriteMoments?.[targetTrackId];
+        if (targetMoment !== null && targetMoment !== undefined) {
+          if (state.currentTrackId === targetTrackId) {
+            seekToPercent(targetMoment / (getCurrentTrackDuration() || 1));
+          } else {
+            const targetTrack = state.tracks.find(t => t.id === targetTrackId);
+            if (targetTrack) {
+              playTrackInContext(targetTrack, container._currentTrackList || state.tracks, container._currentContextInfo);
+              pendingSeekTime = targetMoment;
+            }
+          }
+        }
+        return;
+      }
+
       if (!e.target.closest('button')) {
         playTrackInContext(track, trackList, contextInfo);
       }
@@ -1166,7 +1200,10 @@
       </td>
       <td class="col-album">${escapeHtml(track.album || '—')}</td>
       <td class="col-plays">${plays}</td>
-      <td class="col-time">${formatTime(durationSec)}</td>
+      <td class="col-time">${(() => {
+        const m = typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.getMoment(state.favoriteMoments, track.id) : (state.favoriteMoments ? state.favoriteMoments[track.id] : null);
+        return m !== null && m !== undefined ? `<span class="row-moment-badge" data-track-id="${escapeHtml(track.id)}" title="${state.lang === 'ru' ? 'Любимый момент: ' + (typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(m) : formatTime(m)) : 'Favorite moment: ' + (typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(m) : formatTime(m))}">${typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(m) : formatTime(m)}</span>` : '';
+      })()}${formatTime(durationSec)}</td>
       <td class="col-actions">
         <button class="row-exclude-btn ${isExcluded ? 'active' : ''}" data-track-id="${escapeHtml(track.id)}" title="${isExcluded ? (state.lang === 'ru' ? 'Вернуть в рекомендации' : 'Include in recommendations') : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend')}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>
@@ -2159,6 +2196,7 @@
 
     updateFavoriteUI(track.favorite);
     updateExcludedUI(track);
+    updateFavoriteMomentUI(track);
 
     renderVinylPlayerView();
   }
@@ -2279,6 +2317,113 @@
       });
       DOM.excludedTracksListContent.appendChild(item);
     });
+  }
+
+  // --- FAVORITE MOMENTS (PER-TRACK BOOKMARK) ---
+  function saveFavoriteMoments() {
+    try {
+      const data = typeof FavoriteMoments !== 'undefined'
+        ? FavoriteMoments.serialize(state.favoriteMoments)
+        : JSON.stringify(state.favoriteMoments || {});
+      localStorage.setItem('pain_favorite_moments', data);
+    } catch (_) {}
+  }
+
+  function updateFavoriteMomentUI(track = null) {
+    const curTrack = track || (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+    const trackId = curTrack?.id;
+    const moment = trackId && typeof FavoriteMoments !== 'undefined'
+      ? FavoriteMoments.getMoment(state.favoriteMoments, trackId)
+      : (trackId ? (state.favoriteMoments?.[trackId] ?? null) : null);
+    const dur = getCurrentTrackDuration();
+    const ru = state.lang === 'ru';
+    const hasMoment = moment !== null && moment !== undefined && Number.isFinite(moment);
+    const timeStr = hasMoment
+      ? (typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(moment) : formatTime(moment))
+      : '';
+
+    if (DOM.bottomMomentBtn) {
+      if (hasMoment) {
+        DOM.bottomMomentBtn.classList.add('active');
+        DOM.bottomMomentBtn.title = ru
+          ? `Любимый момент: ${timeStr} (клик — перейти, Shift+клик — обновить, правый клик — удалить)`
+          : `Favorite moment: ${timeStr} (click to seek, Shift+click to update, right-click to remove)`;
+      } else {
+        DOM.bottomMomentBtn.classList.remove('active');
+        DOM.bottomMomentBtn.title = ru ? 'Сохранить любимый момент' : 'Save favorite moment';
+      }
+    }
+
+    if (DOM.seekMomentBadge) {
+      if (hasMoment) {
+        DOM.seekMomentBadge.style.display = 'inline-flex';
+        if (DOM.seekMomentTime) DOM.seekMomentTime.textContent = timeStr;
+      } else {
+        DOM.seekMomentBadge.style.display = 'none';
+      }
+    }
+
+    if (DOM.progressMomentMarker) {
+      if (hasMoment && dur > 0) {
+        const pct = Math.max(0, Math.min(100, (moment / dur) * 100));
+        DOM.progressMomentMarker.style.display = 'block';
+        DOM.progressMomentMarker.style.left = `${pct}%`;
+        DOM.progressMomentMarker.title = ru ? `Любимый момент: ${timeStr}` : `Favorite moment: ${timeStr}`;
+      } else {
+        DOM.progressMomentMarker.style.display = 'none';
+      }
+    }
+  }
+
+  function setFavoriteMomentForCurrentTrack(targetPos = null) {
+    const curTrack = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+    if (!curTrack) return;
+    const dur = getCurrentTrackDuration();
+    const pos = targetPos !== null ? targetPos : audio.currentTime;
+    if (!Number.isFinite(pos) || pos < 0) return;
+    const saved = typeof FavoriteMoments !== 'undefined'
+      ? FavoriteMoments.setMoment(state.favoriteMoments, curTrack.id, pos, dur)
+      : (() => {
+          const clamped = Math.max(0, Math.min(dur > 0 ? dur : pos, pos));
+          const val = Math.round(clamped * 10) / 10;
+          state.favoriteMoments[curTrack.id] = val;
+          return val;
+        })();
+    if (saved !== null && saved !== undefined) {
+      saveFavoriteMoments();
+      updateFavoriteMomentUI(curTrack);
+      renderCurrentView();
+      const timeStr = typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(saved) : formatTime(saved);
+      showToast(state.lang === 'ru' ? `Любимый момент: ${timeStr}` : `Favorite moment: ${timeStr}`, '★');
+    }
+  }
+
+  function seekToFavoriteMoment(trackId = state.currentTrackId) {
+    if (!trackId) return;
+    const moment = typeof FavoriteMoments !== 'undefined'
+      ? FavoriteMoments.getMoment(state.favoriteMoments, trackId)
+      : (state.favoriteMoments?.[trackId] ?? null);
+    if (moment === null || moment === undefined || !Number.isFinite(moment)) return;
+    const dur = getCurrentTrackDuration();
+    if (dur > 0) {
+      seekToPercent(moment / dur);
+    }
+  }
+
+  function removeFavoriteMoment(trackId = state.currentTrackId) {
+    if (!trackId) return;
+    const removed = typeof FavoriteMoments !== 'undefined'
+      ? FavoriteMoments.removeMoment(state.favoriteMoments, trackId)
+      : (() => {
+          if (trackId in state.favoriteMoments) { delete state.favoriteMoments[trackId]; return true; }
+          return false;
+        })();
+    if (removed) {
+      saveFavoriteMoments();
+      updateFavoriteMomentUI();
+      renderCurrentView();
+      showToast(state.lang === 'ru' ? 'Любимый момент удалён' : 'Favorite moment removed', '✓');
+    }
   }
 
   function updateSidebarLikedCount() {
@@ -3582,6 +3727,46 @@
       });
     }
 
+    if (DOM.bottomMomentBtn) {
+      DOM.bottomMomentBtn.addEventListener('click', (e) => {
+        const trackId = state.currentTrackId;
+        if (!trackId) return;
+        const moment = typeof FavoriteMoments !== 'undefined'
+          ? FavoriteMoments.getMoment(state.favoriteMoments, trackId)
+          : state.favoriteMoments?.[trackId];
+        if (e.shiftKey) {
+          setFavoriteMomentForCurrentTrack();
+        } else if (moment !== null && moment !== undefined) {
+          seekToFavoriteMoment(trackId);
+        } else {
+          setFavoriteMomentForCurrentTrack();
+        }
+      });
+      DOM.bottomMomentBtn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        removeFavoriteMoment();
+      });
+    }
+
+    if (DOM.seekMomentBadge) {
+      DOM.seekMomentBadge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        seekToFavoriteMoment();
+      });
+      DOM.seekMomentBadge.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        removeFavoriteMoment();
+      });
+    }
+
+    if (DOM.seekMomentDel) {
+      DOM.seekMomentDel.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeFavoriteMoment();
+      });
+    }
+
     DOM.bottomVinylToggleBtn.addEventListener('click', () => {
       switchView('player');
     });
@@ -3670,6 +3855,7 @@
     audio.addEventListener('loadedmetadata', () => {
       const dur = getCurrentTrackDuration();
       if (dur > 0) DOM.totalTime.textContent = formatTime(dur);
+      updateFavoriteMomentUI();
       if (pendingSeekTime !== null) {
         try { audio.currentTime = pendingSeekTime; } catch (e) {}
         pendingSeekTime = null;

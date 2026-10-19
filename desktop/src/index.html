@@ -700,6 +700,9 @@
         <button class="bottom-exclude-btn" id="bottomExcludeBtn" title="Не рекомендовать">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>
         </button>
+        <button class="bottom-moment-btn" id="bottomMomentBtn" title="Сохранить любимый момент">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
       </div>
 
       <!-- Center: Controls & Seek Bar -->
@@ -734,8 +737,14 @@
           <div class="seek-track" id="progressTrack">
             <div class="seek-fill" id="progressFill"></div>
             <div class="seek-thumb" id="progressThumb"></div>
+            <div class="seek-moment-marker" id="progressMomentMarker" style="display: none;"></div>
           </div>
           <span class="seek-time" id="totalTime">0:00</span>
+          <button class="seek-moment-badge" id="seekMomentBadge" style="display: none;" title="Любимый момент (клик — перейти, правый клик — удалить)">
+            <span class="seek-moment-icon">★</span>
+            <span class="seek-moment-time" id="seekMomentTime">0:00</span>
+            <span class="seek-moment-del" id="seekMomentDel" title="Удалить">✕</span>
+          </button>
         </div>
       </div>
 
@@ -1061,6 +1070,7 @@
   <script src="taste-model.js"></script>
   <script src="queue-engine.js"></script>
   <script src="joint-ai.js"></script>
+  <script src="favorite-moments.js"></script>
   <script src="app.js"></script>
   <script src="presentation.js"></script>
   <script src="karaoke.js"></script>
