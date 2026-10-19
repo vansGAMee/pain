@@ -41,6 +41,8 @@
    this.weights=new Map();this.counts=new Map();this.artistCounts=new Map();this.now=now;this.evidence=new Map();this.recentSkips=[];
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
    const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
+   this.tracksById=new Map(tracks.map(t=>[String(t.id),t]));
+   const soundSkips=new Map();
    const samples=[],sessionEvents=[];this.lastQuality=new Map();let previous=null;
    for(const p of history(byId,plays,now)){
     const track=byId.get(p.track),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
@@ -56,6 +58,10 @@
     // Keep legacy records without a skip field compatible with older clients.
     if(!explicit&&(p.skipped===0||p.skipped===false)&&target<.75){previous=null;this.recentSkips=[];continue;}
     this.lastQuality.set(String(track.id),target);
+    if(explicit||target>=.75)soundSkips.delete(String(track.id));
+    else if((p.skipped===1||p.skipped===true)&&heard<=20000&&target<.25&&now-stamp<30*60000){
+     soundSkips.delete(String(track.id));soundSkips.set(String(track.id),{track,stamp});
+    }
     const from=previous&&stamp-previous.stamp<30*60*1000?previous.track:null;
     const features=this.features(track,new Date(stamp).getHours(),from);
     const weight=Math.exp(-Math.max(0,now-stamp)/(90*86400000));
@@ -74,6 +80,9 @@
     previous={track,stamp};
    }
    this.samples=samples.length;
+   this.soundSkips=[...soundSkips.values()].slice(-3).map(({track,stamp})=>({
+    profile:Sound.get(audioProfiles,track,true),strength:Math.exp(-(now-stamp)/(10*60000))
+   })).filter(item=>item.profile);
    this.sessionGraph=new SessionGraph(sessionEvents,now);
    // Sparse SGD with L2 shrinkage: learned coefficients, not hand-written mood scores.
    for(let epoch=0;epoch<5;epoch++)for(const sample of samples){
@@ -113,11 +122,14 @@
    const random=()=>{seed=(seed+0x6d2b79f5)>>>0;let z=seed;z=Math.imul(z^(z>>>15),z|1);z^=z+Math.imul(z^(z>>>7),z|61);return ((z^(z>>>14))>>>0)/4294967296;};
    let pool=candidates.filter(track=>!excluded.has(String(track.id))).map(track=>({track,...this.score(current,track,cache,context)}));
    if(!pool.length)return null;
+   const acoustic=pool.some(item=>item.soundSimilarity!==null);
+   const bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
    // Reserve one turn in four for discovery when safe candidates exist.
    const pivot=this.recentSkips.length>=2;
    const discovery=pivot||(context.step??0)%4===3;let discovering=false;
    if(discovery){
     const fresh=pool.filter(item=>{
+     if(acoustic&&item.score<bestScore-12)return false;
      const e=this.evidence.get(item.track.id);
      if(e&&e.count>=1.5&&e.reward/e.count<.25)return false;
      return !e||e.count<1.5||this.now-e.last>21*86400000;
@@ -128,7 +140,7 @@
    if(differentMood.length)pool=differentMood;
    const recent=context.recentArtists||[];
    const diverse=pool.filter(item=>!recent.slice(-2).includes(trustedArtist(item.track.artist)));
-   if(diverse.length)pool=diverse;
+   if(!acoustic&&diverse.length)pool=diverse;
    // Balance artist probability mass: a huge discography is not extra evidence of taste.
    const artistKey=track=>{
     const artist=trustedArtist(track.artist);
@@ -136,14 +148,25 @@
    };
    const poolCounts=new Map();
    for(const item of pool){const key=artistKey(item.track);poolCounts.set(key,(poolCounts.get(key)||0)+1);}
-   // Gumbel sampling explores uncertainty without discarding learned preference.
-   let winner=null,best=-Infinity;
+   // Shortlist before drawing: random variation among good acoustic fits, not all songs.
    for(const item of pool){
     const n=this.counts.get(item.track.id)||0;
     const artistEvidence=trustedArtist(item.track.artist)?this.artistCounts.get(trustedArtist(item.track.artist))||0:0;
     const uncertainty=discovery?10/Math.sqrt(1+n+Math.min(8,artistEvidence)*.25):0;
-    const catalogCorrection=9*Math.log(poolCounts.get(artistKey(item.track)));
-    const value=item.score+uncertainty-catalogCorrection-9*Math.log(-Math.log(Math.max(1e-9,random())));
+    const catalogSize=poolCounts.get(artistKey(item.track));
+    const catalogCorrection=acoustic?Math.min(8,3*Math.log(catalogSize)):9*Math.log(catalogSize);
+    item.rank=item.score+uncertainty-catalogCorrection;
+   }
+   if(acoustic){
+    // Equal fits must not always shortlist the first six files in library order.
+    for(const item of pool)item.tie=random();
+    pool.sort((a,b)=>b.rank-a.rank||a.tie-b.tie);
+    pool=pool.filter(item=>item.rank>=pool[0].rank-18).slice(0,6);
+   }
+   // Seeded Gumbel sampling keeps preview and playback consistent.
+   let winner=null,best=-Infinity;
+   for(const item of pool){
+    const value=item.rank-(acoustic?4:9)*Math.log(-Math.log(Math.max(1e-9,random())));
     if(value>best){winner=item;best=value;}
    }
    if(discovering){const e=this.evidence.get(winner.track.id);winner.reasons=[e&&this.now-e.last>21*86400000?'Давно не звучало':'Открываем новое',...winner.reasons].slice(0,2);}
@@ -153,14 +176,19 @@
   score(current,candidate,cache={},context={}){
    const hour=context.hour??new Date().getHours(),n=this.counts.get(candidate.id)||0;
    // A rejected track must not steer tempo or learned transitions, either.
-   const reference=(this.lastQuality.get(String(current?.id))??1)>=.75?current:null;
+   let reference=!this.excludedTracks.has(String(current?.id))&&(this.lastQuality.get(String(current?.id))??1)>=.75?current:null;
+   if(!Sound.get(this.audioProfiles,reference)){
+    const previous=(context.recentTrackIds||[]).map(id=>this.tracksById.get(String(id))).find(track=>
+     track&&!this.excludedTracks.has(String(track.id))&&(this.lastQuality.get(String(track.id))??1)>=.75&&Sound.get(this.audioProfiles,track));
+    if(previous)reference=previous;
+   }
    const features=this.features(candidate,hour,reference);
    const support=Math.max(this.recentCounts.get(candidate.id)||0,this.recentArtistCounts.get(trustedArtist(candidate.artist))||0);
    // Recent taste earns influence through repeated evidence; one skip cannot erase history.
    const recentMix=.75*support/(support+4);
    const p=(1-recentMix)*this.predictFeatures(features)+recentMix*this.predictFeatures(features,this.recentWeights);
    let score=p*100;const reasons=[];
-   const seeds=[current?.id,...(context.recentTrackIds||[])].filter(id=>id!=null&&(this.lastQuality.get(String(id))??1)>=.75);
+   const seeds=[current?.id,...(context.recentTrackIds||[])].filter(id=>id!=null&&!this.excludedTracks.has(String(id))&&(this.lastQuality.get(String(id))??1)>=.75);
    const affinity=this.sessionGraph.affinity(seeds,candidate.id);
    score+=28*affinity;
    if(affinity>.12)reasons.push('Сочетается с вашей сессией');
@@ -178,14 +206,25 @@
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
    const currentSound=Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
    const soundSimilarity=Sound.similarity(currentSound,candidateSound);
-   if(soundSimilarity!==null){
-    const confidence=Math.min(1,currentSound.seconds/30,candidateSound.seconds/30);
-    // A modest transition signal preserves discovery and stronger personal evidence.
-    score+=10*confidence*(soundSimilarity-.5);
-    if(soundSimilarity>.8&&confidence>.6)reasons.push('Близкое звучание');
+   if(currentSound){
+    const confidence=Sound.texture(currentSound)&&(!candidateSound||Sound.texture(candidateSound))?1:.55;
+    // Timbre is primary (70 points); learned taste, BPM and spacing refine the fit.
+    // Unmeasured candidates get a neutral prior, not an unfair unscaled history score.
+    score=(1-confidence)*score+confidence*(70*(soundSimilarity??.5)+.25*score);
+    if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift('Близкое звучание');
    }
+   if(candidate.favorite===true||candidate.favorite===1)score+=2;
+   // A short explicit rejection suppresses acoustic neighbours, even with other artists/tags.
+   // Max, not sum: repeated skips cannot accidentally blacklist the whole library.
+   let skipPenalty=0;
+   const negativeSound=candidateSound||(this.soundSkips.length?Sound.get(this.audioProfiles,candidate,true):null);
+   if(negativeSound)for(const skip of this.soundSkips){
+    const similarity=Sound.similarity(skip.profile,negativeSound,true);
+    if(similarity!==null)skipPenalty=Math.max(skipPenalty,80*skip.strength*Math.min(1,skip.profile.seconds/4)*Math.max(0,(similarity-.55)/.45)**2);
+   }
+   score-=skipPenalty;
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
-   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity};
+   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,skipPenalty};
   }
  }
  TasteModel.artistIdentity=track=>trustedArtist(track?.artist);

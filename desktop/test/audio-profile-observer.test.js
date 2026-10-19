@@ -132,13 +132,23 @@ test('contrast between sections survives partial saves and matches measured vari
  for(let i=0;i<6;i++)assert.ok(Math.abs(profile.variance[i]-(a[i]-b[i])**2/4)<1e-6);
 });
 
-test('long tracks retain sampling budget for their later sections',t=>{
+test('long tracks stop analysis after the excerpt budget and reuse it on replay',t=>{
  const f=fixture(t);f.track={...f.track,duration:600000};f.prime();f.frames(800);
+ const before=structuredClone(f.store.a);assert.equal(before.frames,48);
  const high=Float32Array.from({length:1024},(_,i)=>i*48000/2048>2000?-20:-120);
  f.context.createAnalyser().getFloatFrequencyData=target=>target.set(high);
  f.frames(400);f.pause();
- const p=Audio.get(f.store,f.track);assert.ok(p);assert.ok(p.frames<=360);
- assert.ok(Math.max(...p.positions)>=295,'late sections were measured');
- assert.ok(p.vector[3]>.2,'late treble-rich section influences the profile');
- assert.ok(p.timbreVariance.some(v=>v>.001),'texture contrast is preserved');
+ assert.deepEqual(f.store.a,before);
+ f.audio.currentTime=0;f.play();f.frames(100);f.pause();assert.deepEqual(f.store.a,before);
+ // Replacing a file invalidates the cache even though its track ID stays the same.
+ f.track={...f.track,bytes:123};f.play();f.frames(20);f.pause();
+ assert.notEqual(f.store.a.signature,before.signature);assert.ok(f.store.a.frames<48);
+});
+
+test('quick skips have provisional cached sound before full positive evidence is ready',t=>{
+ const f=fixture(t);f.frames(4);
+ assert.equal(Audio.get(f.store,f.track),null);
+ assert.ok(Audio.get(f.store,f.track,true));
+ assert.equal(Audio.similarity(f.store.a,f.store.a),null);
+ assert.equal(Audio.similarity(f.store.a,f.store.a,true),1);
 });

@@ -12,12 +12,13 @@ const LIB_PATH = path.join(__dirname, '../data/library.json');
 const STATS_PATH = path.join(__dirname, '../data/stats.json');
 
 // Read-only inspection of user data
-const libraryData = JSON.parse(fs.readFileSync(LIB_PATH, 'utf8'));
+const libraryData = fs.existsSync(LIB_PATH) ? JSON.parse(fs.readFileSync(LIB_PATH, 'utf8')) : { tracks: [] };
 const statsData = fs.existsSync(STATS_PATH) ? JSON.parse(fs.readFileSync(STATS_PATH, 'utf8')) : { plays: [] };
 const tracks = libraryData.tracks || [];
 const plays = statsData.plays || [];
+const realTest = (name, fn) => test(name, { skip: !tracks.length || !plays.length ? 'Optional local listening fixture is absent' : false }, fn);
 
-test('Реальная библиотека: загрузка без модификации данных', () => {
+realTest('Реальная библиотека: загрузка без модификации данных', () => {
   assert.ok(tracks.length >= 700, `Ожидалось >700 треков, получено: ${tracks.length}`);
   assert.ok(plays.length >= 200, `Ожидалось >200 событий прослушиваний, получено: ${plays.length}`);
   
@@ -28,7 +29,7 @@ test('Реальная библиотека: загрузка без модиф�
   }
 });
 
-test('Модель вкуса: обучение на реальной истории прослушиваний (311 событий)', () => {
+realTest('Модель вкуса: обучение на реальной истории прослушиваний (311 событий)', () => {
   const model = new Taste(tracks, plays, Date.now());
   
   assert.ok(model.samples > 100, `Модель должна извлечь валидные обучающие сэмплы, извлечено: ${model.samples}`);
@@ -52,7 +53,7 @@ test('Модель вкуса: обучение на реальной истор
   }
 });
 
-test('Ранжирование переходов: любимые треки получают более высокий скор', () => {
+realTest('Ранжирование переходов: любимые треки получают более высокий скор', () => {
   const model = new Taste(tracks, plays, Date.now());
   
   // Find a popular track in user history (e.g. Molchat Doma)
@@ -75,7 +76,7 @@ test('Ранжирование переходов: любимые треки п�
   }
 });
 
-test('Разрядка исполнителей (Artist Spacing): штраф за повтор того же артиста', () => {
+realTest('Разрядка исполнителей (Artist Spacing): штраф за повтор того же артиста', () => {
   const model = new Taste(tracks, plays, Date.now());
   
   // Find two tracks from the same artist
@@ -104,7 +105,7 @@ test('Разрядка исполнителей (Artist Spacing): штраф з�
     'Разрядка артиста должна влиять на скоринг');
 });
 
-test('Смена настроения (Pivot) при двух пропусках подряд', () => {
+realTest('Смена настроения (Pivot) при двух пропусках подряд', () => {
   const now = Date.now();
   const testTrack1 = tracks[0];
   const testTrack2 = tracks[1];
@@ -126,7 +127,7 @@ test('Смена настроения (Pivot) при двух пропусках
     'При пропусках должно быть адаптивное обоснование');
 });
 
-test('Новая навигация: forwardHistory сохраняет цепочку переходов (next -> prev -> next)', () => {
+realTest('Новая навигация: forwardHistory сохраняет цепочку переходов (next -> prev -> next)', () => {
   const queue = new QueueEngine({
     shuffleMode: 'smart',
     loopMode: 'all',
@@ -151,7 +152,7 @@ test('Новая навигация: forwardHistory сохраняет цепо�
   assert.equal(forwardTo2.id, t2.id, 'next() после prev() должен воспроизвести сохранённую историю forwardHistory');
 });
 
-test('Бесшовное обновление библиотеки: refreshLibrary сохраняет треки и историю', () => {
+realTest('Бесшовное обновление библиотеки: refreshLibrary сохраняет треки и историю', () => {
   const queue = new QueueEngine({
     shuffleMode: 'smart',
     loopMode: 'all',

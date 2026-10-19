@@ -267,8 +267,8 @@
     }
 
     smartChoose(current, indices) {
-      const filtered = indices.filter(i => !this.excludedTracks.has(String(this.tracks[i]?.id)));
-      const target = filtered.length > 0 ? filtered : indices;
+      const target = indices.filter(i => !this.excludedTracks.has(String(this.tracks[i]?.id)));
+      if (!target.length) return null;
       this.smartScore(current, this.tracks[target[0]], {});
       const chosen = this._taste.choose(current, target.map(i => this.tracks[i]), this.bpmCache, {
         recentArtists: this.recentArtists.slice(-10),
@@ -471,6 +471,14 @@
      * Advances to the next track according to current shuffleMode and loopMode.
      * Returns null if end of playlist reached and loop is off.
      */
+    smartCandidates() {
+      const allowed = this.tracks.map((_, i) => i).filter(i => !this.excludedTracks.has(String(this.tracks[i].id)));
+      const remaining = allowed.filter(i => i !== this.currentIndex && this.unplayedIndices.has(i));
+      if (remaining.length || this.loopMode === 'off') return remaining;
+      const others = allowed.filter(i => i !== this.currentIndex);
+      return others.length ? others : allowed;
+    }
+
     next() {
       if (this.tracks.length === 0) return null;
 
@@ -480,6 +488,7 @@
       }
 
       // Going back and then forward should replay the same navigation path.
+      if(this.shuffleMode==='smart')while(this.forwardHistory.length&&this.isExcluded(this.tracks[this.forwardHistory.at(-1)]?.id))this.forwardHistory.pop();
       if(this.forwardHistory.length){
         this.lastTransition=null;
         this.currentIndex=this.forwardHistory.pop();
@@ -488,7 +497,10 @@
       }
 
       // Check if current cycle exhausted
-      if (this.unplayedIndices.size === 0) {
+      const exhausted = this.shuffleMode === 'smart'
+        ? ![...this.unplayedIndices].some(i => !this.isExcluded(this.tracks[i]?.id))
+        : this.unplayedIndices.size === 0;
+      if (exhausted) {
         if (this.loopMode === 'off') return null;
         this.resetCycle(false);
       }
@@ -507,12 +519,10 @@
         }
       } else if (this.shuffleMode === 'smart') {
         const current = this.getCurrentTrack();
-        const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
-        const fallback = this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
-        const candidates = pool.length > 0 ? pool : (fallback.length > 0 ? fallback : this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex));
+        const candidates = this.smartCandidates();
 
         if (candidates.length === 0) {
-          nextIndex = this.currentIndex;
+          return null;
         } else if (!current) {
           nextIndex = candidates[0];
         } else {
@@ -556,7 +566,8 @@
       if (this.loopMode === 'one' && this.currentIndex >= 0) {
         return this.tracks[this.currentIndex];
       }
-      if(this.forwardHistory.length)return this.tracks[this.forwardHistory.at(-1)];
+      const forward=[...this.forwardHistory].reverse().find(i=>this.shuffleMode!=='smart'||!this.isExcluded(this.tracks[i]?.id));
+      if(forward!==undefined)return this.tracks[forward];
       if (this.loopMode === 'off' && this.unplayedIndices.size === 0) return null;
       if (this.shuffleMode === 'off') {
         if (this.currentIndex < this.tracks.length - 1) {
@@ -568,10 +579,8 @@
       }
 
       if (this.shuffleMode === 'smart') {
-        const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
-        const fallback = this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
-        const candidates = pool.length > 0 ? pool : (fallback.length > 0 ? fallback : this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex));
-        if (candidates.length === 0) return this.getCurrentTrack();
+        const candidates = this.smartCandidates();
+        if (candidates.length === 0) return null;
         const current = this.getCurrentTrack();
         if (!current) return this.tracks[candidates[0]];
         const chosen = this.smartChoose(current, candidates);

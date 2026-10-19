@@ -10,12 +10,13 @@ const JointAI = require('../src/joint-ai');
 const LIB_PATH = path.join(__dirname, '../data/library.json');
 const STATS_PATH = path.join(__dirname, '../data/stats.json');
 
-const libraryData = JSON.parse(fs.readFileSync(LIB_PATH, 'utf8'));
+const libraryData = fs.existsSync(LIB_PATH) ? JSON.parse(fs.readFileSync(LIB_PATH, 'utf8')) : { tracks: [] };
 const statsData = fs.existsSync(STATS_PATH) ? JSON.parse(fs.readFileSync(STATS_PATH, 'utf8')) : { plays: [] };
 const realTracks = libraryData.tracks || [];
 const realPlays = statsData.plays || [];
+const realTest = (name, fn) => test(name, { skip: !realTracks.length || !realPlays.length ? 'Optional local listening fixture is absent' : false }, fn);
 
-test('TasteModel: исключённые треки не учитываются в обучающей выборке истории', () => {
+realTest('TasteModel: исключённые треки не учитываются в обучающей выборке истории', () => {
   const sampleTrack = realTracks[0];
   const excludedId = String(sampleTrack.id);
 
@@ -31,7 +32,7 @@ test('TasteModel: исключённые треки не учитываются 
   assert.equal(modelWithExclusion.evidence.has(sampleTrack.id), false, 'Свидетельства исключённого трека не должны сохраняться');
 });
 
-test('TasteModel: исключённый трек никогда не выбирается через choose()', () => {
+realTest('TasteModel: исключённый трек никогда не выбирается через choose()', () => {
   const model = new Taste(realTracks.slice(0, 20), realPlays, Date.now());
   const current = realTracks[0];
   const candidate = realTracks[1];
@@ -103,7 +104,7 @@ test('QueueEngine: Smart DJ никогда не выбирает и не пре�
   }
 });
 
-test('Реальная библиотека: исключение самого часто прослушиваемого трека блокирует его в Smart DJ', () => {
+realTest('Реальная библиотека: исключение самого часто прослушиваемого трека блокирует его в Smart DJ', () => {
   // Find top played track from real user plays
   const playCounts = new Map();
   for (const p of realPlays) {

@@ -2,7 +2,7 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.AudioProfile=factory();})(globalThis,()=>{
  const Timbre=typeof module==='object'&&module.exports?require('./audio-timbre'):globalThis.AudioTimbre;
  const clamp=n=>Math.max(0,Math.min(1,n));
- const VERSION=4,MAX_FRAMES=360,MAX_CACHE=750;
+ const VERSION=4,MAX_FRAMES=360,ANALYSIS_FRAMES=48,MAX_CACHE=750;
  function frame(wave,spectrumDb,sampleRate){
   if(!wave?.length||wave.length>32768||!spectrumDb?.length||spectrumDb.length>16384||!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>384000)return null;
   let mean=0;for(const x of wave){if(!Number.isFinite(x))return null;mean+=x;}mean/=wave.length;
@@ -22,24 +22,34 @@
  }
  function shape(p){return !!p&&Array.isArray(p.vector)&&p.vector.length===6&&p.vector.every(n=>Number.isFinite(n)&&n>=0&&n<=1)&&Number.isInteger(p.frames)&&p.frames>0&&p.frames<=MAX_FRAMES&&Number.isFinite(p.seconds)&&p.seconds>0&&p.seconds<=p.frames*1.5;}
  function valid(p){return shape(p)&&p.frames>=20&&p.seconds>=10;}
+ function ready(p,partial=false){return partial?shape(p)&&p.frames>=4&&p.seconds>=2:valid(p);}
  const validVariance=(v,size=6)=>Array.isArray(v)&&v.length===size&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=.25);
  function variation(p){return valid(p)&&validVariance(p.variance)?p.variance.map(v=>2*Math.sqrt(v)):null;}
  const validTimbre=v=>Array.isArray(v)&&v.length===12&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=1);
  function texture(p){return valid(p)&&validTimbre(p.timbre)&&validVariance(p.timbreVariance,12)?{mean:p.timbre,variation:p.timbreVariance.map(v=>2*Math.sqrt(v))}:null;}
  function stored(p){return shape(p)&&validVariance(p.variance)&&p.version===VERSION&&(p.timbre===null&&p.timbreVariance===null||validTimbre(p.timbre)&&validVariance(p.timbreVariance,12))&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
- function similarity(a,b){
-  if(!valid(a)||!valid(b))return null;
+ function similarity(a,b,partial=false){
+  if(!ready(a,partial)||!ready(b,partial))return null;
   const weights=[.5,1,1,1,1,.5];let distance=0;
   for(let i=0;i<6;i++)distance+=weights[i]*(a.vector[i]-b.vector[i])**2;
   const av=variation(a),bv=variation(b);
   if(av&&bv)for(let i=0;i<6;i++)distance+=.2*(av[i]-bv[i])**2;
-  const at=texture(a),bt=texture(b);
-  if(at&&bt)for(let i=0;i<12;i++)distance+=.12*(at.mean[i]-bt.mean[i])**2+.04*(at.variation[i]-bt.variation[i])**2;
+  if(validTimbre(a.timbre)&&validTimbre(b.timbre)&&validVariance(a.timbreVariance,12)&&validVariance(b.timbreVariance,12)){
+   // Diagonal Gaussian Bhattacharyya distance: compare timbre distributions,
+   // not just bass/treble averages. A variance floor regularizes short excerpts.
+   // MFCC statistical summaries: https://essentia.upf.edu/howto_standard_extractor.html
+   let timbreDistance=0;
+   for(let i=0;i<12;i++){
+    const va=a.timbreVariance[i]+.0025,vb=b.timbreVariance[i]+.0025;
+    timbreDistance+=(a.timbre[i]-b.timbre[i])**2/(4*(va+vb))+.25*Math.log(.25*(va/vb+vb/va+2));
+   }
+   return Math.exp(-3*(.75*timbreDistance/12+.25*distance));
+  }
   return Math.exp(-3*distance);
  }
  const signature=t=>JSON.stringify([t?.duration||0,t?.bytes||0,t?.mime||'',t?.modified||t?.dateModified||t?.lastModified||0,t?.uri||t?.path||'']);
  function read(store,track){if(!track||track.id==null||!store||!Object.hasOwn(store,track.id))return null;const p=store[track.id];return stored(p)&&p.signature===signature(track)?p:null;}
- function get(store,track){const p=read(store,track);return valid(p)?p:null;}
+ function get(store,track,partial=false){const p=read(store,track);return ready(p,partial)?p:null;}
  function prune(store,limit=MAX_CACHE){
   const keys=Object.keys(store).sort((a,b)=>(store[b]?.updatedAt||0)-(store[a]?.updatedAt||0));
   for(const id of keys.slice(limit))delete store[id];
@@ -93,13 +103,14 @@
     if(src!==sourceUrl){boundary();src=sourceUrl;}
     const mediaTime=audio.currentTime;
     if(audio.paused||audio.seeking||audio.readyState<3||context.state!=='running'||audio.muted||audio.volume===0||audio.playbackRate!==1||!Number.isFinite(mediaTime)||mediaTime<0){boundary();return;}
-    if(profile.frames>=MAX_FRAMES){boundary();return;}
+    // Reuse complete cached excerpts; no analysis of the rest of the library/track.
+    if(profile.frames>=ANALYSIS_FRAMES){boundary();return;}
     const current={wall:now(),media:mediaTime},last=previous;previous=current;
     if(!last||!Number.isFinite(current.wall))return;
     const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
     if(wall<=0||wall>1.5||media<=0||Math.abs(media-wall)>.35)return;
-    // Spread the fixed measurement budget across long tracks instead of spending it on the intro.
     const duration=Number(track.duration)/1000;
+    // Keep the v4 position grid compatible with profiles measured before this budget cap.
     const step=Number.isFinite(duration)&&duration>0?Math.max(.5,Math.ceil(duration/MAX_FRAMES*2)/2):.5;
     const position=Math.floor(mediaTime/step);if(!Number.isSafeInteger(position)||positions.has(position))return;
     let vector=null,timbre=null,timbrePower=0,totalPower=0;
@@ -125,7 +136,8 @@
      }
     }else {profile.timbre=null;profile.timbreVariance=null;}
     profile.vector=mean;profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
-    if(profile.frames%20===0)flush();
+    // Early provisional evidence lets a quick skip reject similar sounds immediately.
+    if(profile.frames===4||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
    }catch(_){boundary();}
   }
   function start(){if(!disposed&&timer===null)timer=schedule(sample,500);}
