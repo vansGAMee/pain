@@ -660,6 +660,12 @@
       };
     });
 
+    if (options.excludedTracks) {
+      const excluded = options.excludedTracks instanceof Set ? options.excludedTracks : new Set(Array.from(options.excludedTracks).map(String));
+      tracks = tracks.filter(t => !excluded.has(String(t.id)) && !(t.matchedLocalTrack && excluded.has(String(t.matchedLocalTrack.id))));
+      tracks.forEach((t, i) => { t.rank = i + 1; });
+    }
+
     if (options.localOnly) {
       tracks = tracks.filter(t => t.isLocal);
       tracks.forEach((t, i) => { t.rank = i + 1; });

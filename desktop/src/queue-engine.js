@@ -219,7 +219,37 @@
       this.bpmCache = options.bpmCache || {};
       this.audioProfiles=options.audioProfiles||{};
       this.stats = options.stats || null;
+      this.excludedTracks = options.excludedTracks instanceof Set 
+        ? new Set(Array.from(options.excludedTracks).map(String)) 
+        : new Set(Array.from(options.excludedTracks || []).map(String));
       this.onQueueChange = options.onQueueChange || null;
+    }
+
+    setExcludedTracks(tracks) {
+      this.excludedTracks = new Set(Array.from(tracks || []).map(String));
+      this._taste = null;
+    }
+
+    excludeTrack(trackId) {
+      if (trackId != null) {
+        this.excludedTracks.add(String(trackId));
+        this._taste = null;
+      }
+    }
+
+    unexcludeTrack(trackId) {
+      if (trackId != null) {
+        this.excludedTracks.delete(String(trackId));
+        this._taste = null;
+      }
+    }
+
+    isExcluded(trackId) {
+      return this.excludedTracks.has(String(trackId));
+    }
+
+    getExcludedTracks() {
+      return Array.from(this.excludedTracks);
     }
 
     setStats(stats) {
@@ -230,19 +260,25 @@
     smartScore(current, candidate, context) {
       const now = this.now();
       if (!this._taste || this._tasteTracks !== this.tracks || now-this._taste.now>=60000 || now<this._taste.now) {
-        this._taste = new Taste(this.tracks, this.stats?.plays || [], now,this.audioProfiles);
+        this._taste = new Taste(this.tracks, this.stats?.plays || [], now, this.audioProfiles, { excludedTracks: this.excludedTracks });
         this._tasteTracks = this.tracks;
       }
       return this._taste.score(current,candidate,this.bpmCache,context);
     }
 
     smartChoose(current, indices) {
-      this.smartScore(current,this.tracks[indices[0]],{});
-      const chosen=this._taste.choose(current,indices.map(i=>this.tracks[i]),this.bpmCache,{
-        recentArtists:this.recentArtists.slice(-10),recentTrackIds:this.playedHistory.slice(-4).reverse().map(i=>this.tracks[i]?.id),step:this.smartStep,
-        seed:(this.smartSeed+Math.imul(this.smartStep,2654435761))>>>0
+      const filtered = indices.filter(i => !this.excludedTracks.has(String(this.tracks[i]?.id)));
+      const target = filtered.length > 0 ? filtered : indices;
+      this.smartScore(current, this.tracks[target[0]], {});
+      const chosen = this._taste.choose(current, target.map(i => this.tracks[i]), this.bpmCache, {
+        recentArtists: this.recentArtists.slice(-10),
+        recentTrackIds: this.playedHistory.slice(-4).reverse().map(i => this.tracks[i]?.id),
+        step: this.smartStep,
+        seed: (this.smartSeed + Math.imul(this.smartStep, 2654435761)) >>> 0,
+        excludedTracks: this.excludedTracks
       });
-      return {...chosen,index:indices.find(i=>this.tracks[i]===chosen.track)};
+      if (!chosen) return null;
+      return { ...chosen, index: target.find(i => this.tracks[i] === chosen.track) };
     }
 
     randomChoice(indices) {
@@ -471,22 +507,25 @@
         }
       } else if (this.shuffleMode === 'smart') {
         const current = this.getCurrentTrack();
-        const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex);
-        const candidates = (pool.length > 0 ? pool : this.tracks.map((_, i) => i)).filter(idx => idx !== this.currentIndex);
+        const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
+        const fallback = this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
+        const candidates = pool.length > 0 ? pool : (fallback.length > 0 ? fallback : this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex));
 
         if (candidates.length === 0) {
           nextIndex = this.currentIndex;
         } else if (!current) {
           nextIndex = candidates[0];
         } else {
-          const chosen = this.smartChoose(current,candidates);
-          nextIndex = chosen.index;
-          this.lastTransition = {
-            fromTrack: current,
-            toTrack: this.tracks[nextIndex],
-            reasons: chosen.reasons || [],
-            bpm: chosen.bpm
-          };
+          const chosen = this.smartChoose(current, candidates);
+          nextIndex = chosen ? chosen.index : candidates[0];
+          if (chosen) {
+            this.lastTransition = {
+              fromTrack: current,
+              toTrack: this.tracks[nextIndex],
+              reasons: chosen.reasons || [],
+              bpm: chosen.bpm
+            };
+          }
         }
       } else {
         // Sequential (off)
@@ -528,15 +567,20 @@
         return null;
       }
 
+      if (this.shuffleMode === 'smart') {
+        const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
+        const fallback = this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex && !this.excludedTracks.has(String(this.tracks[idx]?.id)));
+        const candidates = pool.length > 0 ? pool : (fallback.length > 0 ? fallback : this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex));
+        if (candidates.length === 0) return this.getCurrentTrack();
+        const current = this.getCurrentTrack();
+        if (!current) return this.tracks[candidates[0]];
+        const chosen = this.smartChoose(current, candidates);
+        return chosen ? this.tracks[chosen.index] : this.tracks[candidates[0]];
+      }
+
       const pool = Array.from(this.unplayedIndices).filter(idx => idx !== this.currentIndex);
       const candidates = pool.length > 0 ? pool : this.tracks.map((_, i) => i).filter(idx => idx !== this.currentIndex);
       if (candidates.length === 0) return this.getCurrentTrack();
-
-      if (this.shuffleMode === 'smart') {
-        const current = this.getCurrentTrack();
-        if (!current) return this.tracks[candidates[0]];
-        return this.tracks[this.smartChoose(current,candidates).index];
-      }
 
       return this.tracks[this.randomChoice(candidates)];
     }

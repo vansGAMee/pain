@@ -35,7 +35,8 @@
   return [...rows.values()].sort((a,b)=>a.started-b.started).slice(-6000);
  }
  class TasteModel {
-  constructor(tracks=[],plays=[],now=Date.now(),audioProfiles={}){
+  constructor(tracks=[],plays=[],now=Date.now(),audioProfiles={},options={}){
+   this.excludedTracks=options.excludedTracks instanceof Set?options.excludedTracks:new Set(Array.from(options.excludedTracks||[]).map(String));
    this.audioProfiles=audioProfiles;
    this.weights=new Map();this.counts=new Map();this.artistCounts=new Map();this.now=now;this.evidence=new Map();this.recentSkips=[];
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
@@ -44,6 +45,7 @@
    for(const p of history(byId,plays,now)){
     const track=byId.get(p.track),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
     if(!track||!stamp||seen.has(id))continue;seen.add(id);
+    if(this.excludedTracks.has(String(track.id))||this.excludedTracks.has(String(p.track)))continue;
     const heard=Number(p.media_heard??p.heard),duration=Number(p.duration||track.duration);
     const explicit=completed(p);
     // Pauses, buffering, unknown duration and sub-second accidental clicks are not dislikes.
@@ -105,10 +107,11 @@
   }
   predictFeatures(features,weights=this.weights){return sigmoid(features.reduce((s,[k,v])=>s+(weights.get(k)||0)*v,0));}
   choose(current,candidates,cache={},context={}){
+   const excluded=context.excludedTracks instanceof Set?context.excludedTracks:(context.excludedTracks?new Set(Array.from(context.excludedTracks).map(String)):this.excludedTracks);
    // Seeded sampling makes peek and next agree, while each queue visit draws anew.
    let seed=(context.seed??1)>>>0;
    const random=()=>{seed=(seed+0x6d2b79f5)>>>0;let z=seed;z=Math.imul(z^(z>>>15),z|1);z^=z+Math.imul(z^(z>>>7),z|61);return ((z^(z>>>14))>>>0)/4294967296;};
-   let pool=candidates.map(track=>({track,...this.score(current,track,cache,context)}));
+   let pool=candidates.filter(track=>!excluded.has(String(track.id))).map(track=>({track,...this.score(current,track,cache,context)}));
    if(!pool.length)return null;
    // Reserve one turn in four for discovery when safe candidates exist.
    const pivot=this.recentSkips.length>=2;

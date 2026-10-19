@@ -697,6 +697,9 @@
         <button class="bottom-heart-btn" id="bottomFavoriteBtn" title="Favorite">
           <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         </button>
+        <button class="bottom-exclude-btn" id="bottomExcludeBtn" title="Не рекомендовать">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>
+        </button>
       </div>
 
       <!-- Center: Controls & Seek Bar -->
@@ -955,6 +958,27 @@
                 <span class="switch-slider round"></span>
               </label>
             </div>
+          </div>
+        </div>
+
+        <!-- Section: Smart DJ & Recommendations Exclusion -->
+        <div class="settings-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Smart DJ & Recommendations" data-ru="Smart DJ и рекомендации">Smart DJ и рекомендации</div>
+            <div class="settings-section-desc" data-en="Manage tracks excluded from Smart DJ and offline recommendation models." data-ru="Управление треками, исключёнными из рекомендаций и Smart DJ.">Управление треками, исключёнными из рекомендаций и Smart DJ.</div>
+          </div>
+          <div class="fluid-setting-row">
+            <div class="fluid-row-label">
+              <span data-en="Excluded Tracks" data-ru="Исключённые треки">Исключённые треки</span>
+              <span class="fluid-row-hint" id="excludedTracksCountHint" data-en="0 tracks excluded" data-ru="0 треков исключено">0 треков исключено</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn-minimal" id="viewExcludedTracksBtn" data-en="View list" data-ru="Список">Список</button>
+              <button type="button" class="btn-minimal" id="clearExcludedTracksBtn" data-en="Reset all" data-ru="Очистить">Очистить</button>
+            </div>
+          </div>
+          <div id="excludedTracksListContainer" style="display:none; margin-top: 10px; max-height: 200px; overflow-y: auto; background: var(--bg-surface-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+            <div id="excludedTracksListContent" style="display:flex; flex-direction:column; gap:6px;"></div>
           </div>
         </div>
       </div>

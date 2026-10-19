@@ -59,6 +59,14 @@
     })(),
     fluidBpmSync: (function() {
       try { return localStorage.getItem('pain_fluid_bpm_sync') === 'true'; } catch(e) { return false; }
+    })(),
+
+    // Excluded Tracks from Smart DJ & Recommendations
+    excludedRecommendations: (function() {
+      try {
+        const raw = localStorage.getItem('pain_excluded_recommendations');
+        return new Set(raw ? JSON.parse(raw).map(String) : []);
+      } catch(e) { return new Set(); }
     })()
   };
 
@@ -98,6 +106,7 @@
     stats: state.stats,
     bpmCache: initialBpmCache,
     audioProfiles,
+    excludedTracks: state.excludedRecommendations,
     shuffleMode: state.shuffleMode || 'off',
     loopMode: state.loopMode || 'all',
     onQueueChange: (info) => {
@@ -218,6 +227,7 @@
     bottomTrackArtist: document.getElementById('bottomTrackArtist'),
     bottomTrackContext: document.getElementById('bottomTrackContext'),
     bottomFavoriteBtn: document.getElementById('bottomFavoriteBtn'),
+    bottomExcludeBtn: document.getElementById('bottomExcludeBtn'),
     bottomShuffleBtn: document.getElementById('bottomShuffleBtn'),
     bottomShuffleBadge: document.getElementById('bottomShuffleBadge'),
     bottomPrevBtn: document.getElementById('bottomPrevBtn'),
@@ -300,7 +310,12 @@
     fluidPreviewOrb: document.getElementById('fluidPreviewOrb'),
     fluidResetColorBtn: document.getElementById('fluidResetColorBtn'),
     fluidBpmSyncSwitch: document.getElementById('fluidBpmSyncSwitch'),
-    fluidBpmStatusText: document.getElementById('fluidBpmStatusText')
+    fluidBpmStatusText: document.getElementById('fluidBpmStatusText'),
+    excludedTracksCountHint: document.getElementById('excludedTracksCountHint'),
+    viewExcludedTracksBtn: document.getElementById('viewExcludedTracksBtn'),
+    clearExcludedTracksBtn: document.getElementById('clearExcludedTracksBtn'),
+    excludedTracksListContainer: document.getElementById('excludedTracksListContainer'),
+    excludedTracksListContent: document.getElementById('excludedTracksListContent')
   };
 
 
@@ -953,6 +968,13 @@
         return;
       }
 
+      const excludeBtn = e.target.closest('.row-exclude-btn');
+      if (excludeBtn) {
+        e.stopPropagation();
+        toggleExcludeRecommendation(track.id);
+        return;
+      }
+
       if (!e.target.closest('button')) {
         playTrackInContext(track, trackList, contextInfo);
       }
@@ -1023,6 +1045,7 @@
     const isPlayingCurrent = isCurrent && state.isPlaying;
     const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
     const plays = getTrackPlayCount(track.id);
+    const isExcluded = state.excludedRecommendations.has(String(track.id));
 
     const tr = document.createElement('tr');
     tr.dataset.trackId = track.id;
@@ -1050,6 +1073,9 @@
       <td class="col-plays">${plays}</td>
       <td class="col-time">${formatTime(durationSec)}</td>
       <td class="col-actions">
+        <button class="row-exclude-btn ${isExcluded ? 'active' : ''}" data-track-id="${escapeHtml(track.id)}" title="${isExcluded ? (state.lang === 'ru' ? 'Вернуть в рекомендации' : 'Include in recommendations') : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend')}">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>
+        </button>
         <button class="row-fav-btn ${track.favorite ? 'active' : ''}" title="${state.lang === 'ru' ? 'В избранное' : 'Favorite'}">
           <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         </button>
@@ -1120,6 +1146,13 @@
         return;
       }
 
+      const excludeBtn = e.target.closest('.card-exclude-btn');
+      if (excludeBtn) {
+        e.stopPropagation();
+        toggleExcludeRecommendation(track.id);
+        return;
+      }
+
       playTrackInContext(track, trackList, contextInfo);
     });
 
@@ -1140,6 +1173,7 @@
     const isCurrent = state.currentTrackId === track.id;
     const isPlayingCurrent = isCurrent && state.isPlaying;
     const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
+    const isExcluded = state.excludedRecommendations.has(String(track.id));
 
     const card = document.createElement('div');
     card.className = `track-card ${isCurrent ? 'playing-card' : ''}`;
@@ -1161,6 +1195,9 @@
       <div class="track-card-footer">
         <span class="track-card-duration">${formatTime(durationSec)}</span>
         <div style="display: flex; gap: 4px; align-items: center;">
+          <button class="card-exclude-btn ${isExcluded ? 'active' : ''}" data-track-id="${escapeHtml(track.id)}" title="${isExcluded ? (state.lang === 'ru' ? 'Вернуть в рекомендации' : 'Include in recommendations') : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend')}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>
+          </button>
           <button class="card-add-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -2025,6 +2062,7 @@
     DOM.totalTime.textContent = formatTime(durationSec);
 
     updateFavoriteUI(track.favorite);
+    updateExcludedUI(track);
 
     renderVinylPlayerView();
   }
@@ -2032,6 +2070,118 @@
   function updateFavoriteUI(isFav) {
     DOM.bottomFavoriteBtn.classList.toggle('active', !!isFav);
     DOM.bottomFavoriteBtn.querySelector('svg').style.fill = isFav ? 'currentColor' : 'none';
+  }
+
+  function updateExcludedUI(track) {
+    if (!DOM.bottomExcludeBtn) return;
+    const isEx = track && state.excludedRecommendations.has(String(track.id));
+    DOM.bottomExcludeBtn.classList.toggle('active', !!isEx);
+    DOM.bottomExcludeBtn.title = isEx
+      ? (state.lang === 'ru' ? 'Исключён из рекомендаций (нажмите, чтобы вернуть)' : 'Excluded from recommendations (click to restore)')
+      : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend');
+  }
+
+  function updateExcludedButtonsUI() {
+    const curTrack = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+    updateExcludedUI(curTrack);
+
+    document.querySelectorAll('.row-exclude-btn[data-track-id]').forEach(btn => {
+      const id = btn.dataset.trackId;
+      const isEx = state.excludedRecommendations.has(String(id));
+      btn.classList.toggle('active', isEx);
+      btn.title = isEx 
+        ? (state.lang === 'ru' ? 'Вернуть в рекомендации' : 'Include in recommendations')
+        : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend');
+    });
+
+    document.querySelectorAll('.card-exclude-btn[data-track-id]').forEach(btn => {
+      const id = btn.dataset.trackId;
+      const isEx = state.excludedRecommendations.has(String(id));
+      btn.classList.toggle('active', isEx);
+      btn.title = isEx 
+        ? (state.lang === 'ru' ? 'Вернуть в рекомендации' : 'Include in recommendations')
+        : (state.lang === 'ru' ? 'Исключить из рекомендаций' : 'Do not recommend');
+    });
+  }
+
+  function toggleExcludeRecommendation(trackId) {
+    if (trackId == null) return;
+    const idStr = String(trackId);
+    const track = state.tracks.find(t => String(t.id) === idStr);
+    const title = track ? (track.title || idStr) : idStr;
+    const isExcluded = state.excludedRecommendations.has(idStr);
+
+    if (isExcluded) {
+      state.excludedRecommendations.delete(idStr);
+      if (queue && typeof queue.unexcludeTrack === 'function') {
+        queue.unexcludeTrack(idStr);
+      }
+      showToast(state.lang === 'ru' 
+        ? `Трек «${title}» возвращён в рекомендации` 
+        : `Track "${title}" restored to recommendations`);
+    } else {
+      state.excludedRecommendations.add(idStr);
+      if (queue && typeof queue.excludeTrack === 'function') {
+        queue.excludeTrack(idStr);
+      }
+      showToast(state.lang === 'ru' 
+        ? `Трек «${title}» исключён из рекомендаций навсегда` 
+        : `Track "${title}" excluded from recommendations`);
+    }
+
+    try {
+      localStorage.setItem('pain_excluded_recommendations', JSON.stringify(Array.from(state.excludedRecommendations)));
+    } catch (e) {}
+
+    updateExcludedButtonsUI();
+    updateSettingsExcludedSection();
+  }
+
+  function updateSettingsExcludedSection() {
+    const count = state.excludedRecommendations.size;
+    if (DOM.excludedTracksCountHint) {
+      DOM.excludedTracksCountHint.textContent = state.lang === 'ru'
+        ? `${count} ${count === 1 ? 'трек исключён' : (count >= 2 && count <= 4 ? 'трека исключено' : 'треков исключено')}`
+        : `${count} ${count === 1 ? 'track' : 'tracks'} excluded`;
+    }
+    renderExcludedTracksList();
+  }
+
+  function renderExcludedTracksList() {
+    if (!DOM.excludedTracksListContent) return;
+    DOM.excludedTracksListContent.innerHTML = '';
+    const ids = Array.from(state.excludedRecommendations);
+    if (ids.length === 0) {
+      DOM.excludedTracksListContent.innerHTML = `
+        <div style="font-size:12px; color:var(--ink-muted); text-align:center; padding:8px;">
+          ${state.lang === 'ru' ? 'Нет исключённых треков' : 'No excluded tracks'}
+        </div>
+      `;
+      return;
+    }
+    ids.forEach(id => {
+      const track = state.tracks.find(t => String(t.id) === String(id));
+      const title = track ? (track.title || 'Untitled') : `Track ID: ${id}`;
+      const artist = track ? (track.artist || 'Unknown Artist') : '';
+
+      const item = document.createElement('div');
+      item.className = 'excluded-track-item';
+      item.innerHTML = `
+        <div class="excluded-track-info">
+          <span class="excluded-track-title">${escapeHtml(title)}</span>
+          <span class="excluded-track-artist">${escapeHtml(artist)}</span>
+        </div>
+        <button type="button" class="btn-minimal" data-restore-id="${escapeHtml(id)}" style="padding:2px 8px; font-size:11px;">
+          ${state.lang === 'ru' ? 'Вернуть' : 'Restore'}
+        </button>
+      `;
+      const restoreBtn = item.querySelector('button');
+      restoreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleExcludeRecommendation(id);
+      });
+      DOM.excludedTracksListContent.appendChild(item);
+    });
   }
 
   function updateSidebarLikedCount() {
@@ -2309,6 +2459,7 @@
         DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
       }
       updateFluidBpmTempo();
+      updateSettingsExcludedSection();
     }
   }
 
@@ -2871,7 +3022,8 @@
           popularityFilter: popFilter,
           maxPerArtist: isNaN(artistLimit) ? 2 : artistLimit,
           requireAudio: audioOnly,
-          localOnly: localOnly
+          localOnly: localOnly,
+          excludedTracks: state.excludedRecommendations
         }
       );
 
@@ -3238,6 +3390,13 @@
       }
     });
 
+    if (DOM.bottomExcludeBtn) {
+      DOM.bottomExcludeBtn.addEventListener('click', () => {
+        const curTrack = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+        if (curTrack) toggleExcludeRecommendation(curTrack.id);
+      });
+    }
+
     DOM.bottomVinylToggleBtn.addEventListener('click', () => {
       switchView('player');
     });
@@ -3558,6 +3717,32 @@
           : (state.fluidBpmSync ? 'BPM Sync Enabled' : 'BPM Sync Disabled'),
           state.fluidBpmSync ? '⚡' : '✓'
         );
+      });
+    }
+
+    // Excluded tracks management in settings
+    if (DOM.viewExcludedTracksBtn) {
+      DOM.viewExcludedTracksBtn.addEventListener('click', () => {
+        if (!DOM.excludedTracksListContainer) return;
+        const isHidden = DOM.excludedTracksListContainer.style.display === 'none';
+        DOM.excludedTracksListContainer.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) renderExcludedTracksList();
+      });
+    }
+
+    if (DOM.clearExcludedTracksBtn) {
+      DOM.clearExcludedTracksBtn.addEventListener('click', () => {
+        if (state.excludedRecommendations.size === 0) return;
+        state.excludedRecommendations.clear();
+        if (queue && typeof queue.setExcludedTracks === 'function') {
+          queue.setExcludedTracks([]);
+        }
+        try {
+          localStorage.removeItem('pain_excluded_recommendations');
+        } catch(e) {}
+        updateExcludedButtonsUI();
+        updateSettingsExcludedSection();
+        showToast(state.lang === 'ru' ? 'Все треки возвращены в рекомендации' : 'All tracks restored to recommendations');
       });
     }
 

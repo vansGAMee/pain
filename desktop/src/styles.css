@@ -2483,6 +2483,85 @@ input:checked + .switch-slider:before {
   color: var(--ink-secondary);
 }
 
+.bottom-exclude-btn {
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.bottom-exclude-btn:hover {
+  transform: scale(1.15);
+  color: #ef4444;
+}
+
+.bottom-exclude-btn.active {
+  color: #ef4444;
+}
+
+.row-exclude-btn, .card-exclude-btn {
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.row-exclude-btn:hover, .card-exclude-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.row-exclude-btn.active, .card-exclude-btn.active {
+  color: #ef4444;
+}
+
+.excluded-track-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--card-bg, rgba(255,255,255,0.03));
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.excluded-track-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 75%;
+}
+
+.excluded-track-title {
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.excluded-track-artist {
+  font-size: 11px;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ========================================================
    EXPANDED RICH INSIGHTS DASHBOARD
    ======================================================== */
