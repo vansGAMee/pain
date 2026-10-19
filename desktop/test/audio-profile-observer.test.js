@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),Audio=requi
 const wave=Float32Array.from({length:2048},(_,i)=>.25*Math.sin(i*.17));
 const bins=Float32Array.from({length:1024},(_,i)=>i*48000/2048>=50&&i*48000/2048<=200?-20:-120);
 const track=id=>({id,duration:180000,bytes:4000000,mime:'audio/wav'});
-const cached=(song,extra={})=>({version:2,signature:Audio.signature(song),vector:Audio.frame(wave,bins,48000),frames:20,seconds:10,positions:Array.from({length:20},(_,i)=>i+1),...extra});
+const cached=(song,extra={})=>({version:3,variance:[0,0,0,0,0,0],signature:Audio.signature(song),vector:Audio.frame(wave,bins,48000),frames:20,seconds:10,positions:Array.from({length:20},(_,i)=>i+1),...extra});
 
 function fixture(t,{store={},onProfile=()=>{}}={}){
  const listeners=new Map(),timers=new Map(),saved=[];let wall=0,nextTimer=0;
@@ -28,7 +28,7 @@ function fixture(t,{store={},onProfile=()=>{}}={}){
  t.after(()=>f.dispose());f.prime();return f;
 }
 function assertProfile(profile,frames){
- assert.ok(profile);assert.equal(profile.version,2);assert.equal(profile.frames,frames);assert.equal(profile.seconds,frames/2);
+ assert.ok(profile);assert.equal(profile.version,3);assert.equal(profile.frames,frames);assert.equal(profile.seconds,frames/2);
  assert.equal(profile.positions.length,frames);assert.equal(new Set(profile.positions).size,frames);
  assert.ok(profile.positions.every(n=>Number.isInteger(n)&&n>=0));
 }
@@ -121,4 +121,13 @@ test('disposal flushes evidence, removes listeners and timers, and cannot restar
  assert.equal(f.source.disconnections.length,1);assert.equal(f.source.disconnections[0],f.source.connections[0]);
  const callbacks=f.saved.length;f.audio.emit('playing');f.audio.emit('seeked');f.frames(5);f.audio.emit('pause');f.dispose();
  assert.equal(f.timers.size,0);assert.equal(f.saved.length,callbacks);assert.equal(f.source.disconnections.length,1);
+});
+
+test('contrast between sections survives partial saves and matches measured variance',t=>{
+ const f=fixture(t),low=Float32Array.from({length:1024},(_,i)=>i*48000/2048<250?-20:-120),high=Float32Array.from({length:1024},(_,i)=>i*48000/2048>2000?-20:-120);
+ let index=0;f.context.createAnalyser().getFloatFrequencyData=target=>target.set(index++%2?high:low);
+ const a=Audio.frame(wave,low,48000),b=Audio.frame(wave,high,48000);
+ f.frames(10);f.pause();f.play();f.frames(10);f.pause();
+ const profile=Audio.get(f.store,f.track);assert.ok(profile);
+ for(let i=0;i<6;i++)assert.ok(Math.abs(profile.variance[i]-(a[i]-b[i])**2/4)<1e-6);
 });

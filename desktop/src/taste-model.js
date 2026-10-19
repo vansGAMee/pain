@@ -74,6 +74,8 @@
    if(from&&artist&&trustedArtist(from.artist))f.push(['transition:'+trustedArtist(from.artist)+'>'+artist,.7]);
    const sound=Sound.get(this.audioProfiles,track);
    if(sound) sound.vector.forEach((value,i)=>f.push(['sound:'+i,(value-.5)*.8]));
+   const variation=Sound.variation(sound);
+   if(variation)variation.forEach((value,i)=>f.push(['sound-variation:'+i,(value-.5)*.5]));
    // Hearts do not become a shortcut: learn from actual listening instead.
    return f;
   }

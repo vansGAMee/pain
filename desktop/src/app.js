@@ -72,7 +72,7 @@
   } catch (e) {}
 
   let audioProfiles=Object.create(null);
-  try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v2'));}catch(_){}
+  try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v3'));}catch(_){}
   let initialBpmCache = {};
   try {
     const rawBpm = localStorage.getItem('pain_bpm_cache_v2');

@@ -29,14 +29,14 @@ test('missing, malformed and insufficient profiles are ignored',()=>{
 test('measured sound affects ranking; unavailable or stale profiles do not invent audio similarity',()=>{
  const Taste=require('../src/taste-model');
  const tracks=[{id:'current',duration:180000},{id:'near',duration:180000},{id:'far',duration:180000}],profiles={};
- for(const t of tracks)profiles[t.id]={version:2,positions:Array.from({length:100},(_,i)=>i),signature:Audio.signature(t),frames:100,seconds:50,vector:t.id==='far'?[.4,0,0,1,.9,.01]:[.4,1,0,0,.02,.01]};
+ for(const t of tracks)profiles[t.id]={version:3,variance:[0,0,0,0,0,0],positions:Array.from({length:100},(_,i)=>i),signature:Audio.signature(t),frames:100,seconds:50,vector:t.id==='far'?[.4,0,0,1,.9,.01]:[.4,1,0,0,.02,.01]};
  const model=new Taste(tracks,[],Date.now(),profiles);
  assert.ok(model.score(tracks[0],tracks[1]).score>model.score(tracks[0],tracks[2]).score+5);
  assert.equal(Audio.get(profiles,{...tracks[1],duration:999}),null);
  const blank=new Taste(tracks);assert.equal(blank.score(tracks[0],tracks[1]).score,blank.score(tracks[0],tracks[2]).score);
 });
 
-const saved=(track={id:'a'})=>({...profile([.3,.2,.5,.3,.4,.1]),version:2,signature:Audio.signature(track),positions:Array.from({length:40},(_,i)=>i),updatedAt:1});
+const saved=(track={id:'a'})=>({...profile([.3,.2,.5,.3,.4,.1]),version:3,variance:[0,0,0,0,0,0],signature:Audio.signature(track),positions:Array.from({length:40},(_,i)=>i),updatedAt:1});
 test('DC offset is not sound evidence and does not change centered dynamics',()=>{
  const bins=spectrum(48000,50,200);
  assert.equal(Audio.frame(new Float32Array(2048).fill(.5),bins,48000),null);
@@ -51,7 +51,7 @@ test('cache restore rejects corrupt data and obsolete formats and caps its size'
 });
 test('storage quota pressure evicts old evidence; denied storage does not throw',()=>{
  const store=Object.fromEntries(Array.from({length:100},(_,i)=>[String(i),{...saved(),updatedAt:i}]));let calls=0;
- assert.equal(Audio.persist(store,{setItem(key,value){calls++;assert.equal(key,'pain_audio_profiles_v2');if(Object.keys(JSON.parse(value)).length>50)throw Error('quota');}}),true);
+ assert.equal(Audio.persist(store,{setItem(key,value){calls++;assert.equal(key,'pain_audio_profiles_v3');if(Object.keys(JSON.parse(value)).length>50)throw Error('quota');}}),true);
  assert.equal(calls,2);assert.equal(Object.keys(store).length,100);assert.ok(store['99']);assert.ok(store['0']);
  assert.equal(Audio.persist(store,{setItem(){throw Error('denied');}}),false);assert.equal(Object.keys(store).length,100);
  assert.equal(Audio.persist({a:saved()},{setItem(){throw Error('denied');}}),false);
@@ -66,4 +66,24 @@ test('changing playback gain does not change the sound identity',()=>{
  const a=Audio.frame(wave,spectrum(44100,100,900),44100);
  const b=Audio.frame(wave.map(x=>x*.2),spectrum(44100,100,900).map(x=>x-14),44100);
  assert.ok(Audio.similarity({vector:a,frames:40,seconds:20},{vector:b,frames:40,seconds:20})>.999);
+});
+
+test('section contrast distinguishes tracks with identical average sound',()=>{
+ const steady=saved(),contrast={...saved(),variance:[.09,.09,.09,.09,.09,.09]};
+ assert.ok(Audio.similarity(contrast,contrast)>Audio.similarity(contrast,steady));
+ const track={id:'a'};
+ for(const variance of [[NaN,0,0,0,0,0],[-.1,0,0,0,0,0],[1,0,0,0,0,0],[],null]){
+  const corrupt={...saved(track),variance};
+  assert.equal(Audio.get({a:corrupt},track),null);assert.equal(Audio.variation(corrupt),null);
+ }
+ assert.equal(Audio.get({a:{...saved(track),version:2}},track),null);
+});
+test('listening evidence learns section contrast for unheard tracks without artist or genre tags',()=>{
+ const Taste=require('../src/taste-model'),now=Date.now();
+ const tracks=['dynamic','steady','new-dynamic','new-steady'].map(id=>({id,duration:180000}));
+ const profiles=Object.fromEntries(tracks.map(t=>[t.id,{...saved(t),variance:Array(6).fill(t.id.includes('dynamic')?.09:0)}]));
+ const plays=[];
+ for(let i=0;i<24;i++)for(const id of ['dynamic','steady'])plays.push({track:id,started:now-(i*2+(id==='steady'?1:0)+1)*86400000,duration:180000,heard:id==='dynamic'?180000:5000,finished:id==='dynamic'?1:0});
+ const model=new Taste(tracks,plays,now,profiles);
+ assert.ok(model.score(null,tracks[2]).probability>model.score(null,tracks[3]).probability+.02);
 });

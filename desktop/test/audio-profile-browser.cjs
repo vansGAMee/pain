@@ -19,7 +19,7 @@ const assert=require('node:assert/strict');
  await page.goto(process.env.PAIN_TEST_URL||'http://localhost:3099');await page.waitForSelector('tr[data-track-id="a"]');
  await page.click('#bottomPlayBtn');
  await page.waitForFunction(()=>{const profiles=window.painQueue?.audioProfiles;return profiles?.a?.seconds>=10;},{},{timeout:25000});
- const result=await page.evaluate(()=>({profile:window.painQueue.audioProfiles.a,stored:JSON.parse(localStorage.getItem('pain_audio_profiles_v2'))?.a}));
+ const result=await page.evaluate(()=>({profile:window.painQueue.audioProfiles.a,stored:JSON.parse(localStorage.getItem('pain_audio_profiles_v3'))?.a}));
  assert.ok(result.profile.frames>=20);assert.equal(result.profile.vector.length,6);assert.deepEqual(result.profile,result.stored);assert.deepEqual(errors,[]);
  await page.click('#bottomPlayBtn');const frames=await page.evaluate(()=>window.painQueue.audioProfiles.a.frames);await page.waitForTimeout(1000);assert.equal(await page.evaluate(()=>window.painQueue.audioProfiles.a.frames),frames);
  console.log('PASS: live antiphase stereo analysis, local persistence, pause handling, no JS errors');await browser.close();
