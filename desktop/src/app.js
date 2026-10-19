@@ -41,9 +41,11 @@
     // Web Audio Equalizer State
     eq: {
       enabled: true,
+      auto: false,
       preset: 'flat',
       preamp: 0,
-      bands: [0, 0, 0, 0, 0, 0, 0, 0] // 60, 170, 310, 600, 1k, 3k, 6k, 12k Hz
+      bands: [0, 0, 0, 0, 0, 0, 0, 0], // 60, 170, 310, 600, 1k, 3k, 6k, 12k Hz
+      manual: null
     },
 
     // Joint Audio AI State
@@ -76,8 +78,14 @@
     const savedEq = localStorage.getItem('pain_eq_config');
     if (savedEq) {
       Object.assign(state.eq, JSON.parse(savedEq));
+      if (!Array.isArray(state.eq.bands) || state.eq.bands.length !== 8) state.eq.bands = Array(8).fill(0);
     }
   } catch (e) {}
+  if (state.eq.auto) {
+    state.eq.preset = 'auto';
+    state.eq.preamp = 0;
+    state.eq.bands = Array(8).fill(0);
+  }
 
   let audioProfiles=Object.create(null);
   try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v4'));}catch(_){}
@@ -252,6 +260,7 @@
     eqCloseBtn: document.getElementById('eqCloseBtn'),
     eqPowerSwitch: document.getElementById('eqPowerSwitch'),
     eqStateLabel: document.getElementById('eqStateLabel'),
+    eqAutoBadge: document.getElementById('eqAutoBadge'),
     eqPresetsRow: document.getElementById('eqPresetsRow'),
     eqSliderPreamp: document.getElementById('eqSliderPreamp'),
     preampVal: document.getElementById('preampVal'),
@@ -311,6 +320,8 @@
     fluidResetColorBtn: document.getElementById('fluidResetColorBtn'),
     fluidBpmSyncSwitch: document.getElementById('fluidBpmSyncSwitch'),
     fluidBpmStatusText: document.getElementById('fluidBpmStatusText'),
+    autoEqSwitch: document.getElementById('autoEqSwitch'),
+    autoEqStatusText: document.getElementById('autoEqStatusText'),
     excludedTracksCountHint: document.getElementById('excludedTracksCountHint'),
     viewExcludedTracksBtn: document.getElementById('viewExcludedTracksBtn'),
     clearExcludedTracksBtn: document.getElementById('clearExcludedTracksBtn'),
@@ -326,6 +337,7 @@
   let pendingAddToPlaylistTrackId = null;
   let updateStatus = null;
   let updateNoticeShown = false;
+  let autoEqCharacter = 'learning';
 
   // --- TOAST NOTIFICATIONS ---
   function showToast(message, icon = '✓') {
@@ -544,7 +556,11 @@
       }
       applyEqualizerAudioGains();
       try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>playingTrackSnapshot,
-        (track,profile)=>{queue?.setAudioProfile(track.id,profile);try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}},audioProfiles);
+        (track,profile)=>{
+          queue?.setAudioProfile(track.id,profile);
+          if(state.eq.auto&&String(track.id)===String(state.currentTrackId))applyAutoEqualizer(track,profile);
+          try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}
+        },audioProfiles);
       }catch(_){/* Playback remains available if measurement is unsupported. */}
     } catch (err) {
       console.warn('Web Audio API Equalizer initialization deferred or unsupported:', err);
@@ -558,11 +574,12 @@
     }
 
     if (state.eq.enabled) {
+      const glide = state.eq.auto ? 0.35 : 0.02;
       const gainMult = Math.pow(10, (state.eq.preamp || 0) / 20);
-      preampNode.gain.setTargetAtTime(gainMult, audioCtx.currentTime, 0.02);
+      preampNode.gain.setTargetAtTime(gainMult, audioCtx.currentTime, glide);
       filterNodes.forEach((node, i) => {
         const val = state.eq.bands[i] || 0;
-        node.gain.setTargetAtTime(val, audioCtx.currentTime, 0.02);
+        node.gain.setTargetAtTime(val, audioCtx.currentTime, glide);
       });
     } else {
       preampNode.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.02);
@@ -588,6 +605,7 @@
     }
 
     updatePresetChipsUI();
+    updateAutoEqualizerUI();
   }
 
   function updatePresetChipsUI() {
@@ -599,6 +617,76 @@
   function saveEqualizerState() {
     localStorage.setItem('pain_eq_config', JSON.stringify(state.eq));
     applyEqualizerAudioGains();
+  }
+
+  function autoEqDescription() {
+    if (!state.eq.auto) return state.lang === 'ru'
+      ? 'Слушает текущий трек и мягко настраивает существующий эквалайзер.'
+      : 'Listens to the current track and gently adjusts the existing equalizer.';
+    if (autoEqCharacter === 'learning') return state.lang === 'ru'
+      ? 'Включён · слушает первые секунды трека'
+      : 'On · listening to the first seconds';
+    const labels = state.lang === 'ru'
+      ? { deep: 'глубокий звук', vocal: 'акцент на голосе', bright: 'яркий звук', balanced: 'сбалансированный звук' }
+      : { deep: 'deep sound', vocal: 'vocal focus', bright: 'bright sound', balanced: 'balanced sound' };
+    return `${state.lang === 'ru' ? 'Включён' : 'On'} · ${labels[autoEqCharacter] || labels.balanced}`;
+  }
+
+  function updateAutoEqualizerUI() {
+    if (DOM.autoEqSwitch) DOM.autoEqSwitch.checked = !!state.eq.auto;
+    if (DOM.autoEqStatusText) DOM.autoEqStatusText.textContent = autoEqDescription();
+    if (DOM.eqAutoBadge) DOM.eqAutoBadge.hidden = !state.eq.auto;
+    document.querySelectorAll('.eq-v-slider,.eq-preset-chip').forEach(control => {
+      control.disabled = !!state.eq.auto;
+    });
+  }
+
+  function applyAutoEqualizer(track, profile = null) {
+    if (!state.eq.auto || !track) return;
+    const recommendation = AutoEqualizer.recommend(track, profile || AudioProfile.get(audioProfiles, track, true));
+    state.eq.enabled = true;
+    state.eq.preset = 'auto';
+    state.eq.preamp = recommendation.preamp;
+    state.eq.bands = [...recommendation.bands];
+    autoEqCharacter = recommendation.character;
+    applyEqualizerAudioGains();
+    initEqualizerUI();
+  }
+
+  function setAutoEqualizer(enabled, notify = true) {
+    enabled = !!enabled;
+    if (enabled && !state.eq.auto) {
+      state.eq.manual = {
+        enabled: state.eq.enabled,
+        preset: state.eq.preset === 'auto' ? 'flat' : state.eq.preset,
+        preamp: state.eq.preamp,
+        bands: [...state.eq.bands]
+      };
+    }
+    state.eq.auto = enabled;
+    if (enabled) {
+      autoEqCharacter = 'learning';
+      const track = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(item => item.id === state.currentTrackId);
+      if (track) applyAutoEqualizer(track);
+      else {
+        state.eq.enabled = true; state.eq.preset = 'auto'; state.eq.preamp = 0; state.eq.bands = [...EQ_PRESETS.flat];
+      }
+    } else {
+      const manual = state.eq.manual;
+      if (manual && Array.isArray(manual.bands) && manual.bands.length === 8) {
+        state.eq.enabled = manual.enabled !== false;
+        state.eq.preset = manual.preset || 'custom';
+        state.eq.preamp = Number(manual.preamp) || 0;
+        state.eq.bands = [...manual.bands];
+      }
+      state.eq.manual = null;
+      autoEqCharacter = 'learning';
+    }
+    initEqualizerUI();
+    saveEqualizerState();
+    if (notify) showToast(state.lang === 'ru'
+      ? (enabled ? 'Автоэквалайзер включён' : 'Ручные настройки возвращены')
+      : (enabled ? 'Auto equalizer enabled' : 'Manual settings restored'), enabled ? 'EQ' : '✓');
   }
 
   // --- PROCEDURAL WARM PAPER VINYL COVER ART GENERATOR ---
@@ -957,7 +1045,7 @@
       const favBtn = e.target.closest('.row-fav-btn');
       if (favBtn) {
         e.stopPropagation();
-        toggleFavorite(track.id);
+        toggleFavorite(track.id, favBtn);
         return;
       }
 
@@ -1135,7 +1223,7 @@
       const favBtn = e.target.closest('.card-fav-btn');
       if (favBtn) {
         e.stopPropagation();
-        toggleFavorite(track.id);
+        toggleFavorite(track.id, favBtn);
         return;
       }
 
@@ -1780,6 +1868,7 @@
     if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
 
     playingTrackSnapshot = {...track};
+    if (state.eq.auto) applyAutoEqualizer(track);
     pendingSeekTime = startPosition > 0 ? startPosition : null;
     audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
     savePlaybackPosition(true);
@@ -2076,6 +2165,7 @@
 
   function updateFavoriteUI(isFav) {
     DOM.bottomFavoriteBtn.classList.toggle('active', !!isFav);
+    DOM.bottomFavoriteBtn.setAttribute('aria-pressed', String(!!isFav));
     DOM.bottomFavoriteBtn.querySelector('svg').style.fill = isFav ? 'currentColor' : 'none';
   }
 
@@ -2197,7 +2287,17 @@
   }
 
   // --- 2-WAY SYNC: FAVORITES & STATS ---
-  async function toggleFavorite(trackId) {
+  function animateFavorite(buttons, isFavorite) {
+    const animation = isFavorite ? 'favorite-pop' : 'favorite-unpop';
+    for (const button of new Set(buttons.filter(Boolean))) {
+      button.classList.remove('favorite-pop', 'favorite-unpop');
+      void button.offsetWidth;
+      button.classList.add(animation);
+      setTimeout(() => button.classList.remove(animation), 650);
+    }
+  }
+
+  async function toggleFavorite(trackId, sourceButton = null) {
     const track = state.tracks.find(t => t.id === trackId);
     if (!track) return;
 
@@ -2210,16 +2310,24 @@
 
     // Direct DOM updates for instant feedback without re-rendering all rows
     const isFav = !!track.favorite;
-    document.querySelectorAll(`tr[data-track-id="${track.id}"] .row-fav-btn`).forEach(btn => {
+    const selectorId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(String(track.id)) : String(track.id).replace(/["\\]/g, '\\$&');
+    const visibleButtons = [];
+    document.querySelectorAll(`tr[data-track-id="${selectorId}"] .row-fav-btn`).forEach(btn => {
       btn.classList.toggle('active', isFav);
+      btn.setAttribute('aria-pressed', String(isFav));
       const svg = btn.querySelector('svg');
       if (svg) svg.style.fill = isFav ? 'currentColor' : 'none';
+      visibleButtons.push(btn);
     });
-    document.querySelectorAll(`.track-card[data-track-id="${track.id}"] .card-fav-btn`).forEach(btn => {
+    document.querySelectorAll(`.track-card[data-track-id="${selectorId}"] .card-fav-btn`).forEach(btn => {
       btn.classList.toggle('active', isFav);
+      btn.setAttribute('aria-pressed', String(isFav));
       const svg = btn.querySelector('svg');
       if (svg) svg.setAttribute('fill', isFav ? 'currentColor' : 'none');
+      visibleButtons.push(btn);
     });
+    if (state.currentTrackId === track.id) visibleButtons.push(DOM.bottomFavoriteBtn);
+    animateFavorite([sourceButton, ...visibleButtons], isFav);
 
     if (state.currentView === 'favorites' || state.sortOption === 'favorites-first' || state.categoryFilter === 'favorites') {
       state.libraryDirty = true;
@@ -2455,6 +2563,7 @@
     updateGreeting();
     renderCurrentView();
     updateFluidBpmTempo();
+    updateAutoEqualizerUI();
     renderUpdateStatus();
   }
 
@@ -2467,6 +2576,7 @@
         DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
       }
       updateFluidBpmTempo();
+      updateAutoEqualizerUI();
       updateSettingsExcludedSection();
     }
   }
@@ -2739,6 +2849,7 @@
     document.getElementById('smartVolumeSwitch').checked = state.smartVolume;
     document.getElementById('backgroundDuckSwitch').checked = state.backgroundDuck;
     document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
+    updateAutoEqualizerUI();
     applyFluidColor(state.fluidColor);
     if (DOM.fluidBpmSyncSwitch) {
       DOM.fluidBpmSyncSwitch.checked = state.fluidBpmSync;
@@ -3460,7 +3571,7 @@
 
     DOM.bottomFavoriteBtn.addEventListener('click', () => {
       if (state.currentTrackId) {
-        toggleFavorite(state.currentTrackId);
+        toggleFavorite(state.currentTrackId, DOM.bottomFavoriteBtn);
       }
     });
 
@@ -3677,12 +3788,14 @@
 
     DOM.eqPowerSwitch.addEventListener('change', (e) => {
       initAudioNodes();
+      if (!e.target.checked && state.eq.auto) setAutoEqualizer(false, false);
       state.eq.enabled = e.target.checked;
       DOM.eqStateLabel.textContent = state.eq.enabled ? (state.lang === 'ru' ? 'ВКЛ' : 'ON') : (state.lang === 'ru' ? 'ВЫКЛ' : 'OFF');
       saveEqualizerState();
     });
 
     DOM.eqSliderPreamp.addEventListener('input', (e) => {
+      if (state.eq.auto) return;
       initAudioNodes();
       const val = parseFloat(e.target.value);
       state.eq.preamp = val;
@@ -3696,6 +3809,7 @@
       const valLabel = document.getElementById(`eqVal${i}`);
       if (slider) {
         slider.addEventListener('input', (e) => {
+          if (state.eq.auto) return;
           initAudioNodes();
           const val = parseFloat(e.target.value);
           state.eq.bands[i] = val;
@@ -3710,6 +3824,7 @@
     // EQ Preset Chips
     document.querySelectorAll('.eq-preset-chip').forEach(chip => {
       chip.addEventListener('click', () => {
+        if (state.eq.auto) return;
         initAudioNodes();
         const pKey = chip.dataset.preset;
         if (EQ_PRESETS[pKey]) {
@@ -3773,6 +3888,10 @@
       try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
       document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
       applySmartVolume();
+    });
+    if (DOM.autoEqSwitch) DOM.autoEqSwitch.addEventListener('change', e => {
+      initAudioNodes();
+      setAutoEqualizer(e.target.checked);
     });
     window.addEventListener('focus', applySmartVolume);
     window.addEventListener('blur', applySmartVolume);

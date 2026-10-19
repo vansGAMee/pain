@@ -1711,6 +1711,53 @@ body,
   fill: currentColor;
 }
 
+.row-fav-btn,
+.card-fav-btn,
+.bottom-heart-btn {
+  position: relative;
+  overflow: visible;
+}
+
+.favorite-pop svg {
+  animation: favoriteHeartPop 560ms cubic-bezier(.16, 1.35, .35, 1) both;
+}
+
+.favorite-pop::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -5px;
+  border: 1px solid var(--heart-color);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: favoriteHalo 580ms ease-out both;
+}
+
+.favorite-unpop svg {
+  animation: favoriteHeartRelease 260ms ease-out both;
+}
+
+@keyframes favoriteHeartPop {
+  0% { transform: scale(.72); }
+  42% { transform: scale(1.34) rotate(-5deg); }
+  72% { transform: scale(.94) rotate(2deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes favoriteHalo {
+  0% { opacity: .55; transform: scale(.4); }
+  100% { opacity: 0; transform: scale(3.3); }
+}
+
+@keyframes favoriteHeartRelease {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(.82); opacity: .55; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 /* Bottom Player Center */
 .bottom-player-center {
   display: flex;
@@ -2033,6 +2080,22 @@ input:checked + .switch-slider:before {
   font-size: 11px;
   font-weight: 700;
   color: var(--ink-secondary);
+}
+
+.eq-auto-badge {
+  padding: 3px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.eq-v-slider:disabled,
+.eq-preset-chip:disabled {
+  cursor: default;
+  opacity: .55;
 }
 
 .modal-close-btn {
@@ -2827,6 +2890,7 @@ input:checked + .switch-slider:before {
 @media (prefers-reduced-motion:reduce) {
   .app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip) {transition:none;background-position:50% 50%;}
   .vinyl-disc-body.spinning {animation:none;}
+  .favorite-pop svg,.favorite-pop::after,.favorite-unpop svg {animation:none;}
 }
 
 @font-face {font-family:'PainLyrics';src:url('/assets/Geist-SemiBold.ttf') format('truetype');font-weight:600;font-display:swap;}

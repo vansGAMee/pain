@@ -775,6 +775,7 @@
               <span class="switch-slider"></span>
             </label>
             <span class="eq-state-label" id="eqStateLabel" data-en="ON" data-ru="ВКЛ">ON</span>
+            <span class="eq-auto-badge" id="eqAutoBadge" hidden data-en="AUTO" data-ru="АВТО">АВТО</span>
           </div>
         </div>
         <button class="modal-close-btn" id="eqCloseBtn">✕</button>
@@ -894,6 +895,13 @@
               <span class="fluid-row-hint" data-en="Softens loud peaks and differences between tracks. Your volume control stays available." data-ru="Мягко сглаживает громкие скачки и разницу между треками. Громкость можно менять вручную.">Мягко сглаживает громкие скачки и разницу между треками. Громкость можно менять вручную.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="smartVolumeSwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="autoEqSwitch" data-en="Auto equalizer" data-ru="Автоэквалайзер">Автоэквалайзер</label>
+              <span class="fluid-row-hint" id="autoEqStatusText" data-en="Listens to the current track and gently adjusts the existing equalizer." data-ru="Слушает текущий трек и мягко настраивает существующий эквалайзер.">Слушает текущий трек и мягко настраивает существующий эквалайзер.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="autoEqSwitch"><span class="switch-slider round"></span></label></div>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
@@ -1048,6 +1056,7 @@
   <script src="session-graph.js"></script>
   <script src="audio-timbre.js"></script>
   <script src="audio-profile.js"></script>
+  <script src="auto-eq.js"></script>
   <script src="smart-volume.js"></script>
   <script src="taste-model.js"></script>
   <script src="queue-engine.js"></script>
