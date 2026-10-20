@@ -692,7 +692,7 @@
             <span class="bottom-track-title" id="bottomTrackTitle">Choose music</span>
           </div>
           <div class="bottom-track-artist" id="bottomTrackArtist">Pain Audio</div>
-          <div class="bottom-track-context" id="bottomTrackContext"></div>
+          <button type="button" class="bottom-track-context" id="bottomTrackContext" aria-haspopup="dialog" aria-controls="djDialog" disabled></button>
         </div>
         <button class="bottom-heart-btn" id="bottomFavoriteBtn" title="Favorite">
           <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
@@ -1055,6 +1055,38 @@
     </div>
   </div>
 
+  <dialog id="djDialog" class="dj-dialog" aria-labelledby="djTitle">
+    <header class="dj-heading">
+      <h2 id="djTitle">Smart DJ</h2>
+      <button type="button" id="djClose" class="dj-text-button">Закрыть</button>
+    </header>
+    <section class="dj-section">
+      <h3 id="djWhyLabel">Почему этот трек</h3>
+      <p id="djTrack" class="dj-track"></p>
+      <p id="djReason"></p>
+    </section>
+    <section class="dj-section">
+      <h3 id="djVibeLabel">Сохранить вайб</h3>
+      <p id="djVibeHint" class="dj-muted"></p>
+      <form id="djSaveForm" class="dj-save-form">
+        <label for="djVibeName" id="djNameLabel">Название</label>
+        <div class="dj-save-row">
+          <input id="djVibeName" maxlength="80" autocomplete="off" required>
+          <button type="submit" id="djSave" class="dj-action">Сохранить</button>
+        </div>
+      </form>
+    </section>
+    <section class="dj-section">
+      <div class="dj-heading">
+        <h3 id="djSavedLabel">Сохранённые вайбы</h3>
+        <button type="button" id="djRelease" class="dj-text-button" hidden>Отпустить вайб</button>
+      </div>
+      <p id="djActive" class="dj-muted"></p>
+      <div id="djVibes" class="dj-vibes"></div>
+    </section>
+    <p id="djStatus" class="dj-status" role="status"></p>
+  </dialog>
+
   <!-- Toast Notifications -->
   <div class="toast-container" id="toastContainer"></div>
 
@@ -1072,6 +1104,7 @@
   <script src="joint-ai.js"></script>
   <script src="favorite-moments.js"></script>
   <script src="app.js"></script>
+  <script src="dj-panel.js"></script>
   <script src="presentation.js"></script>
   <script src="karaoke.js"></script>
 </body>

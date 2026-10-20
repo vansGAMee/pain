@@ -116,12 +116,20 @@ class Updater {
   publicState() { return { ...this.state }; }
 
   async check(force = false) {
+    if (['downloading', 'downloaded'].includes(this.state.status)) return this.publicState();
+    if (this.checking) return this.checking;
     if (!force && this.state.checkedAt && Date.now() - this.state.checkedAt < 6 * 3600000) return this.publicState();
+    this.checking = this._check().finally(() => { this.checking = null; });
+    return this.checking;
+  }
+
+  async _check() {
     this.state = { ...this.state, status: 'checking', error: null };
     try {
       const body = await this.fetch(API_URL, { maxBytes: 1024 * 1024 });
       const release = JSON.parse(body.toString('utf8'));
       const version = String(release.tag_name || '').replace(/^v/i, '');
+      if (!versionParts(version) || release.draft || release.prerelease) throw new Error('No valid stable release');
       const filename = assetName(version, this.platform);
       const asset = Array.isArray(release.assets) && release.assets.find(item => item.name === filename);
       const sums = Array.isArray(release.assets) && release.assets.find(item => item.name === `SHA256SUMS-v${version}.txt`);
@@ -136,12 +144,14 @@ class Updater {
         canInstall, page: release.html_url, checkedAt: Date.now(), error: null
       };
     } catch (error) {
-      this.state = { ...this.state, status: 'error', checkedAt: Date.now(), error: error.message || 'Update check failed' };
+      this.release = null;
+      this.state = { ...this.state, available: false, canInstall: false, status: 'error', checkedAt: Date.now(), error: error.message || 'Update check failed' };
     }
     return this.publicState();
   }
 
   async prepareInstall() {
+    if (this.prepared) return this.prepared;
     if (this.installing) return this.installing;
     this.installing = this._prepareInstall().finally(() => { this.installing = null; });
     return this.installing;
@@ -149,21 +159,23 @@ class Updater {
 
   async _prepareInstall() {
     await this.check(true);
+    if (this.state.status === 'error') throw new Error(this.state.error);
     if (!this.state.available) throw new Error('No update is available');
     if (!this.state.canInstall || !this.release?.asset || !this.release?.sums) throw new Error('Automatic installation is unavailable for this build');
     this.state = { ...this.state, status: 'downloading', error: null };
     const directory = fs.mkdtempSync(path.join(this.tmpDir, 'pain-update-'));
-    const filename = this.release.asset.name;
+    const release = this.release, filename = release.asset.name;
     const target = path.join(directory, filename);
     try {
-      const sums = await this.fetch(this.release.sums.browser_download_url, { maxBytes: 128 * 1024 });
+      const sums = await this.fetch(release.sums.browser_download_url, { maxBytes: 128 * 1024 });
       const expected = parseChecksum(sums.toString('utf8'), filename);
       if (!expected) throw new Error('Release checksum is missing');
-      const downloaded = await this.fetch(this.release.asset.browser_download_url, { maxBytes: 150 * 1024 * 1024, streamTo: target });
+      const downloaded = await this.fetch(release.asset.browser_download_url, { maxBytes: 150 * 1024 * 1024, streamTo: target });
       if (downloaded.sha256 !== expected) throw new Error('Update checksum does not match');
       const restart = this.platform === 'win32' ? this.windowsRestart(target, directory) : this.linuxRestart(target, directory);
       this.state = { ...this.state, status: 'downloaded' };
-      return { state: this.publicState(), restart };
+      this.prepared = { state: this.publicState(), restart };
+      return this.prepared;
     } catch (error) {
       fs.rmSync(directory, { recursive: true, force: true });
       this.state = { ...this.state, status: 'error', error: error.message || 'Update failed' };
@@ -171,24 +183,35 @@ class Updater {
     }
   }
 
+  launchInstaller(command, args) {
+    let started = false;
+    return () => {
+      if (started) return;
+      started = true;
+      const fail = error => {
+        this.prepared = null;
+        this.state = { ...this.state, status: 'error', error: error.message || 'Could not start installer' };
+      };
+      try {
+        const child = this.spawn(command, args, { detached: true, stdio: 'ignore' });
+        child.once('error', fail);
+        child.once('spawn', () => { child.unref(); setTimeout(this.exit, 250); });
+      } catch (error) { fail(error); }
+    };
+  }
+
   windowsRestart(downloaded, directory) {
     const script = path.join(directory, 'install.ps1');
     const source = quotePs(downloaded), exe = quotePs(this.executable);
-    fs.writeFileSync(script, `$ErrorActionPreference='Stop'\nfor($i=0;$i -lt 120 -and (Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue);$i++){Start-Sleep -Milliseconds 250}\nif(Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue){exit 1}\nMove-Item -LiteralPath ${source} -Destination ${exe} -Force\nStart-Process -FilePath ${exe}\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\n`, 'utf8');
-    return () => {
-      const child = this.spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: 'ignore' });
-      child.unref(); setTimeout(this.exit, 250);
-    };
+    fs.writeFileSync(script, `\ufeff$ErrorActionPreference='Stop'\nfor($i=0;$i -lt 120 -and (Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue);$i++){Start-Sleep -Milliseconds 250}\nif(Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue){exit 1}\nMove-Item -LiteralPath ${source} -Destination ${exe} -Force\nStart-Process -FilePath ${exe}\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\n`, 'utf8');
+    return this.launchInstaller('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script]);
   }
 
   linuxRestart(archive, directory) {
     const script = path.join(directory, 'install.sh');
     const unpacked = path.join(directory, 'unpacked');
     fs.writeFileSync(script, `#!/usr/bin/env sh\nset -eu\ni=0\nwhile kill -0 ${process.pid} 2>/dev/null; do i=$((i+1)); [ "$i" -ge 30 ] && exit 1; sleep 1; done\nmkdir -p ${quoteSh(unpacked)}\ntar -xzf ${quoteSh(archive)} -C ${quoteSh(unpacked)}\ncp -a ${quoteSh(path.join(unpacked, 'Pain', 'src'))} ${quoteSh(this.appRoot + path.sep)}\ncp -a ${quoteSh(path.join(unpacked, 'Pain', 'assets'))} ${quoteSh(this.appRoot + path.sep)}\ncp -f ${quoteSh(path.join(unpacked, 'Pain', 'package.json'))} ${quoteSh(path.join(this.appRoot, 'package.json'))}\nnohup ${quoteSh(this.executable)} ${quoteSh(path.join(this.appRoot, 'src', 'server.js'))} >/dev/null 2>&1 &\n`, { mode: 0o700 });
-    return () => {
-      const child = this.spawn(script, [], { detached: true, stdio: 'ignore' });
-      child.unref(); setTimeout(this.exit, 250);
-    };
+    return this.launchInstaller(script, []);
   }
 }
 

@@ -1671,6 +1671,13 @@ body,
 }
 
 .bottom-track-context {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
   font-size: 10px;
   color: var(--ink-secondary);
   opacity: 0.8;
@@ -1679,6 +1686,34 @@ body,
   text-overflow: ellipsis;
   margin-top: 1px;
 }
+
+.bottom-track-context:enabled { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+.bottom-track-context:enabled:hover { opacity: 1; text-decoration-color: currentColor; }
+.dj-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; overflow: auto; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--bg); color: var(--ink); font: inherit; box-shadow: 0 16px 60px #0002; }
+.dj-dialog::backdrop { background: #0005; }
+.dj-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dj-dialog h2 { margin: 0; font-size: 20px; font-weight: 650; }
+.dj-dialog h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink-secondary); }
+.dj-dialog p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.dj-dialog .dj-track { font-size: 17px; line-height: 1.4; font-weight: 550; }
+.dj-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.dj-muted { color: var(--ink-muted); }
+.dj-dialog button, .dj-dialog input { font: inherit; }
+.dj-text-button { flex-shrink: 0; border: 0; background: none; color: var(--ink-secondary); padding: 6px 0; font-size: 12px !important; cursor: pointer; }
+.dj-text-button:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.dj-save-form { margin-top: 14px; }
+.dj-save-form label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--ink-secondary); }
+.dj-save-row { display: flex; gap: 8px; }
+.dj-save-row input { min-width: 0; width: 100%; background: var(--card-bg); color: var(--ink); border: 1px solid var(--border-strong); border-radius: 6px; padding: 10px; font-size: 13px; }
+.dj-action { border: 1px solid var(--border-strong); background: var(--ink); color: var(--bg); border-radius: 6px; padding: 10px 14px; font-size: 13px !important; cursor: pointer; }
+.dj-action:disabled { opacity: .45; cursor: default; }
+.dj-vibe-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.dj-vibe-select { flex: 1; min-width: 0; padding: 4px 0; border: 0; background: none; text-align: left; color: var(--ink); cursor: pointer; }
+.dj-vibe-select span { display: block; overflow-wrap: anywhere; font-size: 14px; }
+.dj-vibe-select small { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+.dj-vibe-select[aria-pressed="true"] { font-weight: 650; }
+.dj-dialog .dj-status:empty { display: none; }
+.dj-dialog :focus-visible, .bottom-track-context:focus-visible { outline: 2px solid var(--ink-secondary); outline-offset: 3px; }
 
 .bottom-heart-btn {
   background: none;

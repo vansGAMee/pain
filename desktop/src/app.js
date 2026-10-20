@@ -2019,6 +2019,9 @@
     if (!DOM.bottomTrackContext) return;
     if (!info || !info.context || !info.total) {
       DOM.bottomTrackContext.textContent = '';
+      DOM.bottomTrackContext.dataset.contextLabel = '';
+      DOM.bottomTrackContext.disabled = true;
+      window.dispatchEvent(new Event('pain:queue-ui'));
       return;
     }
     const isRu = state.lang === 'ru';
@@ -2032,19 +2035,13 @@
 
     let badge = '';
     if (isSmart) {
-      const lastTrans = queue && typeof queue.getLastTransition === 'function' ? queue.getLastTransition() : null;
-      let reasonText = '';
-      if (lastTrans && Array.isArray(lastTrans.reasons) && lastTrans.reasons.length > 0) {
-        reasonText = ` (${lastTrans.reasons[0]})`;
-      }
-      const curTrack = info.track || (queue && queue.getCurrentTrack());
-      const curBpm = (queue && curTrack) ? queue.getTrackBpm(curTrack) : null;
-      const bpmPart = curBpm ? ` · ${curBpm} BPM` : '';
-      badge = ` · ⚡ Smart DJ${bpmPart}${reasonText}`;
+      badge = ' · Smart DJ';
     } else if (info.shuffleMode === 'random') {
       badge = isRu ? ' · 🔀 Случайно' : ' · 🔀 Shuffle';
     }
-    DOM.bottomTrackContext.textContent = `${ctxName} · ${pos} ${isRu ? 'из' : 'of'} ${info.total}${badge}`;
+    DOM.bottomTrackContext.dataset.contextLabel = `${ctxName} · ${pos} ${isRu ? 'из' : 'of'} ${info.total}`;
+    DOM.bottomTrackContext.textContent = DOM.bottomTrackContext.dataset.contextLabel + badge;
+    window.dispatchEvent(new Event('pain:queue-ui'));
   }
 
   function getCurrentTrackDuration() {
@@ -2737,7 +2734,7 @@
     const ru = state.lang === 'ru', status = updateStatus;
     DOM.updateStatusDot?.classList.toggle('available', !!status?.available);
     DOM.updateStatusDot?.classList.toggle('error', status?.status === 'error');
-    DOM.updateActionBtn.disabled = status?.status === 'checking' || status?.status === 'downloading';
+    DOM.updateActionBtn.disabled = ['checking', 'downloading', 'downloaded'].includes(status?.status);
     if (!status || status.status === 'checking') {
       DOM.updateStatusText.textContent = ru ? 'Проверка обновлений…' : 'Checking for updates…';
       DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
@@ -2759,6 +2756,7 @@
   }
 
   async function checkForUpdates(force = false, notify = false) {
+    if (['downloading', 'downloaded'].includes(updateStatus?.status)) return;
     updateStatus = { ...(updateStatus || {}), status: 'checking' };
     renderUpdateStatus();
     try {
@@ -2777,6 +2775,8 @@
   }
 
   async function handleUpdateAction() {
+    if (['checking', 'downloading', 'downloaded'].includes(updateStatus?.status)) return;
+    if (updateStatus?.status === 'error') { await checkForUpdates(true, true); return; }
     if (!updateStatus?.available) { await checkForUpdates(true, true); return; }
     if (!updateStatus.canInstall) {
       if (updateStatus.page) window.open(updateStatus.page, '_blank', 'noopener');
@@ -2790,7 +2790,22 @@
       if (!response.ok) throw new Error(result.error || 'Update failed');
       updateStatus = result;
       renderUpdateStatus();
+      savePlaybackPosition(true);
       showToast(state.lang === 'ru' ? 'Обновление готово. Pain перезапускается…' : 'Update ready. Restarting Pain…', '↑');
+      // The browser can retain the old JavaScript after the local server restarts.
+      // Reload only after the new server reports the version we installed.
+      const expected = result.latestVersion, deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        let status;
+        try {
+          const check = await fetch('/api/update-status', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+          if (check.ok) status = await check.json();
+        } catch (_) { continue; } // A brief disconnect is normal during restart.
+        if (expected && status?.currentVersion === expected) { location.reload(); return; }
+        if (status?.status === 'error') throw new Error(status.error || 'Restart failed');
+      }
+      throw new Error('Update restart timed out');
     } catch (error) {
       updateStatus = { ...updateStatus, status: 'error', error: error.message };
       renderUpdateStatus();

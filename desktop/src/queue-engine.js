@@ -19,6 +19,13 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 
   const Taste = typeof module === 'object' && module.exports ? require('./taste-model') : globalThis.TasteModel;
+  const Sound = typeof module === 'object' && module.exports ? require('./audio-profile') : globalThis.AudioProfile;
+  function validateVibeProfile(profile) {
+    try {
+      const copy = Sound.restore(JSON.stringify({ vibe: profile })).vibe;
+      return Sound.texture(copy) ? copy : null;
+    } catch (_) { return null; }
+  }
 
   /**
    * Deterministic fast hash string -> number
@@ -214,6 +221,7 @@
       this.now = typeof options.now === 'function' ? options.now : Date.now;
       this.recentArtists = [];
       this.lastTransition = null;
+      this.vibeProfile = null;
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
       this.bpmCache = options.bpmCache || {};
@@ -257,13 +265,22 @@
       this._taste = null;
     }
 
+    // Only the acoustic reference changes. Queue scope, history and skips stay intact.
+    setVibeProfile(profile) {
+      const copy = profile == null ? null : validateVibeProfile(profile);
+      if (profile != null && !copy) return false;
+      this.vibeProfile = copy;
+      this._notify();
+      return true;
+    }
+
     smartScore(current, candidate, context) {
       const now = this.now();
       if (!this._taste || this._tasteTracks !== this.tracks || now-this._taste.now>=60000 || now<this._taste.now) {
         this._taste = new Taste(this.tracks, this.stats?.plays || [], now, this.audioProfiles, { excludedTracks: this.excludedTracks });
         this._tasteTracks = this.tracks;
       }
-      return this._taste.score(current,candidate,this.bpmCache,context);
+      return this._taste.score(current,candidate,this.bpmCache,this.vibeProfile ? {...context,vibeProfile:this.vibeProfile} : context);
     }
 
     smartChoose(current, indices) {
@@ -275,7 +292,8 @@
         recentTrackIds: this.playedHistory.slice(-4).reverse().map(i => this.tracks[i]?.id),
         step: this.smartStep,
         seed: (this.smartSeed + Math.imul(this.smartStep, 2654435761)) >>> 0,
-        excludedTracks: this.excludedTracks
+        excludedTracks: this.excludedTracks,
+        vibeProfile: this.vibeProfile
       });
       if (!chosen) return null;
       return { ...chosen, index: target.find(i => this.tracks[i] === chosen.track) };
@@ -358,7 +376,10 @@
       this.forwardHistory=this.forwardHistory.map(remap).filter(i=>i!==undefined);
       this.tracks=selected;this.currentIndex=indices.get(String(current))??-1;
       if(!old.length&&selected.length){this.currentIndex=0;this.markPlayed(0);}
-      this.lastTransition=null;this._taste=null;this._notify();
+      const decision=this.lastTransition,track=this.getCurrentTrack();
+      this.lastTransition=decision&&track&&String(decision.toTrack?.id)===String(track.id)&&Sound.signature(decision.toTrack)===Sound.signature(track)
+        ? {...decision,toTrack:track} : null;
+      this._taste=null;this._notify();
     }
 
     resetCycle(clearHistory = true) {
@@ -423,6 +444,7 @@
 
     setShuffleMode(mode) {
       if (['off', 'random', 'smart'].includes(mode)) {
+        if (this.shuffleMode !== mode) this.lastTransition = null;
         this.shuffleMode = mode;
         this.resetCycle();
         if (this.currentIndex >= 0) {
@@ -656,6 +678,7 @@
   }
 
   QueueEngine.QueueEngine = QueueEngine;
+  QueueEngine.validateVibeProfile = validateVibeProfile;
   QueueEngine.estimateBpm = estimateBpm;
   QueueEngine.detectBpmFromPcm = detectBpmFromPcm;
   QueueEngine.harmonicBpmDistance = harmonicBpmDistance;

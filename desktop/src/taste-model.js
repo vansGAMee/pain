@@ -269,7 +269,8 @@
    const a=reference?knownBpm(reference,cache):null,b=knownBpm(candidate,cache);
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
-   const currentSound=Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
+   const vibeSound=Sound.texture(context.vibeProfile)?context.vibeProfile:null;
+   const currentSound=vibeSound||Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
    let soundSimilarity=Sound.similarity(currentSound,candidateSound);
    if(currentSound){
     const detailed=!!Sound.texture(currentSound),confidence=detailed?1:.55;
@@ -280,7 +281,7 @@
     // Timbre is primary (70 points); learned taste, BPM and spacing refine the fit.
     // Unmeasured candidates get a neutral prior, not an unfair unscaled history score.
     score=(1-confidence)*score+confidence*(70*(soundSimilarity??.5)+.25*score);
-    if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift('Близкое звучание');
+    if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift(vibeSound?'Звучание сохранённого вайба':'Близкое звучание');
    }
    if(candidate.favorite===true||candidate.favorite===1)score+=2;
    const soundPreference=this.soundPreference(candidate,candidateSound);
