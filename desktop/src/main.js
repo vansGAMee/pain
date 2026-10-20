@@ -15,7 +15,7 @@ function createWindow() {
     frame: true,
     titleBarStyle: 'default',
     title: 'Pain — Local Audio & Sync Companion',
-    icon: path.join(__dirname, '..', 'assets', 'app-icon.png'),
+    icon: process.platform === 'win32' ? path.join(__dirname, '..', 'assets', 'app-icon.ico') : path.join(__dirname, '..', 'assets', 'app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,
