@@ -7,35 +7,39 @@
  function recommend(track,profile){
   const vector=profile?.vector;
   const frames=Number(profile?.frames),seconds=Number(profile?.seconds);
-  if(!Array.isArray(vector)||vector.length!==6||!vector.every(value=>Number.isFinite(value)&&value>=0&&value<=1)||!Number.isFinite(frames)||frames<4||!Number.isFinite(seconds)||seconds<2)return flat();
+  if(!Array.isArray(vector)||vector.length!==6||!vector.every(value=>Number.isFinite(value)&&value>=0&&value<=1)||!Number.isInteger(frames)||frames<4||frames>360||!Number.isFinite(seconds)||seconds<2||seconds>frames*1.5)return flat();
   let [,bass,mid,high,centroid,flatness]=vector;
   const spectral=bass+mid+high;
   if(!(spectral>.0001))return flat();
   bass/=spectral;mid/=spectral;high/=spectral;
 
-  let bands,character;
-  if(bass>.46){
-   bands=[.5,.5,-.5,-.5,0,.5,1,.5];character='deep';
-  }else if(mid>.58){
-   bands=[-.5,0,.5,1.5,1,.5,-.5,-.5];character='vocal';
-  }else if(high>.28||centroid>.28){
-   bands=[1,.5,0,0,.5,.5,-.5,-1];character='bright';
-  }else{
-   bands=[.5,.5,0,0,.5,.5,.5,0];character='balanced';
-  }
-
-  // Small corrections preserve the track's character while restoring missing weight or clarity.
-  const low=clamp((.32-bass)*5,-1.25,1.25);
-  const body=clamp((.49-mid)*3,-1,1);
-  const air=clamp((.19-high)*5,-1.25,1.25)-clamp((flatness-.62)*1.5,0,.75);
-  bands[0]+=low;bands[1]+=low*.7;bands[2]+=body*.45;bands[3]+=body;
-  bands[4]+=body*.35;bands[5]+=air*.35;bands[6]+=air*.75;bands[7]+=air;
-
-  // Dense masters get gentler changes; every result stays deliberately subtle.
-  const strength=vector[0]>.62?.7:1;
-  bands=bands.map(value=>half(clamp(value*strength,-3,3)));
-  const largestBoost=Math.max(0,...bands);
-  return {ready:true,bands,preamp:half(-Math.max(0,largestBoost-.5)),character};
+  // Labels describe the source; they no longer switch the actual EQ curve.
+  const character=bass>.46?'deep':mid>.58?'vocal':high>.28||centroid>.28?'bright':'balanced';
+  const variance=profile.variance;
+  const stable=Array.isArray(variance)&&variance.length===6&&variance.every(v=>Number.isFinite(v)&&v>=0&&v<=.25);
+  // Start gently, then trust longer excerpts. Changing sections and dense masters
+  // deserve smaller corrections, not a fixed preset chosen by the intro.
+  const confidence=clamp(Math.min(frames/20,seconds/10),0,1);
+  const strength=confidence*(1-.4*clamp((vector[0]-.35)/.4,0,1));
+  const correction=(value,lower,upper,index)=>{
+   let gain=0;
+   if(value>upper)gain=-Math.min(3,15*Math.log10(value/upper));
+   else if(value>0&&value<lower){
+    // Do not amplify an absent band, codec cutoff or noise into invented detail.
+    gain=Math.min(1,5*Math.log10(lower/value))*clamp(value/(lower*.5),0,1);
+    gain*=1-clamp((flatness-.35)/.3,0,1);
+   }
+   const reliability=stable?1/(1+6*Math.sqrt(variance[index])/spectral):.75;
+   return gain*strength*reliability;
+  };
+  // Broad tolerance ranges preserve intentional bass/treble balance. Log ratios
+  // vary continuously, unlike crossing a preset threshold by a fraction of a percent.
+  const low=correction(bass,.20,.48,1),body=correction(mid,.33,.63,2),air=correction(high,.08,.28,3);
+  const bands=[low*.85,low,low*.3+body*.7,body,body*.65,body*.35+air*.65,air,air*.8]
+   .map(value=>half(clamp(value,-3,1))||0);
+  // Filters overlap: reserving only the single largest boost can still overload.
+  const headroom=bands.reduce((sum,gain)=>sum+Math.max(0,gain),0);
+  return {ready:true,bands,preamp:headroom?-half(headroom):0,character};
  }
 
  return {recommend};

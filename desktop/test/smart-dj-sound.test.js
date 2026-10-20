@@ -43,6 +43,15 @@ test('sampling varies among strong acoustic neighbours, with stable preview and 
  for(let i=1;i<tracks.length;i++)assert.equal(q.peekNext().id,q.next().id);
 });
 
+test('an incomplete timbre profile cannot gain extra history weight against a measured acoustic match',()=>{
+ const current=song('current'),near=song('near'),coarse={...song('coarse'),favorite:1};
+ const profiles={current:profile(current),near:profile(near),coarse:{...profile(coarse),timbre:null,timbreVariance:null}};
+ const model=new Taste([current,near,coarse],Array.from({length:80},(_,i)=>completed(coarse,i+1)),NOW,profiles);
+ assert.ok(model.score(current,near).score>model.score(current,coarse).score,
+  'missing timbre should reduce confidence, not amplify habitual favourites');
+ for(const candidate of [near,coarse,song('unknown')])assert.ok(Number.isFinite(model.score(current,candidate).score));
+});
+
 test('a quick skip suppresses similar timbre across artists even with only two seconds of cached sound',()=>{
  const rejected=song('rejected'),near=song('near'),far=song('far'),tracks=[rejected,near,far];
  const profiles={rejected:profile(rejected,700,4),near:profile(near,720),far:profile(far,1500)};
@@ -56,6 +65,28 @@ test('a quick skip suppresses similar timbre across artists even with only two s
  for(const [plays,now] of [[[skip(rejected)],NOW+31*60000],[[{...skip(rejected),skipped:0}],NOW],[[{...skip(rejected),heard:500}],NOW],[[skip(rejected),{...completed(rejected),started:NOW-1000}],NOW]]){
   assert.equal(new Taste(tracks,plays,now,profiles).score(null,near).skipPenalty,0);
  }
+});
+
+test('unusable skipped profiles do not erase recent acoustic rejection, and only three usable skips count',()=>{
+ const rejected=song('rejected'),near=song('near'),far=song('far');
+ const unknown=song('unknown'),stale=song('stale'),brief=song('brief');
+ const later=Array.from({length:3},(_,i)=>song('later'+i));
+ const tracks=[rejected,near,far,unknown,stale,brief,...later];
+ const profiles={rejected:profile(rejected,700,4),near:profile(near,720),far:profile(far,1500),
+  stale:profile({...stale,bytes:99}),brief:profile(brief,700,2),
+  ...Object.fromEntries(later.map(t=>[t.id,profile(t,1500)]))};
+ const plays=[rejected,unknown,stale,brief].map((t,i)=>({...skip(t),started:NOW-60000+i*10000}));
+ const model=new Taste(tracks,plays,NOW,profiles);
+ assert.ok(model.score(null,near).skipPenalty>30,'unmeasured skips must not erase rejected sound');
+ assert.ok(model.score(null,far).skipPenalty<5,'different timbre stays available');
+ let alternatives=0;
+ for(let seed=1;seed<=100;seed++)if(model.choose(null,[near,far],{},{seed}).track.id==='far')alternatives++;
+ assert.ok(alternatives>=90,`${alternatives}/100 choices respect rejected sound`);
+ const newer=later.map((t,i)=>({...skip(t),started:NOW-15000+i*5000}));
+ const bounded=new Taste(tracks,[...plays,...newer],NOW,profiles);
+ assert.equal(bounded.soundSkips.length,3);
+ assert.ok(bounded.score(null,near).skipPenalty<5,'older rejection yields to three newer usable skips');
+ assert.ok(bounded.score(null,far).skipPenalty>60);
 });
 
 test('after a skip, recent accepted sound anchors the transition; missing and replaced files remain safe',()=>{
@@ -82,6 +113,43 @@ test('equally fitting songs beyond the first six can be selected without destabi
  assert.ok(choices.size>15,`only ${choices.size} equally good songs explored`);
  const excluded=new Taste(tracks,[],NOW,profiles,{excludedTracks:[tracks[0].id]});
  assert.equal(excluded.score(tracks[0],tracks[1]).soundSimilarity,null);
+});
+
+test('unmeasured songs get a bounded discovery turn without changing normal acoustic choices',()=>{
+ const current=song('current'),near=song('near'),unknown=Array.from({length:9},(_,i)=>song('unknown'+i));
+ const tracks=[current,near,...unknown],profiles={current:profile(current),near:profile(near)};
+ const model=new Taste(tracks,[],NOW,profiles),chosen=new Set();
+ for(let step=0;step<32;step++){
+  const context={seed:step+17,step},pick=model.choose(current,[near,...unknown],{},context);
+  assert.equal(pick.track.id==='near',step%8!==7);
+  assert.equal(pick.track.id,model.choose(current,[near,...unknown],{},context).track.id);
+ }
+ for(let seed=1;seed<=40;seed++)chosen.add(model.choose(current,[near,...unknown],{},{seed,step:7}).track.id);
+ assert.ok(chosen.size>=5,'discovery must not stay on the first unmeasured song');
+ assert.equal(model.choose(current,[near],{},{step:7}).track.id,'near');
+ assert.equal(model.choose(current,[],{},{step:7}),null);
+ const q=new Queue({shuffleMode:'smart',now:()=>NOW,audioProfiles:profiles});q.setContext('library',tracks);q.smartStep=7;
+ const preview=q.peekNext();assert.ok(preview.id.startsWith('unknown'));assert.equal(q.next().id,preview.id);
+ const visited=new Set([current.id,preview.id]);
+ for(let i=2;i<tracks.length;i++){const next=q.next();assert.ok(next);assert.ok(!visited.has(next.id));visited.add(next.id);}
+});
+
+test('unmeasured discovery respects rejection, exclusions and provisional acoustic skip evidence',()=>{
+ const current=song('current'),near=song('near'),rejected=song('rejected'),excluded=song('excluded'),partial=song('partial'),oldSkip=song('oldSkip');
+ const tracks=[current,near,rejected,excluded,partial,oldSkip];
+ const profiles={current:profile(current,1500),near:profile(near,1500),rejected:profile(rejected,700,4),partial:profile(partial,700,4)};
+ const plays=[{...skip(oldSkip),started:NOW-86400000},skip(rejected),{...completed(current),started:NOW-1000}];
+ const model=new Taste(tracks,plays,NOW,profiles,{excludedTracks:[excluded.id]});
+ assert.ok(model.score(current,partial).skipPenalty>0);
+ for(let seed=1;seed<=20;seed++)assert.equal(model.choose(current,tracks.slice(1),{},{seed,step:7}).track.id,'near');
+ // A newly skipped song with no profile must not be mistaken for a discovery candidate.
+ const unknown=song('unknown');
+ const recent=new Taste([current,near,unknown],[skip(unknown)],NOW,profiles);
+ assert.equal(recent.choose(current,[near,unknown],{},{step:7}).track.id,'near');
+ const accepted=new Taste([current,near,unknown],[{...skip(unknown),started:NOW-10000},{...completed(unknown),started:NOW-1000}],NOW,profiles);
+ assert.equal(accepted.choose(current,[near,unknown],{},{step:7}).track.id,'unknown');
+ const allExcluded=new Taste(tracks,[],NOW,profiles,{excludedTracks:tracks.map(t=>t.id)});
+ assert.equal(allExcluded.choose(current,tracks,{},{step:7}),null);
 });
 
 test('excluded songs never re-enter an exhausted smart queue, including forward navigation',()=>{

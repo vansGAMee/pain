@@ -640,8 +640,8 @@
       ? 'Включён · слушает первые секунды трека'
       : 'On · listening to the first seconds';
     const labels = state.lang === 'ru'
-      ? { deep: 'глубокий звук', vocal: 'акцент на голосе', bright: 'яркий звук', balanced: 'сбалансированный звук' }
-      : { deep: 'deep sound', vocal: 'vocal focus', bright: 'bright sound', balanced: 'balanced sound' };
+      ? { deep: 'глубокий звук', vocal: 'выраженная середина', bright: 'яркий звук', balanced: 'сбалансированный звук' }
+      : { deep: 'deep sound', vocal: 'mid-forward sound', bright: 'bright sound', balanced: 'balanced sound' };
     return `${state.lang === 'ru' ? 'Включён' : 'On'} · ${labels[autoEqCharacter] || labels.balanced}`;
   }
 
@@ -3973,10 +3973,11 @@
     });
 
     DOM.eqPowerSwitch.addEventListener('change', (e) => {
+      const enabled = e.target.checked;
       initAudioNodes();
-      if (!e.target.checked && state.eq.auto) setAutoEqualizer(false, false);
-      state.eq.enabled = e.target.checked;
-      DOM.eqStateLabel.textContent = state.eq.enabled ? (state.lang === 'ru' ? 'ВКЛ' : 'ON') : (state.lang === 'ru' ? 'ВЫКЛ' : 'OFF');
+      if (!enabled && state.eq.auto) setAutoEqualizer(false, false);
+      state.eq.enabled = enabled;
+      initEqualizerUI();
       saveEqualizerState();
     });
 

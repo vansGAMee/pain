@@ -152,3 +152,31 @@ test('quick skips have provisional cached sound before full positive evidence is
  assert.equal(Audio.similarity(f.store.a,f.store.a),null);
  assert.equal(Audio.similarity(f.store.a,f.store.a,true),1);
 });
+
+test('timer jitter publishes evidence as soon as readiness thresholds are actually reached',t=>{
+ const f=fixture(t);
+ for(let i=0;i<4;i++)f.advance(.5,.499);
+ assert.equal(Audio.get(f.store,f.track,true),null,'1.996 seconds is still insufficient');
+ f.advance(.5,.499);
+ assert.ok(Audio.get(f.store,f.track,true),'publish at the next valid frame, not frame 20');
+ assert.equal(Audio.get(f.store,f.track),null,'provisional evidence is not a full profile');
+ for(let i=5;i<20;i++)f.advance(.5,.499);
+ assert.equal(Audio.get(f.store,f.track),null,'9.98 seconds is still insufficient');
+ f.advance(.5,.499);
+ assert.ok(Audio.get(f.store,f.track),'publish at frame 21, not frame 40');
+ const saves=f.saved.length;
+ for(let i=0;i<8;i++)f.advance(.5,.499);
+ assert.equal(f.saved.length,saves,'readiness must not cause a save on every frame');
+});
+
+test('resumed cached evidence just below readiness is published after the first new position',t=>{
+ const song=track('a'),store={a:cached(song,{seconds:9.9934})};
+ const f=fixture(t,{store});
+ f.frames(20);
+ assert.equal(Audio.get(store,song),null,'replayed positions do not inflate evidence');
+ assert.equal(f.saved.length,0);
+ f.advance();
+ assert.ok(Audio.get(store,song));
+ assert.equal(store.a.frames,21);
+ assert.equal(f.saved.length,1);
+});

@@ -42,7 +42,7 @@
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
    const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
    this.tracksById=new Map(tracks.map(t=>[String(t.id),t]));
-   const soundSkips=new Map();
+   const soundSkips=new Map(),soundFeedback=new Map();
    const samples=[],sessionEvents=[];this.lastQuality=new Map();let previous=null;
    for(const p of history(byId,plays,now)){
     const track=byId.get(p.track),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
@@ -66,6 +66,13 @@
     const features=this.features(track,new Date(stamp).getHours(),from);
     const weight=Math.exp(-Math.max(0,now-stamp)/(90*86400000));
     const recentWeight=Math.exp(-Math.max(0,now-stamp)/(7*86400000));
+    const accepted=explicit||target>=.75;
+    const quickSkip=(p.skipped===1||p.skipped===true)&&heard<=20000&&target<.25;
+    if(accepted||quickSkip){
+     const feedback=soundFeedback.get(String(track.id))||{positive:0,negative:0,last:0};
+     feedback[accepted?'positive':'negative']+=Math.exp(-(now-stamp)/(30*86400000));
+     feedback.last=stamp;soundFeedback.set(String(track.id),feedback);
+    }
     samples.push({features,target,weight,recentWeight,id:track.id});
     this.recentCounts.set(track.id,(this.recentCounts.get(track.id)||0)+recentWeight);
     const recentArtist=trustedArtist(track.artist);
@@ -74,23 +81,58 @@
     evidence.count+=weight;evidence.reward+=target*weight;evidence.last=Math.max(stamp,evidence.last);this.evidence.set(track.id,evidence);this.counts.set(track.id,(this.counts.get(track.id)||0)+weight);
     const artist=trustedArtist(track.artist);if(artist)this.artistCounts.set(artist,(this.artistCounts.get(artist)||0)+weight);
     // Temporary intent: explicit early skips can mean "not this mood right now".
-    if((p.skipped===1||p.skipped===true) && target<.25 && now-stamp>=0 && now-stamp<10*60000){
+    if(quickSkip && now-stamp>=0 && now-stamp<10*60000){
       this.recentSkips.push(skipIdentity(track));this.recentSkips=this.recentSkips.slice(-2);
     }else this.recentSkips=[];
     previous={track,stamp};
    }
    this.samples=samples.length;
-   this.soundSkips=[...soundSkips.values()].slice(-3).map(({track,stamp})=>({
-    profile:Sound.get(audioProfiles,track,true),strength:Math.exp(-(now-stamp)/(10*60000))
-   })).filter(item=>item.profile);
+   this.soundSkips=[];
+   // Missing, stale or too-short profiles must not evict usable acoustic feedback.
+   const skippedSounds=[...soundSkips.values()];
+   for(let i=skippedSounds.length-1;i>=0&&this.soundSkips.length<3;i--){
+    const {track,stamp}=skippedSounds[i],profile=Sound.get(audioProfiles,track,true);
+    if(profile)this.soundSkips.push({profile,strength:Math.exp(-(now-stamp)/(10*60000))});
+   }
+   this.soundPreferences=[];this.trackRejections=new Map();this.soundPreferenceCache=new Map();
+   for(const [id,feedback] of soundFeedback){
+    const total=feedback.positive+feedback.negative;
+    if(total<1.5)continue; // One play or one accidental skip cannot define a style preference.
+    const polarity=Math.sign(feedback.positive-feedback.negative),quality=this.lastQuality.get(id);
+    if(!polarity||polarity>0&&quality<.75||polarity<0&&quality>=.75)continue;
+    const strength=Math.abs(feedback.positive-feedback.negative)/total*Math.min(1,(total-1)/3)*Math.exp(-(now-feedback.last)/(30*86400000));
+    if(polarity<0)this.trackRejections.set(id,strength);
+    const profile=Sound.get(audioProfiles,this.tracksById.get(id));
+    if(Sound.texture(profile))this.soundPreferences.push({id,profile,polarity,strength});
+   }
+   // Separate neighbours preserve multiple tastes; a single averaged sound would not.
+   this.soundPreferences=[1,-1].flatMap(sign=>{
+    const selected=[];
+    for(const example of this.soundPreferences.filter(p=>p.polarity===sign).sort((a,b)=>b.strength-a.strength)){
+     // Near-duplicate recordings must not fill every slot and erase another taste.
+     if(selected.some(other=>Sound.similarity(example.profile,other.profile)>.97))continue;
+     selected.push(example);if(selected.length===12)break;
+    }
+    return selected;
+   });
    this.sessionGraph=new SessionGraph(sessionEvents,now);
+   // Balance informative outcomes: frequent skips must not drown out the user's
+   // fewer full listens (or vice versa). Cap correction so rare events cannot dominate.
+   const balance=key=>{
+    let positive=0,negative=0;
+    for(const sample of samples){if(sample.target>=.75)positive+=sample[key];else if(sample.target<.25)negative+=sample[key];}
+    if(!positive||!negative)return ()=>1;
+    const total=positive+negative,p=Math.max(.5,Math.min(2,total/(2*positive))),n=Math.max(.5,Math.min(2,total/(2*negative)));
+    return target=>target>=.75?p:target<.25?n:1;
+   };
+   const lifetimeBalance=balance('weight'),recentBalance=balance('recentWeight');
    // Sparse SGD with L2 shrinkage: learned coefficients, not hand-written mood scores.
    for(let epoch=0;epoch<5;epoch++)for(const sample of samples){
-    const error=(sample.target-this.predictFeatures(sample.features))*sample.weight/Math.sqrt(1+(this.counts.get(sample.id)||0)/8);
+    const error=(sample.target-this.predictFeatures(sample.features))*sample.weight*lifetimeBalance(sample.target)/Math.sqrt(1+(this.counts.get(sample.id)||0)/8);
     const rate=.16/Math.sqrt(1+epoch);
     for(const [key,value] of sample.features){const old=this.weights.get(key)||0;this.weights.set(key,old+rate*(error*value-.018*old));}
     if(sample.recentWeight>.02){
-      const recentError=(sample.target-this.predictFeatures(sample.features,this.recentWeights))*sample.recentWeight/Math.sqrt(1+(this.recentCounts.get(sample.id)||0)/8);
+      const recentError=(sample.target-this.predictFeatures(sample.features,this.recentWeights))*sample.recentWeight*recentBalance(sample.target)/Math.sqrt(1+(this.recentCounts.get(sample.id)||0)/8);
       for(const [key,value] of sample.features){const old=this.recentWeights.get(key)||0;this.recentWeights.set(key,old+rate*(recentError*value-.018*old));}
     }
    }
@@ -115,6 +157,20 @@
    return f;
   }
   predictFeatures(features,weights=this.weights){return sigmoid(features.reduce((s,[k,v])=>s+(weights.get(k)||0)*v,0));}
+  soundPreference(candidate,profile){
+   if(!this.soundPreferences.length||!Sound.texture(profile))return 0;
+   const id=String(candidate.id),cached=this.soundPreferenceCache.get(id);
+   if(cached?.profile===profile)return cached.value;
+   let positive=0,negative=0;
+   for(const example of this.soundPreferences){
+    if(example.id===id)continue; // Direct track history already has its own signal.
+    const similarity=Sound.similarity(profile,example.profile);
+    const vote=example.strength*Math.max(0,(similarity-.65)/.35)**2;
+    if(example.polarity>0)positive=Math.max(positive,vote);else negative=Math.max(negative,vote);
+   }
+   const value=positive-negative;
+   this.soundPreferenceCache.set(id,{profile,value});return value;
+  }
   choose(current,candidates,cache={},context={}){
    const excluded=context.excludedTracks instanceof Set?context.excludedTracks:(context.excludedTracks?new Set(Array.from(context.excludedTracks).map(String)):this.excludedTracks);
    // Seeded sampling makes peek and next agree, while each queue visit draws anew.
@@ -127,7 +183,16 @@
    // Reserve one turn in four for discovery when safe candidates exist.
    const pivot=this.recentSkips.length>=2;
    const discovery=pivot||(context.step??0)%4===3;let discovering=false;
-   if(discovery){
+   // Break the cache feedback loop: at most one in eight turns explores unmeasured
+   // sound. Keep explicit rejections and provisional acoustic penalties in force.
+   const unmeasured=acoustic&&!this.recentSkips.length&&(context.step??0)%8===7?pool.filter(item=>{
+    const e=this.evidence.get(item.track.id);
+    return item.soundSimilarity===null&&item.skipPenalty===0&&
+     (this.lastQuality.get(String(item.track.id))??1)>=.75&&
+     (!e||e.count<1.5||e.reward/e.count>=.5);
+   }):[];
+   if(unmeasured.length){pool=unmeasured;discovering=true;}
+   else if(discovery){
     const fresh=pool.filter(item=>{
      if(acoustic&&item.score<bestScore-12)return false;
      const e=this.evidence.get(item.track.id);
@@ -205,15 +270,22 @@
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
    const currentSound=Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
-   const soundSimilarity=Sound.similarity(currentSound,candidateSound);
+   let soundSimilarity=Sound.similarity(currentSound,candidateSound);
    if(currentSound){
-    const confidence=Sound.texture(currentSound)&&(!candidateSound||Sound.texture(candidateSound))?1:.55;
+    const detailed=!!Sound.texture(currentSound),confidence=detailed?1:.55;
+    // Keep history on the same scale for every candidate. Coarse spectra cannot
+    // claim a certain timbre match: shrink their evidence toward the neutral prior.
+    if(detailed&&candidateSound&&!Sound.texture(candidateSound)&&soundSimilarity!==null)
+     soundSimilarity=.5+.55*(soundSimilarity-.5);
     // Timbre is primary (70 points); learned taste, BPM and spacing refine the fit.
     // Unmeasured candidates get a neutral prior, not an unfair unscaled history score.
     score=(1-confidence)*score+confidence*(70*(soundSimilarity??.5)+.25*score);
     if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift('Близкое звучание');
    }
    if(candidate.favorite===true||candidate.favorite===1)score+=2;
+   const soundPreference=this.soundPreference(candidate,candidateSound);
+   score+=16*soundPreference;
+   if(soundPreference>.15)reasons.push('Похоже на то, что вы дослушиваете');
    // A short explicit rejection suppresses acoustic neighbours, even with other artists/tags.
    // Max, not sum: repeated skips cannot accidentally blacklist the whole library.
    let skipPenalty=0;
@@ -222,9 +294,10 @@
     const similarity=Sound.similarity(skip.profile,negativeSound,true);
     if(similarity!==null)skipPenalty=Math.max(skipPenalty,80*skip.strength*Math.min(1,skip.profile.seconds/4)*Math.max(0,(similarity-.55)/.45)**2);
    }
-   score-=skipPenalty;
+   const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
+   score-=Math.max(skipPenalty,rejectionPenalty);
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
-   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,skipPenalty};
+   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty};
   }
  }
  TasteModel.artistIdentity=track=>trustedArtist(track?.artist);

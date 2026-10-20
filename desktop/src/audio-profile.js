@@ -123,6 +123,7 @@
      if(!vector)vector=v;else vector=vector.map((x,j)=>(x*totalPower+v[j]*power)/(totalPower+power));totalPower+=power;
     });
     if(!vector)return;
+    const wasPartialReady=ready(profile,true),wasReady=ready(profile);
     const n=profile.frames+1,mean=profile.vector.map((v,i)=>v+(vector[i]-v)/n);
     // Online population variance preserves contrast between sections without retaining PCM.
     profile.variance=profile.variance.map((v,i)=>Math.max(0,Math.min(.25,
@@ -136,8 +137,9 @@
      }
     }else {profile.timbre=null;profile.timbreVariance=null;}
     profile.vector=mean;profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
-    // Early provisional evidence lets a quick skip reject similar sounds immediately.
-    if(profile.frames===4||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
+    // Timer jitter can leave frame 4/20 just below 2/10 seconds. Publish when
+    // evidence actually becomes usable, without waiting for the next periodic save.
+    if(!wasPartialReady&&ready(profile,true)||!wasReady&&ready(profile)||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
    }catch(_){boundary();}
   }
   function start(){if(!disposed&&timer===null)timer=schedule(sample,500);}
