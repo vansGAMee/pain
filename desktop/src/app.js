@@ -223,6 +223,13 @@
     hourlyBars: document.getElementById('hourlyBars'),
     topTracksList: document.getElementById('topTracksList'),
     topArtistsList: document.getElementById('topArtistsList'),
+    shareProfileBtn: document.getElementById('shareProfileBtn'),
+    shareProfileModalBackdrop: document.getElementById('shareProfileModalBackdrop'),
+    shareProfileModalBody: document.getElementById('shareProfileModalBody'),
+    shareDownloadPngBtn: document.getElementById('shareDownloadPngBtn'),
+    shareCopyImageBtn: document.getElementById('shareCopyImageBtn'),
+    shareCopyLinkBtn: document.getElementById('shareCopyLinkBtn'),
+    shareModalCloseBtn: document.getElementById('shareModalCloseBtn'),
 
     // Sync View
     phoneIpInput: document.getElementById('phoneIpInput'),
@@ -516,11 +523,22 @@
     if (urlParams.get('mode') === 'list') applyViewMode('list');
 
     const hash = window.location.hash.replace('#', '');
-    if (hash && ['library', 'favorites', 'player', 'insights', 'sync', 'joint-ai'].includes(hash)) {
+    if (hash === 'profile') {
+      switchView('insights');
+      setTimeout(openProfileModal, 150);
+    } else if (hash && ['library', 'favorites', 'player', 'insights', 'sync', 'joint-ai'].includes(hash)) {
       switchView(hash);
     } else {
       switchView('library');
     }
+
+    window.addEventListener('hashchange', () => {
+      const h = window.location.hash.replace('#', '');
+      if (h === 'profile') {
+        switchView('insights');
+        setTimeout(openProfileModal, 100);
+      }
+    });
 
     if (urlParams.get('eq') === '1') {
       setTimeout(() => {
@@ -1890,6 +1908,53 @@
     }).join('');
   }
 
+  // --- PROFILE SHARE CARD ---
+  let currentProfileData = null;
+  let profileCanvasCache = null;
+
+  function openProfileModal() {
+    if (typeof ProfileCard === 'undefined') return;
+    currentProfileData = ProfileCard.collectProfileData(state.tracks, state.stats, state.lang);
+    state.currentProfileData = currentProfileData;
+    profileCanvasCache = null;
+
+    if (DOM.shareProfileModalBody) {
+      DOM.shareProfileModalBody.innerHTML = ProfileCard.renderProfileCardHtml(currentProfileData, getCoverUrl);
+    }
+    if (DOM.shareProfileModalBackdrop) {
+      DOM.shareProfileModalBackdrop.style.display = 'flex';
+      DOM.shareProfileModalBackdrop.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        DOM.shareProfileModalBackdrop.classList.add('open');
+      });
+    }
+  }
+
+  function closeProfileModal() {
+    if (!DOM.shareProfileModalBackdrop) return;
+    DOM.shareProfileModalBackdrop.classList.remove('open');
+    DOM.shareProfileModalBackdrop.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+      if (!DOM.shareProfileModalBackdrop.classList.contains('open')) {
+        DOM.shareProfileModalBackdrop.style.display = 'none';
+      }
+    }, 280);
+    if (window.location.hash === '#profile') {
+      try {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch (_) {}
+    }
+  }
+
+  async function getOrRenderProfileCanvas() {
+    if (profileCanvasCache) return profileCanvasCache;
+    if (!currentProfileData && typeof ProfileCard !== 'undefined') {
+      currentProfileData = ProfileCard.collectProfileData(state.tracks, state.stats, state.lang);
+    }
+    profileCanvasCache = await ProfileCard.renderProfileCardCanvas(currentProfileData, getCoverUrl);
+    return profileCanvasCache;
+  }
+
   // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
   function playTrackObject(track, startPosition = 0) {
     if (!track) return;
@@ -2695,6 +2760,9 @@
     updateFluidBpmTempo();
     updateAutoEqualizerUI();
     renderUpdateStatus();
+    if (DOM.shareProfileModalBackdrop && DOM.shareProfileModalBackdrop.classList.contains('open')) {
+      openProfileModal();
+    }
   }
 
   // --- SETTINGS MODAL & AMBIENT FLUID CONTROLLER ---
@@ -4330,6 +4398,78 @@
 
     if (DOM.jointSavePlaylistBtn) {
       DOM.jointSavePlaylistBtn.addEventListener('click', handleSaveJointPlaylist);
+    }
+
+    // Share Profile Card Modal & Actions
+    if (DOM.shareProfileBtn) {
+      DOM.shareProfileBtn.addEventListener('click', openProfileModal);
+    }
+    if (DOM.shareModalCloseBtn) {
+      DOM.shareModalCloseBtn.addEventListener('click', closeProfileModal);
+    }
+    if (DOM.shareProfileModalBackdrop) {
+      DOM.shareProfileModalBackdrop.addEventListener('click', (e) => {
+        if (e.target === DOM.shareProfileModalBackdrop) closeProfileModal();
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && DOM.shareProfileModalBackdrop?.classList.contains('open')) {
+        closeProfileModal();
+      }
+    });
+
+    if (DOM.shareDownloadPngBtn) {
+      DOM.shareDownloadPngBtn.addEventListener('click', async () => {
+        const btn = DOM.shareDownloadPngBtn;
+        const origText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = state.lang === 'ru' ? '<span>Генерация...</span>' : '<span>Generating...</span>';
+        try {
+          const canvas = await getOrRenderProfileCanvas();
+          ProfileCard.downloadProfileCardPng(canvas, `pain-profile-${new Date().toISOString().slice(0, 10)}.png`);
+          showToast(state.lang === 'ru' ? 'Карточка сохранена в Загрузки!' : 'Profile card saved to Downloads!', '✓');
+        } catch (err) {
+          showToast(state.lang === 'ru' ? `Ошибка: ${err.message}` : `Error: ${err.message}`, '❌');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      });
+    }
+
+    if (DOM.shareCopyImageBtn) {
+      DOM.shareCopyImageBtn.addEventListener('click', async () => {
+        const btn = DOM.shareCopyImageBtn;
+        const origText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = state.lang === 'ru' ? '<span>Копирование...</span>' : '<span>Copying...</span>';
+        try {
+          const canvas = await getOrRenderProfileCanvas();
+          await ProfileCard.copyProfileCardImage(canvas);
+          showToast(state.lang === 'ru' ? 'Картинка скопирована в буфер обмена!' : 'Image copied to clipboard!', '✓');
+        } catch (err) {
+          showToast(state.lang === 'ru' ? 'Не удалось скопировать картинку в буфер' : 'Failed to copy image to clipboard', '⚠️');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      });
+    }
+
+    if (DOM.shareCopyLinkBtn) {
+      DOM.shareCopyLinkBtn.addEventListener('click', async () => {
+        if (!currentProfileData && typeof ProfileCard !== 'undefined') {
+          currentProfileData = ProfileCard.collectProfileData(state.tracks, state.stats, state.lang);
+        }
+        try {
+          const res = await ProfileCard.shareProfile(currentProfileData);
+          if (res.shared) {
+            showToast(state.lang === 'ru' ? 'Ссылка и статистика скопированы!' : 'Link and stats copied!', '✓');
+          }
+        } catch (err) {
+          showToast(state.lang === 'ru' ? 'Не удалось скопировать ссылку' : 'Failed to copy link', '⚠️');
+        }
+      });
     }
   }
 

@@ -451,6 +451,12 @@ const server = http.createServer((req, res) => {
 
   if (lyricsRoute(req,res,url,DATA_DIR)) return;
 
+  if (pathname === '/profile') {
+    res.writeHead(302, { 'Location': '/?view=insights#profile' });
+    res.end();
+    return;
+  }
+
   // API endpoints
   if (pathname === '/api/update-status' && req.method === 'GET') {
     updater.check(url.searchParams.get('refresh') === '1').then(status => {
