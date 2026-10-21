@@ -69,10 +69,12 @@
     const activeTopArtist = (sessionTopArtist && sessionTopArtist.count >= 3)
       ? sessionTopArtist
       : todayTopArtist;
+    const artistPeriod = activeTopArtist === sessionTopArtist && sessionTopArtist ? 'session' : 'today';
+    const artistTotal = artistPeriod === 'session' ? sessionCount : todayCount;
 
     if (isLateNight && activeTopArtist) {
       const artVal = PresenceEvidence
-        ? PresenceEvidence.validateArtistMonopoly(activeTopArtist, Math.max(todayCount, sessionCount), baseline.normalTopArtistConcentration)
+        ? PresenceEvidence.validateArtistMonopoly(activeTopArtist, artistTotal, baseline.normalTopArtistConcentration)
         : { valid: activeTopArtist.count >= 4 && activeTopArtist.share >= 0.5 };
 
       if (artVal.valid) {
@@ -93,6 +95,7 @@
           },
           facts: {
             artist: activeTopArtist.artist,
+            period: artistPeriod,
             count: activeTopArtist.count,
             hour,
             timeContext: 'night'
@@ -209,10 +212,11 @@
     const focusTrack = (sessionTopTrack && sessionTopTrack.count >= 3)
       ? sessionTopTrack
       : topTrackToday;
+    const trackPeriod = focusTrack === sessionTopTrack && sessionTopTrack ? 'session' : 'today';
 
     if (focusTrack) {
       const trackVal = PresenceEvidence
-        ? PresenceEvidence.validateSingleTrackLoop(focusTrack, Math.max(todayCount, sessionCount))
+        ? PresenceEvidence.validateSingleTrackLoop(focusTrack, trackPeriod === 'session' ? sessionCount : todayCount)
         : { valid: focusTrack.count >= 3 };
 
       if (trackVal.valid) {
@@ -234,6 +238,7 @@
           },
           facts: {
             title: focusTrack.title,
+            period: trackPeriod,
             artist: focusTrack.artist,
             count: focusTrack.count,
             totalPlays: todayCount
@@ -251,7 +256,7 @@
     // 6. ARTIST MONOPOLY (Rule #38: one artist represents >= 50% of today / session)
     if (activeTopArtist) {
       const artVal = PresenceEvidence
-        ? PresenceEvidence.validateArtistMonopoly(activeTopArtist, Math.max(todayCount, sessionCount), baseline.normalTopArtistConcentration)
+        ? PresenceEvidence.validateArtistMonopoly(activeTopArtist, artistTotal, baseline.normalTopArtistConcentration)
         : { valid: activeTopArtist.count >= 4 && activeTopArtist.share >= 0.5 };
 
       if (artVal.valid) {
@@ -274,6 +279,7 @@
             artist: activeTopArtist.artist,
             count: activeTopArtist.count,
             share: activeTopArtist.share,
+            period: artistPeriod,
             timeContext: signals.timeBucket
           },
           secondaryFact: null,

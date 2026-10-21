@@ -113,19 +113,24 @@
     }
     activeDays.sort();
 
-    // Check if the track appears across at least 2 distinct days
-    const valid = activeDays.length >= 2;
+    // Only the uninterrupted suffix supports a claim of consecutive days.
+    const consecutive = activeDays.slice(-1);
+    for (let i = activeDays.length - 2; i >= 0; i--) {
+      if (Date.parse(consecutive[0]) - Date.parse(activeDays[i]) !== 86400000) break;
+      consecutive.unshift(activeDays[i]);
+    }
+    const valid = consecutive.length >= 2;
     return {
       valid,
       facts: {
         trackId,
         title: cleanTitle,
         artist,
-        dayCount: activeDays.length,
-        days: activeDays
+        dayCount: consecutive.length,
+        days: consecutive
       },
-      confidence: Math.min(1, 0.75 + (activeDays.length >= 3 ? 0.25 : 0)),
-      rarity: activeDays.length >= 3 ? 0.9 : 0.7
+      confidence: Math.min(1, 0.75 + (consecutive.length >= 3 ? 0.25 : 0)),
+      rarity: consecutive.length >= 3 ? 0.9 : 0.7
     };
   }
 
@@ -143,6 +148,8 @@
     // Find previous plays strictly before today
     let previousPlayTs = 0;
     const nowStartOfDay = new Date(new Date(now).setHours(0, 0, 0, 0)).getTime();
+    const historicalPlays = [...playsByDate.values()].flat().filter(p => p.timestamp < nowStartOfDay && (p.artist || '').trim() === artist).length;
+    if (historicalPlays < 3) return { valid: false };
 
     // Iterate dates backwards before today
     const sortedDates = Array.from(playsByDate.keys()).sort().reverse();
@@ -163,8 +170,9 @@
 
     if (previousPlayTs === 0) return { valid: false };
 
-    const gapMs = nowStartOfDay - previousPlayTs;
-    const gapDays = Math.floor(gapMs / 86400000);
+    const today = new Date(now), previous = new Date(previousPlayTs);
+    const gapDays = Math.max(0, (Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+      - Date.UTC(previous.getFullYear(), previous.getMonth(), previous.getDate())) / 86400000 - 1);
 
     // Rule: break must be at least 4 full days
     const valid = gapDays >= 4;
@@ -173,7 +181,7 @@
       facts: {
         artist,
         gapDays,
-        historicalPlays: allTimeArtist.count
+        historicalPlays
       },
       confidence: 0.88,
       rarity: gapDays >= 10 ? 0.95 : 0.8

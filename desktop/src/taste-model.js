@@ -88,7 +88,15 @@
     // Keep legacy records without a skip field compatible with older clients.
     if(!explicit&&(p.skipped===0||p.skipped===false)&&target<.75){previous=null;this.recentSkips=[];continue;}
     this.lastQuality.set(String(track.id),learningTarget);
-    if(explicit||target>=.75)soundSkips.delete(String(track.id));
+    if(accepted){
+     soundSkips.delete(String(track.id));
+     // A successful search explains ambiguous previews relative to the sound
+     // actually chosen. Keep the first confirmation, confident refusals and
+     // long-term feedback; do not guess an anchor when its audio is unavailable.
+     const acceptedProfile=Sound.get(audioProfiles,track);
+     if(Sound.texture(acceptedProfile))for(const skip of soundSkips.values())
+      if(skip.confidence<1&&!skip.acceptedProfile)skip.acceptedProfile=acceptedProfile;
+    }
     else if(isQuickSkip&&now-stamp<30*60000){
      soundSkips.delete(String(track.id));soundSkips.set(String(track.id),{track,stamp,confidence});
     }
@@ -119,8 +127,8 @@
    // Missing, stale or too-short profiles must not evict usable acoustic feedback.
    const skippedSounds=[...soundSkips.values()];
    for(let i=skippedSounds.length-1;i>=0&&this.soundSkips.length<3;i--){
-    const {track,stamp,confidence}=skippedSounds[i],profile=Sound.get(audioProfiles,track,true);
-    if(profile)this.soundSkips.push({profile,strength:confidence*Math.exp(-(now-stamp)/(10*60000))});
+    const {track,stamp,confidence,acceptedProfile}=skippedSounds[i],profile=Sound.get(audioProfiles,track,true);
+    if(profile)this.soundSkips.push({profile,acceptedProfile,strength:confidence*Math.exp(-(now-stamp)/(10*60000))});
    }
    this.soundPreferences=[];this.trackRejections=new Map();this.soundPreferenceCache=new Map();
    // A new listener should not need to replay the same song before its sound can
@@ -232,7 +240,8 @@
    const discovery=!this.searching&&!this.recentSkips.length&&(context.step??0)%4===3;let discovering=false;
    // Break the cache feedback loop: at most one in eight turns explores unmeasured
    // sound. Keep explicit rejections and provisional acoustic penalties in force.
-   const unmeasured=acoustic&&discovery&&(context.step??0)%8===7?pool.filter(item=>{
+   // A saved vibe should not force an unmeasured detour when measured fits exist.
+   const unmeasured=acoustic&&discovery&&!Sound.texture(context.vibeProfile)&&(context.step??0)%8===7?pool.filter(item=>{
     const e=this.evidence.get(item.track.id);
     return item.soundSimilarity===null&&item.skipPenalty===0&&
      (this.lastQuality.get(String(item.track.id))??1)>=.75&&
@@ -268,6 +277,25 @@
     const catalogSize=poolCounts.get(artistKey(item.track));
     const catalogCorrection=acoustic?Math.min(8,3*Math.log(catalogSize)):9*Math.log(catalogSize);
     item.rank=item.score+uncertainty-catalogCorrection;
+   }
+   // Similarity alone can repeat the same texture across different artists.
+   // After two accepted examples, gently favour a different texture *within*
+   // the good-fit band. No penalty when the only alternatives are poor/unknown.
+   if(acoustic&&!discovering){
+    const recentSounds=[...new Set((context.recentTrackIds||[]).map(String))]
+     .filter(id=>this.sessionSoundTracks.has(id)&&!excluded.has(id)&&(this.lastQuality.get(id)??0)>=.75)
+     .slice(0,3).map(id=>Sound.get(this.audioProfiles,this.tracksById.get(id))).filter(p=>Sound.texture(p));
+    if(recentSounds.length>=2){
+     const repeats=new Map();
+     for(const item of pool){
+      if(item.soundSimilarity<.75||item.score<bestScore-10)continue;
+      const profile=Sound.get(this.audioProfiles,item.track);if(!Sound.texture(profile))continue;
+      const matches=recentSounds.map(p=>Sound.similarity(p,profile)).sort((a,b)=>b-a);
+      repeats.set(item,Math.max(0,(matches[1]-.94)/.06));
+     }
+     const alternative=[...repeats].some(([item,repeat])=>repeat===0&&item.skipPenalty===0&&item.rejectionPenalty===0);
+     if(alternative)for(const [item,repeat] of repeats)item.rank-=10*Math.min(1,repeat);
+    }
    }
    if(acoustic){
     // Equal fits must not always shortlist the first six files in library order.
@@ -355,7 +383,14 @@
    const negativeSound=candidateSound||(this.soundSkips.length?Sound.get(this.audioProfiles,candidate,true):null);
    if(negativeSound)for(const skip of this.soundSkips){
     const similarity=Sound.similarity(skip.profile,negativeSound,true);
-    if(similarity!==null)skipPenalty=Math.max(skipPenalty,80*skip.strength*Math.min(1,skip.profile.seconds/4)*Math.max(0,(similarity-.55)/.45)**2);
+    if(similarity!==null){
+     let match=Math.max(0,(similarity-.55)/.45);
+     const acceptedSimilarity=Sound.similarity(skip.acceptedProfile,negativeSound,true);
+     // Penalize only the extra resemblance to a preview over the chosen sound.
+     // This preserves a rejected direction without vetoing the confirmed mood.
+     if(acceptedSimilarity!==null)match=Math.min(match,Math.max(0,(similarity-acceptedSimilarity)/.45));
+     skipPenalty=Math.max(skipPenalty,80*skip.strength*Math.min(1,skip.profile.seconds/4)*match**2);
+    }
    }
    const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
    score-=Math.max(skipPenalty,rejectionPenalty);

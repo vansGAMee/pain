@@ -375,13 +375,21 @@
   }
 
   // --- TIME-OF-DAY GREETING ---
+  let greetingKey = null;
+  let greetingUpdatedAt = 0;
   function updateGreeting() {
     const greetingEl = document.getElementById('viewGreeting');
     if (!greetingEl) return;
+    const now = new Date(), plays = [...(state.stats?.plays || []), ...readTasteSkips()], last = plays.at(-1);
+    const key = JSON.stringify([state.lang, now.toDateString(), now.getHours(), state.tracks.length,
+      plays.length, last?.id, last?.started, last?.heard, last?.finished, last?.skipped]);
+    if (key === greetingKey && now.getTime() - greetingUpdatedAt < 15 * 60000) return;
+    greetingKey = key;
+    greetingUpdatedAt = now.getTime();
 
     if (typeof PresenceEngine !== 'undefined' && typeof PresenceEngine.generateGreeting === 'function') {
       try {
-        const greeting = PresenceEngine.generateGreeting(state.tracks, state.stats, { lang: state.lang });
+        const greeting = PresenceEngine.generateGreeting(state.tracks, {...state.stats, plays}, { lang: state.lang });
         if (greeting && greeting.text) {
           const icon = greeting.icon || '✨';
           greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${escapeHtml(greeting.text)}</span>`;
@@ -525,6 +533,8 @@
     await loadCachedTracksList();
     updateGreeting();
     setupEventListeners();
+    setInterval(() => { if (!document.hidden) updateGreeting(); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) updateGreeting(); });
     setTimeout(() => checkForUpdates(false, true), 800);
     setInterval(() => checkForUpdates(true, true), 6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
@@ -3844,12 +3854,31 @@
     });
 
     // Volume & Mute
+    try {
+      const saved = JSON.parse(localStorage.getItem('pain_volume'));
+      if (saved && Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 1) {
+        audio.volume = saved.volume;
+        state.isMuted = saved.volume === 0;
+        state.lastVolume = Number.isFinite(saved.lastVolume) && saved.lastVolume > 0 && saved.lastVolume <= 1
+          ? saved.lastVolume : (saved.volume || 1);
+      }
+    } catch (_) { /* Invalid or unavailable storage must not prevent playback. */ }
+    DOM.volumeSlider.value = audio.volume;
+    updateVolumeIcon(audio.volume);
+
+    function saveVolume() {
+      try {
+        localStorage.setItem('pain_volume', JSON.stringify({volume: audio.volume, lastVolume: state.lastVolume}));
+      } catch (_) {}
+    }
+
     DOM.volumeSlider.addEventListener('input', (e) => {
       const val = parseFloat(e.target.value);
       audio.volume = val;
-      state.lastVolume = val;
+      if (val > 0) state.lastVolume = val;
       state.isMuted = val === 0;
       updateVolumeIcon(val);
+      saveVolume();
     });
 
     DOM.bottomMuteBtn.addEventListener('click', () => {
@@ -3864,6 +3893,7 @@
         state.isMuted = true;
       }
       updateVolumeIcon(audio.volume);
+      saveVolume();
     });
 
     function updateVolumeIcon(vol) {

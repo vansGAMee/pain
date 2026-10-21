@@ -5,15 +5,17 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require('../taste-model'));
   } else {
-    root.PresenceSignals = factory();
+    root.PresenceSignals = factory(root.TasteModel);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Taste) {
   'use strict';
 
   const SESSION_GAP_MS = 35 * 60 * 1000; // 35 minutes inactivity = new session
   const QUICK_SKIP_MAX_MS = 15 * 1000;   // <15s listened = quick skip
+  const heardEnough = p => p.finished || (p.duration > 0 && p.coverage / p.duration >= .75)
+    || (!p.skipped && p.heard >= Math.min(30000, p.duration > 0 ? p.duration / 2 : 30000));
 
   /**
    * Helper to normalize track lookup from library tracks array
@@ -23,7 +25,7 @@
     if (!Array.isArray(tracks)) return map;
     for (let i = 0; i < tracks.length; i++) {
       const t = tracks[i];
-      if (!t || !t.id) continue;
+      if (!t || t.id == null) continue;
       const cleanArtist = String(t.artist || '').trim() || 'Unknown Artist';
       const cleanTitle = String(t.title || '').trim() || 'Unknown Track';
       map.set(String(t.id), {
@@ -61,6 +63,8 @@
    * Compute aggregated metrics for an array of normalized plays
    */
   function aggregatePlayList(plays, trackMap) {
+    const observations = plays;
+    plays = plays.filter(heardEnough);
     const count = plays.length;
     if (count === 0) {
       return {
@@ -68,7 +72,7 @@
         totalHeardMs: 0,
         completedCount: 0,
         skippedCount: 0,
-        skipRate: 0,
+        skipRate: observations.length ? observations.filter(p => p.skipped).length / observations.length : 0,
         completionRate: 0,
         topTrack: null,
         topArtist: null,
@@ -120,6 +124,7 @@
 
       // Artist aggregation
       const artistName = trackMeta.artist;
+      if (Taste && !Taste.artistIdentity(trackMeta)) continue;
       let aEntry = artistStats.get(artistName);
       if (!aEntry) {
         aEntry = {
@@ -175,7 +180,7 @@
       totalHeardMs,
       completedCount,
       skippedCount,
-      skipRate: count > 0 ? skippedCount / count : 0,
+      skipRate: observations.length ? observations.filter(p => p.skipped).length / observations.length : 0,
       completionRate: count > 0 ? completedCount / count : 0,
       topTrack,
       topArtist,
@@ -193,7 +198,7 @@
    * @param {Object} options - { now, sessionGapMs }
    */
   function extractSignals(tracks, stats, options = {}) {
-    const now = typeof options.now === 'number' ? options.now : Date.now();
+    const now = Number.isFinite(options.now) ? options.now : Date.now();
     const nowDate = new Date(now);
     const sessionGap = options.sessionGapMs || SESSION_GAP_MS;
 
@@ -201,37 +206,45 @@
     const rawPlays = (stats && Array.isArray(stats.plays)) ? stats.plays : [];
 
     // 1. Sanitize, normalize and filter valid plays
-    const validPlays = [];
+    const records = new Map();
     for (let i = 0; i < rawPlays.length; i++) {
       const p = rawPlays[i];
       if (!p) continue;
       const ts = getPlayTimestamp(p);
-      if (ts <= 0 || ts > now + 3600000) continue; // ignore far future corrupted timestamps
-      const rawTrackId = String(p.track || p.trackId || p.id || '').trim();
+      if (ts <= 0 || ts > now) continue;
+      const rawTrackId = String(p.track ?? p.trackId ?? '').trim();
       if (!rawTrackId) continue;
 
       const trackInfo = trackMap.get(rawTrackId);
-      validPlays.push({
+      const heard = Number(p.heard ?? p.media_heard ?? 0);
+      const duration = Number(p.duration || trackInfo?.duration || 0);
+      const coverage = Number(p.media_heard ?? heard);
+      if (!Number.isFinite(heard) || heard < 1000 || !Number.isFinite(coverage) || coverage < 0 || !Number.isFinite(duration) || duration < 0) continue;
+      const row = {
         id: p.id || `play_${ts}_${i}`,
         trackId: rawTrackId,
         title: trackInfo ? trackInfo.title : String(p.title || 'Unknown Track').trim(),
         artist: trackInfo ? trackInfo.artist : String(p.artist || 'Unknown Artist').trim(),
         timestamp: ts,
-        heard: Math.max(0, Number(p.heard || p.media_heard || 0)),
-        duration: Math.max(0, Number(p.duration || 0)),
+        heard,
+        coverage,
+        duration,
         finished: p.finished === 1 || p.finished === true,
         skipped: p.skipped === 1 || p.skipped === true
-      });
+      };
+      const key = JSON.stringify([rawTrackId, ts]), old = records.get(key);
+      if (!old || Number(row.finished) > Number(old.finished) || row.finished === old.finished && row.coverage > old.coverage) records.set(key, row);
     }
 
     // Sort chronologically ascending
-    validPlays.sort((a, b) => a.timestamp - b.timestamp);
+    const validPlays = [...records.values()].sort((a, b) => a.timestamp - b.timestamp);
 
     // 2. Identify listening dates and streaks/gaps
     const activeDatesSet = new Set();
     const playsByDate = new Map();
     for (let i = 0; i < validPlays.length; i++) {
       const p = validPlays[i];
+      if (!heardEnough(p)) continue;
       const dKey = getLocalDateKey(new Date(p.timestamp));
       activeDatesSet.add(dKey);
       let list = playsByDate.get(dKey);
@@ -243,7 +256,8 @@
     }
 
     const todayKey = getLocalDateKey(nowDate);
-    const yesterdayDate = new Date(now - 86400000);
+    const yesterdayDate = new Date(nowDate);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterdayKey = getLocalDateKey(yesterdayDate);
 
     // Calculate streak days (consecutive days leading up to today or yesterday)
@@ -257,7 +271,7 @@
       const k = getLocalDateKey(checkDate);
       if (activeDatesSet.has(k)) {
         streakDays++;
-        checkDate = new Date(checkDate.getTime() - 86400000);
+        checkDate.setDate(checkDate.getDate() - 1);
       } else {
         break;
       }
@@ -270,20 +284,21 @@
       const startOfToday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
       let lastPreviousPlayTs = 0;
       for (let i = validPlays.length - 1; i >= 0; i--) {
-        if (validPlays[i].timestamp < startOfToday) {
+        if (validPlays[i].timestamp < startOfToday && heardEnough(validPlays[i])) {
           lastPreviousPlayTs = validPlays[i].timestamp;
           break;
         }
       }
       if (lastPreviousPlayTs > 0) {
-        const diffMs = startOfToday - lastPreviousPlayTs;
-        gapDays = Math.floor(diffMs / 86400000);
+        const lastDate = new Date(lastPreviousPlayTs);
+        gapDays = Math.max(0, (Date.UTC(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate())
+          - Date.UTC(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate())) / 86400000 - 1);
       }
     }
 
     // 3. Multi-timescale partitioning
     const startOfTodayMs = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
-    const startOfYesterdayMs = startOfTodayMs - 86400000;
+    const startOfYesterdayMs = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 1).getTime();
     const past72hMs = now - 72 * 3600000;
     const past7dMs = now - 7 * 86400000;
     const past30dMs = now - 30 * 86400000;
@@ -313,7 +328,7 @@
         currentSessionPlays.push(p);
       } else {
         const prev = currentSessionPlays[currentSessionPlays.length - 1];
-        if (p.timestamp - prev.timestamp <= sessionGap) {
+        if (p.timestamp - (prev.timestamp + prev.heard) <= sessionGap) {
           currentSessionPlays.push(p);
         } else {
           sessions.push(currentSessionPlays);
@@ -328,17 +343,18 @@
     // Latest session
     const lastSessionPlays = sessions.length > 0 ? sessions[sessions.length - 1] : [];
     const lastSessionEndTs = lastSessionPlays.length > 0
-      ? lastSessionPlays[lastSessionPlays.length - 1].timestamp
+      ? Math.min(now, lastSessionPlays[lastSessionPlays.length - 1].timestamp + lastSessionPlays[lastSessionPlays.length - 1].heard)
       : 0;
-    const isCurrentSessionActive = (now - lastSessionEndTs) <= sessionGap;
+    const isCurrentSessionActive = lastSessionPlays.length > 0 && (now - lastSessionEndTs) <= sessionGap;
     const sessionDurationMs = lastSessionPlays.length > 1
       ? (lastSessionPlays[lastSessionPlays.length - 1].timestamp - lastSessionPlays[0].timestamp)
       : (lastSessionPlays.length === 1 ? lastSessionPlays[0].heard : 0);
 
     // 5. Sequence dynamics: rapid skips and consecutive repeats
     let rapidSkipsCount = 0;
-    for (let i = validPlays.length - 1; i >= 0 && i >= validPlays.length - 8; i--) {
-      const p = validPlays[i];
+    const sequencePlays = isCurrentSessionActive ? lastSessionPlays : [];
+    for (let i = sequencePlays.length - 1; i >= 0 && i >= sequencePlays.length - 8; i--) {
+      const p = sequencePlays[i];
       if (p.skipped && p.heard < QUICK_SKIP_MAX_MS) {
         rapidSkipsCount++;
       } else {
@@ -349,11 +365,11 @@
     // Back-to-back repetition of the same track in recent plays
     let consecutiveSameTrackCount = 0;
     let consecutiveSameTrackId = null;
-    if (validPlays.length > 0) {
-      const lastTrackId = validPlays[validPlays.length - 1].trackId;
+    if (sequencePlays.length > 0) {
+      const lastTrackId = sequencePlays[sequencePlays.length - 1].trackId;
       consecutiveSameTrackId = lastTrackId;
-      for (let i = validPlays.length - 1; i >= 0; i--) {
-        if (validPlays[i].trackId === lastTrackId) {
+      for (let i = sequencePlays.length - 1; i >= 0; i--) {
+        if (sequencePlays[i].trackId === lastTrackId && heardEnough(sequencePlays[i])) {
           consecutiveSameTrackCount++;
         } else {
           break;
@@ -375,7 +391,7 @@
     else timeBucket = 'night';
 
     // 6. Multi-timescale summary objects
-    const sessionSummary = aggregatePlayList(lastSessionPlays, trackMap);
+    const sessionSummary = aggregatePlayList(isCurrentSessionActive ? lastSessionPlays : [], trackMap);
     const todaySummary = aggregatePlayList(todayPlays, trackMap);
     const yesterdaySummary = aggregatePlayList(yesterdayPlays, trackMap);
     const last72hSummary = aggregatePlayList(last72hPlays, trackMap);
@@ -393,7 +409,7 @@
       activeDaysCount: activeDatesSet.size,
       streakDays,
       gapDays,
-      totalPlaysCount: validPlays.length,
+      totalPlaysCount: allTimeSummary.count,
       libraryTracksCount: trackMap.size,
       session: {
         ...sessionSummary,

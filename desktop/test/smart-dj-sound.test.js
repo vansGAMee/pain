@@ -13,6 +13,41 @@ const profile=(track,peak=700,frames=48)=>({version:4,signature:Audio.signature(
 const completed=(track,i=1)=>({track:track.id,started:NOW-i*86400000,finished:1,heard:180000,duration:180000});
 const skip=track=>({track:track.id,started:NOW-5000,heard:5000,duration:180000,skipped:1});
 
+test('an accepted sound resolves conflicting preview penalties without erasing durable feedback',()=>{
+ const a=song('a'),b=song('b'),found=song('found'),next=song('next');
+ const tracks=[a,b,found,next],profiles=Object.fromEntries(tracks.map(t=>[t.id,profile(t)]));
+ const browsing=[{...skip(a),started:NOW-300000},{...skip(b),started:NOW-290000}];
+ const success={...completed(found),started:NOW-270000};
+ const before=new Taste(tracks,browsing,NOW,profiles);
+ const after=new Taste(tracks,[...browsing,success],NOW,profiles);
+ assert.ok(before.score(found,next).skipPenalty>0);
+ assert.equal(after.score(found,next).skipPenalty,0);
+ assert.deepEqual(after.evidence.get(a.id),before.evidence.get(a.id),'do not rewrite historical feedback');
+ assert.equal(after.evidence.get(b.id).count,before.evidence.get(b.id).count);
+ assert.equal(new Taste(tracks,[success,...browsing,success],NOW,profiles).score(found,next).skipPenalty,0,'sync duplicates and ordering are harmless');
+ for(const ending of [{...success,finished:0,skipped:0,heard:5000},{...success,finished:0,skipped:1,heard:5000}]){
+  assert.ok(new Taste(tracks,[...browsing,ending],NOW,profiles).score(found,next).skipPenalty>0,'an interruption or more browsing is not success');
+ }
+ const excluded=new Taste(tracks,[...browsing,success],NOW,profiles,{excludedTracks:[found.id]});
+ assert.ok(excluded.score(null,next).skipPenalty>0,'excluded feedback cannot end a search');
+ const missing={...profiles};delete missing.found;
+ assert.ok(new Taste(tracks,[...browsing,success],NOW,missing).score(null,next).skipPenalty>0,'missing audio must not invent a successful sound match');
+ const different={...profiles,found:profile(found,1500)};
+ assert.equal(new Taste(tracks,[...browsing,success],NOW,different).score(found,next).skipPenalty,before.score(found,next).skipPenalty,'a different chosen sound must not pardon the skipped direction');
+});
+
+test('finding a song retains confident refusals and later skips still apply',()=>{
+ const rejected=song('rejected'),found=song('found'),next=song('next');
+ const tracks=[rejected,found,next],profiles=Object.fromEntries(tracks.map(t=>[t.id,profile(t)]));
+ const refusal={...skip(rejected),started:NOW-300000};
+ const success={...completed(found),started:NOW-270000};
+ const before=new Taste(tracks,[refusal],NOW,profiles),after=new Taste(tracks,[refusal,success],NOW,profiles);
+ assert.equal(after.score(found,next).skipPenalty,before.score(found,next).skipPenalty);
+ const familiar={...rejected,favorite:1};
+ assert.equal(new Taste([familiar,found,next],[refusal,success],NOW,profiles).score(found,next).skipPenalty,0);
+ assert.ok(new Taste([familiar,found,next],[refusal,success,skip(rejected)],NOW,profiles).score(found,next).skipPenalty>0);
+});
+
 test('timbre beats BPM, favourite and repeated historical preference for an acoustically distant song',()=>{
  const current=song('current'),near=song('near',95),far={...song('far'),favorite:1};
  const profiles={current:profile(current),near:profile(near,720),far:profile(far,1500)};

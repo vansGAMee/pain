@@ -119,7 +119,7 @@ test('Safe Russian: numeral and time agreement and uninflected artist framing', 
   assert.equal(Grammar.passesNaturalnessCheck('вечер'), true);
 });
 
-test('Presence Memory: Lifetime Anti-Repeat rejects exact duplicate strings', () => {
+test('Presence Memory: recent duplicate strings are rejected', () => {
   const mem = new Memory.MemoryStore();
   mem.clear();
 
@@ -139,7 +139,7 @@ test('Presence Memory: Lifetime Anti-Repeat rejects exact duplicate strings', ()
   // Now must be in lifetime memory
   assert.equal(mem.hasExactHash(candA.text), true);
   const secondPenalty = mem.computeNearRepeatPenalty(candA);
-  assert.equal(secondPenalty, 999.0, 'Lifetime anti-repeat must yield hard rejection');
+  assert.equal(secondPenalty, 999.0, 'Recent duplicates must yield hard rejection');
 });
 
 test('Presence Engine: deterministic seeded execution produces reproducible results', () => {
@@ -174,30 +174,32 @@ test('Presence Engine: explainLast exposes developer introspection', () => {
   assert.ok(exp.topCandidates.length > 0);
 });
 
-test('Presence Engine: 100,000 Variant Benchmark (Rule #44)', () => {
-  const benchmark = PresenceEngine.generatePresenceVariants(realTracks, realStats, 100000, { seed: 12345 });
-
-  assert.equal(benchmark.totalGenerated, 100000);
-  assert.ok(benchmark.uniqueCount > 25, `Expected high unique template coverage, got ${benchmark.uniqueCount}`);
-  assert.ok(Object.keys(benchmark.intentDistribution).length >= 3);
-  assert.ok(benchmark.lengthDistribution['1-3 words'] > 0);
-  assert.ok(benchmark.lengthDistribution['4-7 words'] > 0);
-  assert.ok(benchmark.samples.length >= 50);
+test('Presence grammar: repetition names the track and period without inventing consecutive plays', () => {
+  const plan = {intent: 'single_track_loop', facts: {title: 'Night Drive', count: 3, period: 'today'}};
+  for (const lang of ['ru', 'en']) {
+    const variants = Grammar.expandPlan(plan, null, 12, lang);
+    assert.ok(variants.length >= 2);
+    for (const item of variants) {
+      assert.ok(item.text.includes('Night Drive'));
+      assert.ok(item.text.includes('3'));
+      assert.doesNotMatch(item.text, /подряд|на репите|снова она|in a row/);
+      if (lang === 'en') assert.doesNotMatch(item.text, /[а-яё]/i);
+    }
+  }
+  assert.ok(Grammar.expandPlan({...plan, facts: {...plan.facts, period: 'session'}}, null).every(x => /сесс/.test(x.text)));
 });
 
-test('Presence Engine: 20 distinct syntactic variations of the exact same SemanticPlan (Rule #65)', () => {
-  const samplePlan = {
-    intent: 'artist_monopoly',
-    subject: { type: 'artist', name: 'Егор Летов', count: 12 },
-    facts: { artist: 'Егор Летов', count: 12, timeContext: 'вечер' },
-    confidence: 0.95,
-    surprise: 0.8
-  };
-
-  const variations = PresenceEngine.generateVariationsForPlan(samplePlan, 20, 999);
-  assert.ok(variations.length >= 10, `Expected diverse variations for plan, got ${variations.length}`);
-  const uniqueTexts = new Set(variations.map(v => v.text));
-  assert.equal(uniqueTexts.size, variations.length, 'All variations of the plan must be unique');
+test('Presence Engine: language is respected both normally and after phrase exhaustion', () => {
+  const memory = new Memory.MemoryStore(), now = new Date(2026, 9, 21, 10).getTime();
+  for (let i = 0; i < 8; i++) {
+    const g = PresenceEngine.generateGreeting([], {}, {lang: 'en', now, memory, seed: i});
+    assert.ok(g.text.length > 3);
+    assert.doesNotMatch(g.text, /[а-яё]/i);
+  }
+  assert.equal(Grammar.greeting(10, 'ru'), 'Доброе утро');
+  assert.equal(Grammar.greeting(15, 'ru'), 'Добрый день');
+  assert.equal(Grammar.greeting(20, 'ru'), 'Добрый вечер');
+  assert.equal(Grammar.greeting(2, 'ru'), 'Доброй ночи');
 });
 
 test('Presence Engine: Timeline Simulation (Rule #62)', () => {

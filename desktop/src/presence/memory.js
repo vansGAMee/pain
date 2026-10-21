@@ -1,6 +1,6 @@
 /**
  * Pain Audio Companion — Presence Engine: Presence Memory Module
- * Manages lifetime anti-repeat hash storage, near-repeat detection,
+ * Manages bounded recent-message storage, near-repeat detection,
  * structural fingerprint tracking, detector fatigue, and lexical cooldowns.
  * Strictly respects Rules #14, #15, #16, #20, #21, #30, #31, #58, #59.
  */
@@ -60,7 +60,8 @@
    */
   class MemoryStore {
     constructor() {
-      this.isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+      this.isBrowser = false;
+      try { this.isBrowser = typeof window !== 'undefined' && !!window.localStorage; } catch (_) {}
       this.state = this._load();
     }
 
@@ -71,9 +72,9 @@
           if (raw) {
             const parsed = JSON.parse(raw);
             return {
-              shownHashes: Array.isArray(parsed.shownHashes) ? parsed.shownHashes : [],
-              recentMessages: Array.isArray(parsed.recentMessages) ? parsed.recentMessages : [],
-              detectorCooldowns: parsed.detectorCooldowns || {},
+              shownHashes: Array.isArray(parsed.shownHashes) ? parsed.shownHashes.filter(Number.isFinite).slice(-MAX_SHOWN_HASHES) : [],
+              recentMessages: Array.isArray(parsed.recentMessages) ? parsed.recentMessages.filter(m => m && typeof m.text === 'string' && Number.isFinite(m.timestamp)).slice(0, MAX_RECENT_MESSAGES) : [],
+              detectorCooldowns: parsed.detectorCooldowns && typeof parsed.detectorCooldowns === 'object' && !Array.isArray(parsed.detectorCooldowns) ? parsed.detectorCooldowns : {},
               lastTopic: parsed.lastTopic || null
             };
           }
@@ -88,7 +89,6 @@
     }
 
     _save() {
-      if (!this.isBrowser) return;
       try {
         // Enforce bounds before saving (Rule #59: bounded memory)
         if (this.state.shownHashes.length > MAX_SHOWN_HASHES) {
@@ -97,16 +97,16 @@
         if (this.state.recentMessages.length > MAX_RECENT_MESSAGES) {
           this.state.recentMessages = this.state.recentMessages.slice(0, MAX_RECENT_MESSAGES);
         }
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+        if (this.isBrowser) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       } catch (_) {}
     }
 
     /**
-     * Check if normalized text has ever been shown (Lifetime Anti-Repeat, Rule #16)
+     * Check whether normalized text appeared within the last day
      */
     hasExactHash(text) {
       const h = fnv1a(normalizeText(text));
-      return this.state.shownHashes.includes(h);
+      return this.state.recentMessages.some(m => m.hash === h && Date.now() >= m.timestamp && Date.now() - m.timestamp < 86400000);
     }
 
     /**
@@ -119,15 +119,13 @@
     computeNearRepeatPenalty(candidate) {
       let penalty = 0.0;
       const norm = normalizeText(candidate.text);
-      const hash = fnv1a(norm);
-
-      // 1. Lifetime exact match check
-      if (this.state.shownHashes.includes(hash)) {
+      // 1. Recent exact match check
+      if (this.hasExactHash(candidate.text)) {
         return 999.0; // Hard rejection
       }
 
       // 2. Lexical Jaccard similarity with recent messages
-      const recent = this.state.recentMessages.slice(0, 10);
+      const recent = this.state.recentMessages.filter(m => Date.now() >= m.timestamp && Date.now() - m.timestamp < 86400000).slice(0, 10);
       for (let i = 0; i < recent.length; i++) {
         const sim = jaccardSimilarity(norm, normalizeText(recent[i].text));
         if (sim >= 0.7) {
@@ -138,8 +136,8 @@
       }
 
       // 3. Structural repetition: same intent & form back-to-back
-      if (this.state.recentMessages.length > 0) {
-        const last = this.state.recentMessages[0];
+      if (recent.length > 0) {
+        const last = recent[0];
         if (last.intent === candidate.plan.intent) {
           penalty += 0.4;
           if (last.form === candidate.form) {
@@ -155,8 +153,8 @@
         if (candWords.includes(marker)) {
           // Count marker occurrences in last 5 messages
           let markerOccurrences = 0;
-          for (let r = 0; r < Math.min(5, this.state.recentMessages.length); r++) {
-            if (this.state.recentMessages[r].text.toLowerCase().includes(marker)) {
+          for (let r = 0; r < Math.min(5, recent.length); r++) {
+            if (recent[r].text.toLowerCase().includes(marker)) {
               markerOccurrences++;
             }
           }

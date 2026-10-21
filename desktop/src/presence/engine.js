@@ -97,7 +97,7 @@
     const allCandidates = [];
     for (let i = 0; i < plans.length; i++) {
       const plan = plans[i];
-      const expanded = Grammar.expandPlan(plan, rng, 12);
+      const expanded = Grammar.expandPlan(plan, rng, 12, lang);
       for (let j = 0; j < expanded.length; j++) {
         allCandidates.push(expanded[j]);
       }
@@ -110,9 +110,9 @@
     for (let i = 0; i < allCandidates.length; i++) {
       const cand = allCandidates[i];
 
-      // Check lifetime anti-repeat (Rule #16)
+      // Avoid recently shown messages
       if (memory.hasExactHash(cand.text)) {
-        rejectedCandidates.push({ text: cand.text, reason: 'lifetime_exact_repeat' });
+        rejectedCandidates.push({ text: cand.text, reason: 'recent_exact_repeat' });
         continue;
       }
 
@@ -165,18 +165,7 @@
     if (!selected) {
       // Graceful fallback to calm procedural neutral presence
       const hour = signals.hour;
-      const neutralVariations = [
-        'вечер',
-        'тихий вечер',
-        'спокойный вечер',
-        'музыка фоном',
-        'снова здесь',
-        'тишина и звук'
-      ];
-      let fallbackText = rng.pick(neutralVariations);
-      if (hour >= 0 && hour < 5) fallbackText = rng.pick(['тихая ночь', 'ночной звук', 'глубокая ночь', 'ночь']);
-      else if (hour >= 5 && hour < 12) fallbackText = rng.pick(['утро', 'тихое утро', 'ранний старт', 'с утра с музыкой']);
-      else if (hour >= 12 && hour < 18) fallbackText = rng.pick(['день', 'тихий день', 'музыка фоном', 'ровный день']);
+      const fallbackText = Grammar.greeting(hour, lang);
 
       selected = {
         text: fallbackText,
@@ -191,7 +180,7 @@
       };
     }
 
-    // 7. Commit chosen candidate to PresenceMemory (Rule #16)
+    // 7. Remember the chosen message for a bounded cooldown
     memory.recordShown(selected);
 
     const icon = pickIconForIntent(selected.plan.intent, signals.hour);

@@ -1928,6 +1928,12 @@ body,
   transform: scale(1.06);
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .bottom-play-btn:active {
+    transform: scale(0.96);
+  }
+}
+
 .bottom-play-btn svg {
   width: 20px;
   height: 20px;
@@ -2541,6 +2547,7 @@ input:checked + .switch-slider:before {
    ======================================================== */
 .view-greeting {
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   font-size: 13px;
@@ -2551,11 +2558,14 @@ input:checked + .switch-slider:before {
 }
 
 .greeting-icon {
+  flex: 0 0 auto;
   font-size: 14px;
   line-height: 1;
 }
 
 .greeting-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 600;
   color: var(--ink);
 }
