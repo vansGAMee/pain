@@ -3834,3 +3834,28 @@ input:checked + .switch-slider:before {
 @media (max-width: 520px) {
   .update-setting-row { align-items: flex-start; flex-direction: column; }
 }
+
+/* Listening details use the existing paper/ink palette and typography. */
+.listening-details { margin-bottom: 28px; }
+.listening-details h2 { font-size: 20px; font-weight: 600; letter-spacing: -.025em; margin: 0 0 6px; }
+.listening-calendar { margin-bottom: 16px; }
+.listening-calendar-days { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 6px; margin: 20px 0 16px; }
+.listening-calendar-day { position: relative; display: grid; place-items: center; min-height: 36px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-muted); background: var(--card-bg); }
+.listening-calendar-day[data-level="1"] { background: color-mix(in srgb, var(--ink) 12%, var(--card-bg)); color: var(--ink); }
+.listening-calendar-day[data-level="2"] { background: color-mix(in srgb, var(--ink) 25%, var(--card-bg)); color: var(--ink); }
+.listening-calendar-day[data-level="3"] { background: color-mix(in srgb, var(--ink) 70%, var(--card-bg)); color: var(--bg); }
+.listening-calendar-day[data-level="4"] { background: var(--ink); color: var(--bg); }
+.listening-calendar-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.listening-day-tooltip { display: none; pointer-events: none; position: absolute; z-index: 4; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 220px; padding: 8px 10px; border-radius: 6px; font-size: 12px; background: var(--ink); color: var(--bg); box-shadow: var(--relief-shadow); }
+.listening-calendar-day:hover .listening-day-tooltip, .listening-calendar-day:focus .listening-day-tooltip { display: block; }
+.listening-calendar-day:nth-child(14n+1) .listening-day-tooltip { left: 0; transform: none; }
+.listening-calendar-day:nth-child(14n) .listening-day-tooltip { left: auto; right: 0; transform: none; }
+.listening-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
+.listening-detail-card { min-width: 0; }
+.listening-detail-value { font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -.03em; margin: 12px 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.listening-detail-card .stat-sub { line-height: 1.5; margin: 0; }
+@media (max-width: 900px) {
+  .listening-calendar-days { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .listening-calendar-day:nth-child(7n+1) .listening-day-tooltip { left: 0; transform: none; }
+  .listening-calendar-day:nth-child(7n) .listening-day-tooltip { left: auto; right: 0; transform: none; }
+}

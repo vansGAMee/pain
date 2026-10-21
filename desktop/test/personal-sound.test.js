@@ -82,6 +82,27 @@ test('many near-identical favourites cannot evict a second liked sound from the 
  assert.equal(m.soundPreferences.length,2,'keep representatives of both sounds');
 });
 
+test('many distinct variations of a frequent style cannot erase a less frequent confirmed taste',()=>{
+ const frequent=Array.from({length:12},(_,i)=>track('frequent'+i)),rare=track('rare'),unheard=track('unheard');
+ const tracks=[...frequent,rare,unheard],profiles=Object.fromEntries(tracks.map((t,i)=>{
+  const p=profile(t,700);p.timbre=Array(12).fill(i<12?.2:.8);
+  if(i<12)p.timbre[i]=.32;
+  return [t.id,p];
+ }));
+ const history=[...frequent.flatMap(t=>[1,2,3,4,5,6].map(day=>play(t,day,true))),...[1,2,3].map(day=>play(rare,day,true))];
+ const model=new Taste(tracks,history,NOW,profiles);
+ assert.ok(model.score(null,unheard).soundPreference>.4,'a repeated but less frequent taste must remain audible');
+ assert.ok(model.soundPreferences.some(p=>p.id===rare.id));
+ assert.equal(model.soundPreferences.length,12,'memory and scoring cost stay bounded');
+ // Diversity is not an assumption that every style is liked: reverse the evidence.
+ const rejected=history.map(p=>p.track===rare.id?{...p,finished:0,skipped:1,heard:5000}:p);
+ assert.ok(new Taste(tracks,rejected,NOW,profiles).score(null,unheard).soundPreference<-.4);
+ const excluded=new Taste(tracks,history,NOW,profiles,{excludedTracks:[rare.id]});
+ assert.equal(excluded.score(null,unheard).soundPreference,0);
+ const reversed=new Taste([...tracks].reverse(),[...history].reverse(),NOW,profiles);
+ assert.equal(reversed.score(null,unheard).soundPreference,model.score(null,unheard).soundPreference);
+});
+
 test('skipping several minutes into a long recording is not a quick-skip mood pivot',()=>{
  const tracks=[track('a'),track('b')].map(t=>({...t,duration:3600000}));
  const plays=tracks.map((t,i)=>({...play(t,.001+i*.001,false),duration:t.duration,heard:120000}));
@@ -89,3 +110,48 @@ test('skipping several minutes into a long recording is not a quick-skip mood pi
  assert.deepEqual(m.recentSkips,[]);assert.equal(m.trackRejections.size,0);
 });
 
+test('cold start transfers a first accepted sound gently, and follows the actual listener',()=>{
+ const f=fixture(),first=play(f.liked,.001,true);
+ const model=new Taste(f.tracks,[first],NOW,f.profiles);
+ const near=model.score(null,f.newGood),far=model.score(null,f.newBad);
+ assert.ok(near.soundPreference>.15&&near.soundPreference<=.25);
+ assert.equal(far.soundPreference,0);assert.ok(near.score>far.score);
+ assert.equal(model.soundPreferences.length,1);assert.equal(model.soundPreferences[0].provisional,true);
+ // A listener who starts with the opposite sound gets the opposite encouragement.
+ const other=new Taste(f.tracks,[play(f.rejected,.001,true)],NOW,f.profiles);
+ assert.ok(other.score(null,f.newBad).soundPreference>.15);assert.equal(other.score(null,f.newGood).soundPreference,0);
+ const duplicated=new Taste(f.tracks,Array(20).fill(first),NOW,f.profiles);
+ assert.deepEqual(duplicated.score(null,f.newGood),near,'sync copies must not accelerate or amplify taste');
+});
+
+test('cold-start encouragement fades away; repeated feedback keeps its established weight',()=>{
+ const f=fixture(),first=play(f.liked,.001,true),neutral=track('neutral'),tracks=[...f.tracks,neutral];
+ const notes=Array.from({length:11},(_,i)=>({...play(neutral,1+i*.01,false),heard:60000}));
+ const early=new Taste(tracks,[first],NOW,f.profiles),later=new Taste(tracks,[first,...notes.slice(0,6)],NOW,f.profiles);
+ assert.ok(later.score(null,f.newGood).soundPreference>0);
+ assert.ok(later.score(null,f.newGood).soundPreference<early.score(null,f.newGood).soundPreference/2);
+ const established=new Taste(tracks,[first,...notes],NOW,f.profiles);
+ assert.equal(established.samples,12);assert.equal(established.score(null,f.newGood).soundPreference,0);
+ assert.equal(established.soundPreferences.some(p=>p.provisional),false);
+ const confirmed=new Taste(f.tracks,f.plays,NOW,f.profiles);
+ assert.equal(confirmed.soundPreferences.some(p=>p.provisional),false);
+ assert.ok(confirmed.score(null,f.newGood).soundPreference>.8);
+});
+
+test('cold start cannot invent sound from tags, pauses, skips, stale data or exclusions',()=>{
+ const f=fixture();
+ for(const rows of [[play(f.liked,.001,false)],[{...play(f.liked,.001,false),skipped:0}],[play(f.liked,8,true)]]){
+  assert.equal(new Taste(f.tracks,rows,NOW,f.profiles).score(null,f.newGood).soundPreference,0);
+ }
+ const first=play(f.liked,.001,true);
+ for(const profiles of [{},{...f.profiles,liked:{...f.profiles.liked,signature:'replaced'}},{...f.profiles,liked:{...f.profiles.liked,timbre:null,timbreVariance:null}}]){
+  assert.equal(new Taste(f.tracks,[first],NOW,profiles).score(null,f.newGood).soundPreference,0);
+ }
+ const excluded=new Taste(f.tracks,[first],NOW,f.profiles,{excludedTracks:[f.liked.id]});
+ assert.equal(excluded.score(null,f.newGood).soundPreference,0);
+ const browsing=[first,{...play(f.liked,0,false),started:NOW-5000}];
+ assert.ok(new Taste(f.tracks,browsing,NOW,f.profiles).score(null,f.newGood).soundPreference>0,'a familiar-song preview must not erase the first good evidence');
+ const q=new Queue({shuffleMode:'smart',loopMode:'off',now:()=>NOW,audioProfiles:f.profiles,stats:{plays:[first]}});
+ q.setContext('library',f.tracks);q.smartSeed=42;const seen=new Set([q.getCurrentTrack().id]);
+ for(let i=1;i<f.tracks.length;i++){const preview=q.peekNext(),next=q.next();assert.equal(preview.id,next.id);assert.ok(!seen.has(next.id));seen.add(next.id);}
+});

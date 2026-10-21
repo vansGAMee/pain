@@ -25,3 +25,10 @@ test('balancing handles empty, one-sided and ambiguous histories without inventi
   const model=new Taste(tracks,plays,NOW);for(const track of tracks)assert.ok(Number.isFinite(model.score(null,track).score));
  }
 });
+
+test('default time context belongs to the model snapshot, making the same decision reproducible',()=>{
+ const tracks=[{id:'a',artist:'A'},{id:'b',artist:'A'}];
+ const plays=[1,2,3,4].map(day=>play('a',true,NOW-day*DAY));
+ const model=new Taste(tracks,plays,NOW),hour=new Date(NOW).getHours();
+ assert.deepEqual(model.score(null,tracks[1]),model.score(null,tracks[1],{},{hour}));
+});

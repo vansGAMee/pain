@@ -445,6 +445,22 @@
             </div>
           </div>
 
+          <section class="listening-details" aria-labelledby="listeningDetailsTitle">
+            <div class="chart-header">
+              <h2 id="listeningDetailsTitle" data-en="Your listening habits" data-ru="Детали привычек">Детали привычек</h2>
+              <p class="chart-sub" data-en="Patterns in your saved listening history." data-ru="Что складывается из вашей истории прослушиваний.">Что складывается из вашей истории прослушиваний.</p>
+            </div>
+            <div class="listening-calendar chart-card">
+              <div class="chart-header">
+                <div class="stat-label" data-en="28 days of music" data-ru="28 дней с музыкой">28 дней с музыкой</div>
+                <div class="chart-sub" id="listeningCalendarSummary"></div>
+              </div>
+              <div class="listening-calendar-days" id="listeningCalendarDays" role="list" aria-labelledby="listeningCalendarSummary"></div>
+              <p class="chart-sub" data-en="Darker cells mean more listening time. Hover or focus a day for details." data-ru="Чем насыщеннее ячейка, тем больше музыки. Наведите курсор или выберите день клавишей Tab.">Чем насыщеннее ячейка, тем больше музыки. Наведите курсор или выберите день клавишей Tab.</p>
+            </div>
+            <div class="listening-detail-grid" id="listeningDetailCards"></div>
+          </section>
+
           <!-- Leaderboards: Top Obsessions & Top Artists -->
           <div class="insights-leaderboards-grid">
             <div class="leaderboard-card">
@@ -1104,6 +1120,7 @@
   <script src="queue-engine.js"></script>
   <script src="joint-ai.js"></script>
   <script src="favorite-moments.js"></script>
+  <script src="listening-insights.js"></script>
   <script src="app.js"></script>
   <script src="dj-panel.js"></script>
   <script src="presentation.js"></script>

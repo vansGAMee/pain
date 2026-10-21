@@ -564,7 +564,8 @@ public final class Repository extends SQLiteOpenHelper {
           if (tr.has("favorite")) v.put("favorite", tr.optInt("favorite", tr.optBoolean("favorite", false) ? 1 : 0));
           if (tr.has("available")) v.put("available", tr.optInt("available", 1));
           if (d.update("tracks", v, "id=?", new String[] {tr.optString("id")}) == 0) {
-            if (!v.containsKey("uri")) v.put("uri", "");
+            // A like for a removed file must not create a blank phantom track.
+            if (!tr.has("uri")) continue;
             if (!v.containsKey("title")) v.put("title", "");
             if (!v.containsKey("artist")) v.put("artist", "");
             d.insert("tracks", null, v);
@@ -572,21 +573,33 @@ public final class Repository extends SQLiteOpenHelper {
           count++;
         }
       }
+      Map<String, String> playAliases = new HashMap<>();
+      Set<String> importedPcPlays = new HashSet<>();
       if (root.has("plays")) {
         org.json.JSONArray playsArr = root.getJSONArray("plays");
         for (int i = 0; i < playsArr.length(); i++) {
           org.json.JSONObject pl = playsArr.getJSONObject(i);
+          String id = pl.optString("id"), track = pl.optString("track");
+          long started = pl.optLong("started", 0);
+          if (id.isEmpty() || track.isEmpty() || started <= 0) continue;
+          String originalId = id;
+          try (Cursor c = d.rawQuery("SELECT id FROM plays WHERE id=? OR (track=? AND started=?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1",
+              new String[] {id, track, "" + started, id})) {
+            if (c.moveToFirst()) id = c.getString(0);
+          }
+          playAliases.put(originalId, id);
           ContentValues v = new ContentValues();
-          v.put("id", pl.optString("id"));
-          v.put("track", pl.optString("track"));
-          v.put("session", pl.optString("session"));
-          v.put("started", pl.optLong("started", 0));
-          v.put("heard", pl.optLong("heard", 0));
-          v.put("media_heard", pl.optLong("media_heard", 0));
-          v.put("duration", pl.optLong("duration", 0));
-          v.put("finished", pl.optInt("finished", 0));
-          v.put("skipped", pl.optInt("skipped", 0));
-          d.insertWithOnConflict("plays", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+          v.put("id", id); v.put("track", track); v.put("session", pl.optString("session")); v.put("started", started);
+          long inserted = d.insertWithOnConflict("plays", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+          long heard = Math.max(0, pl.optLong("heard", 0));
+          long duration = Math.max(0, pl.optLong("duration", 0));
+          long media = Math.max(0, pl.optLong("media_heard", inserted >= 0 ? heard : 0));
+          if (duration > 0) media = Math.min(media, duration);
+          int finished = pl.optInt("finished", pl.optBoolean("finished", false) ? 1 : 0) == 1 ? 1 : 0;
+          int skipped = pl.optInt("skipped", pl.optBoolean("skipped", false) ? 1 : 0) == 1 ? 1 : 0;
+          d.execSQL("UPDATE plays SET heard=MAX(heard,?),media_heard=MAX(media_heard,?),duration=MAX(COALESCE(duration,0),?),finished=MAX(finished,?),skipped=MAX(skipped,?) WHERE id=?",
+              new Object[] {heard, media, duration, finished, skipped, id});
+          if (id.startsWith("pc_") || pl.optString("session").startsWith("pc_")) importedPcPlays.add(id);
           count++;
         }
       }
@@ -594,12 +607,27 @@ public final class Repository extends SQLiteOpenHelper {
         org.json.JSONArray slicesArr = root.getJSONArray("slices");
         for (int i = 0; i < slicesArr.length(); i++) {
           org.json.JSONObject sl = slicesArr.getJSONObject(i);
-          ContentValues v = new ContentValues();
-          v.put("play", sl.optString("play"));
-          v.put("at", sl.optLong("at", 0));
-          v.put("ms", sl.optLong("ms", 0));
-          d.insertWithOnConflict("slices", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+          String play = sl.optString("play"); play = playAliases.getOrDefault(play, play);
+          long at = sl.optLong("at", 0), ms = sl.optLong("ms", 0);
+          if (play.isEmpty() || at < 0 || ms <= 0) continue;
+          // Source row IDs are local to a device. Deduplicate the actual interval.
+          d.execSQL("INSERT INTO slices(play,at,ms) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM plays WHERE id=?) AND NOT EXISTS(SELECT 1 FROM slices WHERE play=? AND at=? AND ms=?)",
+              new Object[] {play, at, ms, play, play, at, ms});
           count++;
+        }
+      }
+      // Desktop sends absolute play totals. Fill only missing audible time; never
+      // append it again on retry. Native phone slices keep their exact boundaries.
+      for (String id : importedPcPlays) {
+        try (Cursor c = d.rawQuery("SELECT p.started,p.heard,COALESCE(SUM(s.ms),0) FROM plays p LEFT JOIN slices s ON s.play=p.id WHERE p.id=? GROUP BY p.id", new String[] {id})) {
+          if (c.moveToFirst()) {
+            long recorded = c.getLong(2), missing = c.getLong(1) - recorded;
+            if (missing > 0) {
+              ContentValues v = new ContentValues(); v.put("play", id);
+              v.put("at", c.getLong(0) + recorded); v.put("ms", missing);
+              d.insertOrThrow("slices", null, v);
+            }
+          }
         }
       }
       if (root.has("lyrics")) {

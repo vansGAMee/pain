@@ -166,7 +166,7 @@ test('timer jitter publishes evidence as soon as readiness thresholds are actual
  assert.ok(Audio.get(f.store,f.track),'publish at frame 21, not frame 40');
  const saves=f.saved.length;
  for(let i=0;i<8;i++)f.advance(.5,.499);
- assert.equal(f.saved.length,saves,'readiness must not cause a save on every frame');
+ assert.equal(f.saved.length,saves+1,'only the completed detail excerpt adds one save, not every frame');
 });
 
 test('resumed cached evidence just below readiness is published after the first new position',t=>{
@@ -174,9 +174,44 @@ test('resumed cached evidence just below readiness is published after the first 
  const f=fixture(t,{store});
  f.frames(20);
  assert.equal(Audio.get(store,song),null,'replayed positions do not inflate evidence');
- assert.equal(f.saved.length,0);
+ assert.ok(f.saved.every(row=>row.profile.frames===20),'detail backfill must not inflate old evidence');
+ const saves=f.saved.length;
  f.advance();
  assert.ok(Audio.get(store,song));
  assert.equal(store.a.frames,21);
- assert.equal(f.saved.length,1);
+ assert.equal(f.saved.length,saves+1);
+});
+
+test('instrument details backfill on playback without replacing the cached excerpt, then stop',t=>{
+ const song=track('a'),original=cached(song,{frames:48,seconds:24,positions:Array.from({length:48},(_,i)=>i+1)}),store={a:structuredClone(original)};
+ original.vector=original.vector.map(v=>Math.round(v*100000)/100000);store.a.vector=[...original.vector];
+ const f=fixture(t,{store});f.frames(24);f.pause();
+ assert.deepEqual(store.a.vector,original.vector);assert.deepEqual(store.a.timbre,original.timbre);assert.equal(store.a.frames,48);
+ assert.ok(Audio.detail(store.a));assert.equal(store.a.detail.positions.length,24);
+ const snapshot=structuredClone(store.a);f.play();f.frames(100);f.pause();assert.deepEqual(store.a,snapshot);
+});
+
+test('silence cannot consume the instrument excerpt or prevent later recovery',t=>{
+ const song=track('a'),store={a:cached(song,{frames:48,seconds:24,positions:Array.from({length:48},(_,i)=>i+1)})};
+ const f=fixture(t,{store}),analyser=f.context.createAnalyser(),read=analyser.getFloatTimeDomainData;
+ analyser.getFloatTimeDomainData=target=>target.fill(0);
+ f.frames(30);f.pause();assert.equal(Audio.detail(store.a),null);
+ analyser.getFloatTimeDomainData=read;f.play();f.frames(24);f.pause();
+ assert.ok(Audio.detail(store.a));assert.equal(store.a.detail.frames,24);assert.equal(store.a.frames,48);
+});
+
+test('instrument publication includes the current base frame and does not publish it twice',t=>{
+ const f=fixture(t);f.frames(20);
+ assert.equal(f.saved.filter(row=>row.profile.detail.frames===20).length,1);
+ assert.equal(f.saved.at(-1).profile.frames,20);assert.ok(Audio.detail(f.saved.at(-1).profile));
+ f.frames(4);assert.equal(f.saved.at(-1).profile.frames,24);assert.equal(f.saved.at(-1).profile.detail.frames,24);
+ const saved=structuredClone(f.saved.at(-1).profile);f.frames(1);
+ assert.deepEqual(f.store.a,saved,'unpublished samples must not mutate the stored snapshot');
+});
+
+test('old detail caches exhausted by invalid samples can be repaired without discarding the base profile',t=>{
+ const song=track('a'),base=cached(song,{frames:48,seconds:24,positions:Array.from({length:48},(_,i)=>i+1)});
+ const store={a:{...base,detail:{version:1,frames:0,seconds:0,mean:Array(7).fill(0),positions:Array.from({length:24},(_,i)=>i+1)}}};
+ const f=fixture(t,{store});f.frames(24);f.pause();
+ assert.ok(Audio.detail(store.a));assert.equal(store.a.frames,48);assert.deepEqual(store.a.timbre,base.timbre);
 });

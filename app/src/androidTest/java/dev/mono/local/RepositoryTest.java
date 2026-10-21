@@ -123,4 +123,31 @@ public class RepositoryTest {
     repo.deletePlaylist(list);
     assertTrue(repo.playlists().isEmpty());
   }
+  @Test
+  public void syncRetriesPreserveCoverageAndDoNotDoubleListening() throws Exception {
+    String track = repo.tracks().get(0).id;
+    org.json.JSONObject play = new org.json.JSONObject().put("id", "pc_retry").put("track", track)
+        .put("session", "pc_companion").put("started", 1000).put("heard", 60000)
+        .put("media_heard", 20000).put("duration", 180000).put("skipped", true).put("finished", false);
+    String json = new org.json.JSONObject().put("plays", new org.json.JSONArray().put(play)).toString();
+    repo.importJson(json); repo.importJson(json);
+    org.json.JSONObject stats = new org.json.JSONObject(repo.exportStatsJson());
+    assertEquals(1, stats.getJSONArray("plays").length());
+    assertEquals(20000, stats.getJSONArray("plays").getJSONObject(0).getLong("media_heard"));
+    assertEquals(1, stats.getJSONArray("plays").getJSONObject(0).getInt("skipped"));
+    assertEquals(60000, repo.stats(0).heard);
+    repo.importJson(stats.toString()); repo.importJson(stats.toString());
+    assertEquals(60000, repo.stats(0).heard);
+    // An updated total adds only the difference, even if relayed with an old ID.
+    play.put("id", "pc_legacy_alias").put("heard", 90000).put("media_heard", 40000);
+    json = new org.json.JSONObject().put("plays", new org.json.JSONArray().put(play)).toString();
+    repo.importJson(json); repo.importJson(json);
+    assertEquals(90000, repo.stats(0).heard);
+    stats = new org.json.JSONObject(repo.exportStatsJson());
+    assertEquals(1, stats.getJSONArray("plays").length());
+    assertEquals(40000, stats.getJSONArray("plays").getJSONObject(0).getLong("media_heard"));
+    repo.importJson(stats.toString());
+    assertEquals(90000, repo.stats(0).heard);
+  }
+
 }

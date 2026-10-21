@@ -84,3 +84,13 @@ test('impossible measurements stay neutral and malformed optional variance stays
   assert.ok(AutoEq.recommend({}, {...p,variance}).bands.every(Number.isFinite));
  }
 });
+
+test('combined filter response saves unnecessary headroom with a safe fallback',()=>{
+ const p=profile([.35,.04,.92,.04,.2,.2]);
+ const baseline=AutoEq.recommend({},p),measured=AutoEq.recommend({},p,()=>.75);
+ assert.ok(baseline.preamp<measured.preamp);assert.equal(measured.preamp,-.75);
+ assert.deepEqual(measured.bands,baseline.bands,'headroom must not change the tonal curve');
+ for(const callback of [()=>NaN,()=>-1,()=>Infinity,()=>{throw new Error('unsupported');}]){
+  assert.equal(AutoEq.recommend({},p,callback).preamp,baseline.preamp);
+ }
+});

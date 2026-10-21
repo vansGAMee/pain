@@ -13,7 +13,7 @@ import java.util.concurrent.*;
 
 /**
  * Lightweight local network synchronization server.
- * Enables zero-config auto-discovery (UDP 8766) and fast HTTP data transfer (Port 8765)
+ * Enables zero-config auto-discovery (UDP 8866) and fast HTTP data transfer (Port 8865)
  * between the mobile app and the Windows desktop companion.
  */
 public final class SyncServer {
@@ -161,27 +161,12 @@ public final class SyncServer {
   }
 
   private void handleClient(Socket socket) {
-    try (InputStream in = socket.getInputStream();
+    try (InputStream in = new BufferedInputStream(socket.getInputStream());
          OutputStream out = socket.getOutputStream()) {
 
-      BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
-      String requestLine = reader.readLine();
-      if (requestLine == null || requestLine.isBlank()) return;
-
-      String[] parts = requestLine.split(" ");
-      if (parts.length < 2) return;
-      String method = parts[0];
-      String path = parts[1];
-
-      int contentLength = 0;
-      String line;
-      while ((line = reader.readLine()) != null && !line.isEmpty()) {
-        if (line.toLowerCase().startsWith("content-length:")) {
-          try {
-            contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
-          } catch (Exception ignored) {}
-        }
-      }
+      socket.setSoTimeout(10000);
+      SyncHttp.Request request = SyncHttp.read(in);
+      String method = request.method, path = request.path;
 
       if ("OPTIONS".equalsIgnoreCase(method)) {
         sendResponse(out, 200, "OK", "text/plain", "OK");
@@ -198,7 +183,7 @@ public final class SyncServer {
         sendResponse(out, 200, "OK", "application/json", json);
         notifyListener("library_exported", app.tracks.size() + " tracks");
       } else if ("/api/library".equals(path) && "POST".equalsIgnoreCase(method)) {
-        String body = readBody(reader, contentLength);
+        String body = request.body;
         int merged = app.repo.importJson(body);
         app.refresh();
         sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"merged\":" + merged + "}");
@@ -208,13 +193,13 @@ public final class SyncServer {
         sendResponse(out, 200, "OK", "application/json", json);
         notifyListener("stats_exported", "Stats sent");
       } else if ("/api/stats".equals(path) && "POST".equalsIgnoreCase(method)) {
-        String body = readBody(reader, contentLength);
+        String body = request.body;
         int merged = app.repo.importJson(body);
         app.refresh();
         sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"merged\":" + merged + "}");
         notifyListener("stats_merged", merged + " stats items");
       } else if ("/api/favorite".equals(path) && "POST".equalsIgnoreCase(method)) {
-        String body = readBody(reader, contentLength);
+        String body = request.body;
         org.json.JSONObject obj = new org.json.JSONObject(body);
         String trackId = obj.getString("trackId");
         boolean favorite = obj.optBoolean("favorite", obj.optInt("favorite", 0) == 1);
@@ -223,17 +208,21 @@ public final class SyncServer {
         sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"favorite\":" + (favorite ? 1 : 0) + "}");
         notifyListener("favorite_synced", trackId + ": " + favorite);
       } else if ("/api/record-play".equals(path) && "POST".equalsIgnoreCase(method)) {
-        String body = readBody(reader, contentLength);
+        String body = request.body;
         org.json.JSONObject obj = new org.json.JSONObject(body);
         String trackId = obj.getString("track");
         long heard = obj.optLong("heard", 0);
         long started = obj.optLong("started", System.currentTimeMillis());
         long duration = obj.optLong("duration", heard);
-        boolean finished = obj.optBoolean("finished", true);
-        String playId = "pc_" + System.currentTimeMillis() + "_" + (int)(Math.random() * 10000);
-        app.repo.record(playId, trackId, "pc_companion", started, duration, System.currentTimeMillis(), heard, heard, finished, false);
+        // Stable identity and absolute counters make a retry safe after a lost response.
+        String playId = obj.optString("id", "pc_" + java.util.UUID.nameUUIDFromBytes(
+            (trackId + "\0" + started).getBytes(StandardCharsets.UTF_8)));
+        obj.put("id", playId);
+        if (!obj.has("session")) obj.put("session", "pc_companion");
+        obj.put("started", started); obj.put("duration", duration);
+        app.repo.importJson(new org.json.JSONObject().put("plays", new org.json.JSONArray().put(obj)).toString());
         app.refresh();
-        sendResponse(out, 200, "OK", "application/json", "{\"status\":\"ok\",\"playId\":\"" + playId + "\"}");
+        sendResponse(out, 200, "OK", "application/json", new org.json.JSONObject().put("status", "ok").put("playId", playId).toString());
         notifyListener("play_recorded", trackId + " (" + (heard / 1000) + "s)");
       } else if (path.startsWith("/api/track/") && ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method))) {
         String trackId = URLDecoder.decode(path.substring("/api/track/".length()), StandardCharsets.UTF_8.name());
@@ -247,18 +236,6 @@ public final class SyncServer {
         socket.close();
       } catch (Exception ignored) {}
     }
-  }
-
-  private String readBody(BufferedReader reader, int length) throws IOException {
-    if (length <= 0) return "{}";
-    char[] buf = new char[length];
-    int read = 0;
-    while (read < length) {
-      int r = reader.read(buf, read, length - read);
-      if (r == -1) break;
-      read += r;
-    }
-    return new String(buf, 0, read);
   }
 
   private void streamTrack(String trackId, OutputStream out) {

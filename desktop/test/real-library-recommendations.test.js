@@ -105,28 +105,30 @@ realTest('Разрядка исполнителей (Artist Spacing): штраф
     'Разрядка артиста должна влиять на скоринг');
 });
 
-realTest('Смена настроения (Pivot) при двух пропусках подряд', () => {
+realTest('Быстрый перебор в реальной библиотеке не принуждает к открытиям', () => {
   // Keep the synthetic skips after a live fixture that may have grown since this test was written.
   const latestFixturePlay = plays.reduce((latest, play) => Math.max(latest, Number(play?.started || play?.timestamp || 0) || 0), 0);
   const now = Math.max(Date.now(), latestFixturePlay + 600001);
   const testTrack1 = tracks[0];
   const testTrack2 = tracks[1];
   
-  // Simulate 2 quick explicit skips within 10 minutes
+  // Two quick previews should be treated as searching, not a rejection of a style.
   const recentSkipsPlays = [
     ...plays,
-    { track: testTrack1.id, started: now - 300000, duration: 180000, heard: 5000, skipped: 1, finished: 0 },
-    { track: testTrack2.id, started: now - 120000, duration: 180000, heard: 7000, skipped: 1, finished: 0 }
+    { track: testTrack1.id, started: now - 30000, duration: 180000, heard: 5000, skipped: 1, finished: 0 },
+    { track: testTrack2.id, started: now - 15000, duration: 180000, heard: 7000, skipped: 1, finished: 0 }
   ];
 
   const modelWithSkips = new Taste(tracks, recentSkipsPlays, now);
-  assert.ok(modelWithSkips.recentSkips.length >= 1, 'Модель должна зарегистрировать недавние пропуски');
+  assert.equal(modelWithSkips.searching, true);
+  assert.equal(modelWithSkips.recentSkips.length, 0);
 
-  // Choose should trigger pivot mode
-  const chosen = modelWithSkips.choose(testTrack2, tracks.slice(2, 50), {}, { seed: 42, step: 0 });
-  assert.ok(chosen, 'Выбор трека должен состояться');
-  assert.ok(chosen.reasons.some(r => r.includes('Смена направления') || r.includes('дослушиваниям') || r.includes('Расширяем') || r.includes('сессией')),
-    'При пропусках должно быть адаптивное обоснование');
+  for (const step of [0, 3, 7]) {
+    const chosen = modelWithSkips.choose(testTrack2, tracks.slice(2, 50), {}, { seed: 42, step });
+    assert.ok(chosen, 'Выбор трека должен состояться');
+    assert.ok(chosen.reasons.length > 0);
+    assert.ok(!chosen.reasons.includes('Открываем новое'), 'Перебор не включает принудительные открытия');
+  }
 });
 
 realTest('Новая навигация: forwardHistory сохраняет цепочку переходов (next -> prev -> next)', () => {

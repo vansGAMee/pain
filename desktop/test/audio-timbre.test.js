@@ -35,3 +35,29 @@ test('heard timbre preferences transfer to unplayed songs without relying on tag
  const missing=new Taste(tracks,plays,now,{});
  assert.equal(missing.score(null,tracks[2]).probability,missing.score(null,tracks[3]).probability);
 });
+
+test('instrument texture distinguishes harmonic structure and short envelopes without gain dependence',()=>{
+ const wave=Float32Array.from({length:2048},(_,i)=>.2*Math.sin(i*Math.PI/16));
+ const harmonic=Float32Array.from({length:1024},(_,i)=>i%8===0?-20:-70),noise=new Float32Array(1024).fill(-30);
+ const a=Timbre.detail(wave,harmonic,48000),b=Timbre.detail(wave,noise,48000);
+ assert.equal(a.length,7);assert.ok(a.slice(0,6).every((n,i)=>n>b[i]+.5));
+ assert.ok(distance(a,Timbre.detail(wave.map(x=>x*.1),harmonic.map(x=>x-20),48000))<1e-10);
+ const hit=Timbre.detail(wave.map((x,i)=>x*Math.exp(-i/180)),harmonic,48000);
+ assert.ok(hit[6]>a[6]+.5,'short decays differ from sustained tones');
+ for(const bins of [new Float32Array(1024).fill(NaN),new Float32Array(1024).fill(Infinity),[]])assert.equal(Timbre.detail(wave,bins,48000),null);
+ for(const rate of [8000,12000])assert.equal(Timbre.detail(wave,harmonic,rate),null,'truncated octave bands must not invent a comparable texture');
+});
+
+test('instrument texture refines sound similarity while old or malformed caches retain baseline behavior',()=>{
+ const track={id:'a'},base=profile(track,Array(12).fill(.5));
+ const detail=mean=>({version:1,frames:24,seconds:12,positions:Array.from({length:24},(_,i)=>i),mean});
+ const a={...base,detail:detail(Array(7).fill(.8))},b={...base,detail:detail(Array(7).fill(.1))};
+ assert.equal(Audio.similarity(a,a),1);assert.ok(Audio.similarity(a,b)<.6);
+ assert.equal(Audio.similarity(a,base),1,'missing evidence must not manufacture a difference');
+ for(const d of [{},detail([NaN]),{...detail(Array(7).fill(.1)),frames:2},{...detail(Array(7).fill(.1)),positions:Array(24).fill(1)}]){
+  assert.equal(Audio.detail({...base,detail:d}),null);assert.equal(Audio.similarity(a,{...base,detail:d}),1);
+ }
+ const m=new Taste([track],[],Date.now(),{a});
+ assert.equal(m.features(track,12,null).filter(([key])=>key.startsWith('instrument-texture:')).length,7);
+ assert.deepEqual(Audio.restore(JSON.stringify({a})).a.detail,a.detail);
+});

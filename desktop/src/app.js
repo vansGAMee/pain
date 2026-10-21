@@ -136,6 +136,7 @@
   let playingTrackSnapshot = null;
   let preampNode = null;
   let smartVolumeNode = null;
+  let autoEqHeadroom = null;
   let pendingSeekTime = null;
   let lastPlaybackSave = -Infinity;
   let filterNodes = [];
@@ -560,7 +561,7 @@
       });
 
       try {
-        smartVolumeNode = SmartVolume.create(audioCtx);
+        smartVolumeNode = SmartVolume.create(audioCtx, audio);
         lastNode.connect(smartVolumeNode.input);
         smartVolumeNode.output.connect(audioCtx.destination);
         applySmartVolume();
@@ -568,6 +569,7 @@
         lastNode.connect(audioCtx.destination);
       }
       applyEqualizerAudioGains();
+      try { autoEqHeadroom = AutoEqualizer.createHeadroom(audioCtx, EQ_FREQUENCIES); } catch (_) {}
       try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>playingTrackSnapshot,
         (track,profile)=>{
           queue?.setAudioProfile(track.id,profile);
@@ -587,7 +589,7 @@
     }
 
     if (state.eq.enabled) {
-      const glide = state.eq.auto ? 0.35 : 0.02;
+      const glide = state.eq.auto ? 0.65 : 0.02;
       const gainMult = Math.pow(10, (state.eq.preamp || 0) / 20);
       preampNode.gain.setTargetAtTime(gainMult, audioCtx.currentTime, glide);
       filterNodes.forEach((node, i) => {
@@ -606,6 +608,7 @@
     DOM.eqPowerSwitch.checked = state.eq.enabled;
     DOM.eqStateLabel.textContent = state.eq.enabled ? (state.lang === 'ru' ? 'ВКЛ' : 'ON') : (state.lang === 'ru' ? 'ВЫКЛ' : 'OFF');
 
+    DOM.eqSliderPreamp.step = state.eq.auto ? '0.25' : '0.5';
     DOM.eqSliderPreamp.value = state.eq.preamp;
     DOM.preampVal.textContent = `${state.eq.preamp > 0 ? '+' : ''}${state.eq.preamp}dB`;
 
@@ -613,7 +616,7 @@
       const slider = document.querySelector(`.eq-v-slider[data-band="${i}"]`);
       const valLabel = document.getElementById(`eqVal${i}`);
       const val = state.eq.bands[i] || 0;
-      if (slider) slider.value = val;
+      if (slider) { slider.step = state.eq.auto ? '0.25' : '0.5'; slider.value = val; }
       if (valLabel) valLabel.textContent = `${val > 0 ? '+' : ''}${val}dB`;
     }
 
@@ -642,7 +645,8 @@
     const labels = state.lang === 'ru'
       ? { deep: 'глубокий звук', vocal: 'выраженная середина', bright: 'яркий звук', balanced: 'сбалансированный звук' }
       : { deep: 'deep sound', vocal: 'mid-forward sound', bright: 'bright sound', balanced: 'balanced sound' };
-    return `${state.lang === 'ru' ? 'Включён' : 'On'} · ${labels[autoEqCharacter] || labels.balanced}`;
+    const tandem = state.smartVolume ? (state.lang === 'ru' ? ' · громкость согласована' : ' · level matched') : '';
+    return `${state.lang === 'ru' ? 'Включён' : 'On'} · ${labels[autoEqCharacter] || labels.balanced}${tandem}`;
   }
 
   function updateAutoEqualizerUI() {
@@ -656,7 +660,7 @@
 
   function applyAutoEqualizer(track, profile = null) {
     if (!state.eq.auto || !track) return;
-    const recommendation = AutoEqualizer.recommend(track, profile || AudioProfile.get(audioProfiles, track, true));
+    const recommendation = AutoEqualizer.recommend(track, profile || AudioProfile.get(audioProfiles, track, true), autoEqHeadroom);
     state.eq.enabled = true;
     state.eq.preset = 'auto';
     state.eq.preamp = recommendation.preamp;
@@ -1625,16 +1629,13 @@
 
   // --- INSIGHTS / STATS VIEW ---
   function renderInsights() {
-    const plays = state.stats.plays || [];
-    const slices = state.stats.slices || [];
+    const details = ListeningInsights.build(state.tracks, state.stats);
+    const plays = details.plays;
     const now = new Date();
     const isRu = state.lang === 'ru';
 
     // 1. Total Listening Time
-    let totalMs = slices.reduce((acc, s) => acc + (s.ms || 0), 0);
-    if (totalMs === 0 && plays.length > 0) {
-      totalMs = plays.reduce((acc, p) => acc + (p.heard || 0), 0);
-    }
+    const totalMs = details.totalMs;
     const totalMinutes = Math.floor(totalMs / 60000);
     const totalHours = Math.floor(totalMinutes / 60);
 
@@ -1646,14 +1647,7 @@
 
     // 2. Today's Listening Time
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    let todayMs = 0;
-    slices.forEach(s => { if (s.at >= todayStart) todayMs += (s.ms || 0); });
-    if (todayMs === 0) {
-      plays.forEach(p => {
-        const ts = p.started || p.timestamp || 0;
-        if (ts >= todayStart) todayMs += (p.heard || 0);
-      });
-    }
+    const todayMs = details.days.get(ListeningInsights.dayKey(todayStart)) || 0;
     const todayMinutes = Math.round(todayMs / 60000);
     if (DOM.statTodayTime) {
       DOM.statTodayTime.textContent = isRu ? `Сегодня: ${todayMinutes} мин` : `Today: ${todayMinutes} min`;
@@ -1665,18 +1659,7 @@
     if (DOM.statPlays) DOM.statPlays.textContent = isRu ? `${plays.length} прослушиваний` : `${plays.length} plays recorded`;
 
     // 4. 24-Hour Listening Distribution & Peak Hour
-    const hours = new Array(24).fill(0);
-    slices.forEach(s => {
-      const h = new Date(s.at).getHours();
-      hours[h] += (s.ms || 0);
-    });
-    if (slices.length === 0) {
-      plays.forEach(p => {
-        const ts = p.started || p.timestamp || Date.now();
-        const h = new Date(ts).getHours();
-        hours[h] += (p.heard || 60000);
-      });
-    }
+    const hours = details.hours;
 
     let peakHour = -1, maxHourMs = 0;
     hours.forEach((ms, h) => {
@@ -1703,7 +1686,7 @@
         const isPeak = h === peakHour && ms > 0;
         const col = document.createElement('div');
         col.className = 'hour-col';
-        col.title = `${String(h).padStart(2, '0')}:00 — ${Math.round(ms / 60000)} min`;
+        col.title = `${String(h).padStart(2, '0')}:00 — ${Math.round(ms / 60000)} ${isRu ? 'мин' : 'min'}`;
         col.innerHTML = `
           <div class="hour-pill ${isPeak ? 'peak' : ''}" style="height: ${pct}px;"></div>
           <div class="hour-label">${h % 4 === 0 ? String(h).padStart(2, '0') : ''}</div>
@@ -1713,18 +1696,7 @@
     }
 
     // 5. Streaks (Current & Longest Active Days)
-    const activeDays = new Set();
-    slices.forEach(s => {
-      const d = new Date(s.at);
-      activeDays.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-    });
-    plays.forEach(p => {
-      const ts = p.started || p.timestamp || 0;
-      if (ts > 0) {
-        const d = new Date(ts);
-        activeDays.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-      }
-    });
+    const activeDays = new Set(details.days.keys());
 
     const sortedDays = Array.from(activeDays).sort();
     let currentStreak = 0, longestStreak = 0, streakCount = 0;
@@ -1782,21 +1754,7 @@
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
       past7Days.push(d);
     }
-    const dayTotalsMs = past7Days.map(d => {
-      const dayStart = d.getTime();
-      const dayEnd = dayStart + 86400000;
-      let ms = 0;
-      slices.forEach(s => {
-        if (s.at >= dayStart && s.at < dayEnd) ms += (s.ms || 0);
-      });
-      if (ms === 0) {
-        plays.forEach(p => {
-          const ts = p.started || p.timestamp || 0;
-          if (ts >= dayStart && ts < dayEnd) ms += (p.heard || 0);
-        });
-      }
-      return ms;
-    });
+    const dayTotalsMs = past7Days.map(d => details.days.get(ListeningInsights.dayKey(d)) || 0);
 
     const maxDayMs = Math.max(...dayTotalsMs, 60000);
     const weekTotalMinutes = Math.round(dayTotalsMs.reduce((a, b) => a + b, 0) / 60000);
@@ -1813,7 +1771,7 @@
         const h = Math.max(6, Math.round((ms / maxDayMs) * 90));
         const col = document.createElement('div');
         col.className = 'bar-col';
-        col.title = `${d.toLocaleDateString()}: ${Math.round(ms / 60000)} min`;
+        col.title = `${d.toLocaleDateString()}: ${Math.round(ms / 60000)} ${isRu ? 'мин' : 'min'}`;
         col.innerHTML = `
           <div class="bar-pill" style="height: ${h}px;"></div>
           <div class="bar-label">${isRu ? dayNamesRu[d.getDay()] : dayNamesEn[d.getDay()]}</div>
@@ -1885,6 +1843,51 @@
         });
       }
     }
+    renderListeningDetails(details);
+  }
+
+  function renderListeningDetails(details) {
+    const ru = state.lang === 'ru', locale = ru ? 'ru-RU' : 'en-US';
+    const time = ms => {
+      if (ms > 0 && ms < 60000) return ru ? 'меньше минуты' : 'under a minute';
+      const minutes = Math.floor(ms / 60000), hours = Math.floor(minutes / 60);
+      return hours ? (ru ? `${hours} ч ${minutes % 60} мин` : `${hours} h ${minutes % 60} min`) : `${minutes} ${ru ? 'мин' : 'min'}`;
+    };
+    const date = key => new Date(key + 'T12:00:00').toLocaleDateString(locale, {day:'numeric', month:'long', year:'numeric'});
+    const title = id => state.tracks.find(t => String(t.id) === id)?.title || (ru ? 'Трек вне фонотеки' : 'Track outside your library');
+    const percent = (a,b) => b > 0 ? `${Math.round(100 * a / b)}%` : '—';
+    const cards = [
+      [ru ? 'Трек-ритуал' : 'A daily ritual', details.ritual ? title(details.ritual.track) : '—',
+        details.ritual ? (ru ? `${details.ritual.days} разных дней за последние 28 дней` : `${details.ritual.days} distinct days in the last 28 days`) : (ru ? 'Появится, когда вернётесь к треку в другой день.' : 'Appears when you return to a track on another day.')],
+      [ru ? 'Долгожданное возвращение' : 'A long-awaited return', details.comeback ? title(details.comeback.track) : '—',
+        details.comeback ? (ru ? `Возвращение после ${details.comeback.days} дн. перерыва. За последние 30 дней.` : `Back after ${details.comeback.days} days away. In the last 30 days.`) : (ru ? 'Здесь будет трек, к которому вы вернулись после недели перерыва.' : 'A track revisited after at least a week away will appear here.')],
+      [ru ? 'Открытия, которые остались' : 'Discoveries that stayed', percent(details.retained, details.discoveries),
+        ru ? `${details.retained} из ${details.discoveries} новых в истории треков слушались в разные дни. За 30 дней.` : `${details.retained} of ${details.discoveries} tracks new to your history heard on different days. Last 30 days.`],
+      [ru ? 'За пределами избранного' : 'Beyond your favourites', percent(details.outsideFavorites, details.knownTime),
+        ru ? 'Доля времени на треки фонотеки, у которых сейчас нет лайка.' : 'Listening time spent on library tracks that are not currently liked.'],
+      [ru ? 'Глубина фонотеки' : 'Library explored', percent(details.heardLibrary, details.librarySize),
+        ru ? `${details.heardLibrary} из ${details.librarySize} треков слушались хотя бы 30 секунд или половину короткого трека.` : `${details.heardLibrary} of ${details.librarySize} tracks heard for 30 seconds, or half of a short track.`],
+      [ru ? 'Самый музыкальный день' : 'Your biggest music day', details.record ? time(details.record.ms) : '—',
+        details.record ? date(details.record.day) : (ru ? 'Рекорд появится после первого прослушивания.' : 'Your record appears after your first listen.')]
+    ];
+    document.getElementById('listeningDetailCards').innerHTML = cards.map(([label,value,description]) => `
+      <article class="stat-card listening-detail-card">
+        <div class="stat-label">${escapeHtml(label)}</div>
+        <div class="listening-detail-value">${escapeHtml(value)}</div>
+        <p class="stat-sub">${escapeHtml(description)}</p>
+      </article>`).join('');
+    const active = details.calendar.filter(day => day.ms > 0).length;
+    const total = details.calendar.reduce((sum,day) => sum + day.ms, 0);
+    document.getElementById('listeningCalendarSummary').textContent = ru
+      ? `${active} дней с музыкой из 28. Всего ${time(total)}.` : `${active} music days out of 28. ${time(total)} total.`;
+    const max = Math.max(1, ...details.calendar.map(day => day.ms));
+    document.getElementById('listeningCalendarDays').innerHTML = details.calendar.map(day => {
+      const level = day.ms > 0 ? Math.max(1, Math.ceil(4 * day.ms / max)) : 0;
+      const description = `${date(day.day)}: ${time(day.ms)}`;
+      return `<div class="listening-calendar-day" role="listitem" tabindex="0" data-level="${level}" aria-label="${escapeHtml(description)}">
+        <span aria-hidden="true">${new Date(day.at).getDate()}</span><span class="listening-day-tooltip" aria-hidden="true">${escapeHtml(description)}</span>
+      </div>`;
+    }).join('');
   }
 
   // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
@@ -2444,6 +2447,7 @@
     if (!track) return;
 
     track.favorite = !track.favorite;
+    if (queue) setQueueTasteStats(state.stats);
     updateSidebarLikedCount();
 
     if (state.currentTrackId === track.id) {
@@ -2476,7 +2480,8 @@
       renderCurrentView();
     }
 
-    // 1. Relay to backend & mobile phone via server
+    localSyncRevision++;
+    // Persist and relay through the ordered server outbox
     try {
       await fetch('/api/sync-like', {
         method: 'POST',
@@ -2490,24 +2495,6 @@
     } catch (e) {
       console.warn('Favorite sync error:', e);
     }
-
-    // 2. Direct relay to phone if reachable
-    if (state.phoneUrl) {
-      try {
-        const cleanUrl = state.phoneUrl.replace(/\/+$/, '');
-        fetch(`${cleanUrl}/api/favorite`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trackId: track.id,
-            favorite: track.favorite ? 1 : 0
-          })
-        }).catch(() => {});
-      } catch (e) {}
-    }
-
-    // 3. Persist local library
-    saveLibraryToServer();
   }
 
   function readTasteSkips(){
@@ -2537,6 +2524,7 @@
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
     state.stats.plays.push(playRecord);
+    localSyncRevision++;
     invalidatePlayCountsCache();
     if (queue) setQueueTasteStats(state.stats);
 
@@ -3038,11 +3026,8 @@
               localStorage.setItem('pain_phone_url', state.phoneUrl);
             }
 
-            // Zero-touch instant auto-sync if empty
-            if (!state.hasAutoSynced || state.tracks.length === 0) {
-              state.hasAutoSynced = true;
-              syncAll();
-            }
+            // Refresh quietly without overlapping exchanges.
+            if (!syncBusy && Date.now() - lastSyncAttempt > 60000) syncAll({background:true});
           }
         }
       } catch (ignored) {}
@@ -3074,68 +3059,59 @@
     }
   }
 
-  async function syncAll() {
-    const ok = await checkConnection();
-    if (!ok && state.tracks.length > 0) return;
-
-    DOM.progressBanner.classList.add('active');
-    DOM.progressTaskTitle.textContent = state.lang === 'ru' ? 'Синхронизация фонотеки…' : 'Syncing library…';
-    DOM.syncProgressFill.style.width = '25%';
-    DOM.progressPercent.textContent = '25%';
-
+  let syncBusy = false, lastSyncAttempt = 0, localSyncRevision = 0;
+  async function syncAll({background = false} = {}) {
+    if (syncBusy) return;
+    syncBusy = true;
+    lastSyncAttempt = Date.now();
+    const revision = localSyncRevision;
+    if (!background) {
+      state.phoneUrl = (DOM.phoneIpInput.value.trim() || state.phoneUrl).replace(/\/+$/, '');
+      localStorage.setItem('pain_phone_url', state.phoneUrl);
+      DOM.progressBanner.classList.add('active');
+      DOM.progressTaskTitle.textContent = state.lang === 'ru' ? 'Синхронизация фонотеки…' : 'Syncing library…';
+      DOM.syncProgressFill.style.width = '25%';
+      DOM.progressPercent.textContent = '25%';
+    }
     try {
-      // 1. Fetch Library
-      const libRes = await fetch(`${state.phoneUrl}/api/library`);
-      if (!libRes.ok) throw new Error('Library fetch failed');
-      const libData = await libRes.json();
-      const oldIds=new Set(state.tracks.map(t=>String(t.id)));
-      const wholeLibrary=queue&&queue.getContext().allowNew&&queue.getTracks().length===oldIds.size&&queue.getTracks().every(t=>oldIds.has(String(t.id)));
-      state.tracks = Array.isArray(libData.tracks)?libData.tracks:[];
-      if(queue)queue.refreshLibrary(state.tracks,wholeLibrary);
-      state.currentTrackIndex=state.tracks.findIndex(t=>t.id===state.currentTrackId);
-      state.libraryDirty = true;
-      invalidatePlayCountsCache();
-
-      // Save locally
-      await fetch('/api/save-library', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(libData)
+      const result = await fetch('/api/sync-phone', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({phoneUrl: state.phoneUrl})
       });
-
-      DOM.syncProgressFill.style.width = '70%';
-      DOM.progressPercent.textContent = '70%';
-
-      // 2. Fetch Stats
-      const statsRes = await fetch(`${state.phoneUrl}/api/stats`);
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-
-        await fetch('/api/save-stats', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(statsData)
-        });
-        const merged=await fetch('/api/saved-stats');
-        if(merged.ok) {
-          state.stats=await merged.json();
-          invalidatePlayCountsCache();
-          if (queue) setQueueTasteStats(state.stats);
-        }
+      if (!result.ok) throw new Error('Phone sync failed');
+      const {library: libData, stats} = await result.json();
+      if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
+      // A local click/play during the exchange must not be rolled back by its response.
+      if (revision !== localSyncRevision) { lastSyncAttempt = 0; return; }
+      const libraryChanged = JSON.stringify(state.tracks) !== JSON.stringify(libData.tracks);
+      const statsChanged = JSON.stringify(state.stats.plays) !== JSON.stringify(stats.plays) || JSON.stringify(state.stats.slices) !== JSON.stringify(stats.slices);
+      if (libraryChanged) {
+        const oldIds = new Set(state.tracks.map(t => String(t.id)));
+        const wholeLibrary = queue && queue.getContext().allowNew && queue.getTracks().length === oldIds.size && queue.getTracks().every(t => oldIds.has(String(t.id)));
+        state.tracks = libData.tracks;
+        if (queue) queue.refreshLibrary(state.tracks, wholeLibrary);
+        state.currentTrackIndex = state.tracks.findIndex(t => t.id === state.currentTrackId);
+        state.libraryDirty = true;
       }
-
-      DOM.syncProgressFill.style.width = '100%';
-      DOM.progressPercent.textContent = '100%';
-
-      updateSidebarLikedCount();
-      renderCurrentView();
-
-      setTimeout(() => {
-        DOM.progressBanner.classList.remove('active');
-      }, 1200);
+      state.stats = stats;
+      state.hasAutoSynced = true;
+      if (libraryChanged || statsChanged) {
+        invalidatePlayCountsCache();
+        if (queue) setQueueTasteStats(state.stats);
+        updateSidebarLikedCount();
+        renderCurrentView();
+      }
+      if (!background) {
+        DOM.syncProgressFill.style.width = '100%';
+        DOM.progressPercent.textContent = '100%';
+        setTimeout(() => DOM.progressBanner.classList.remove('active'), 1200);
+      }
     } catch (err) {
       console.warn('Sync failed:', err);
-      DOM.progressBanner.classList.remove('active');
+      if (!background) DOM.progressBanner.classList.remove('active');
+    } finally {
+      syncBusy = false;
+      if (!background && revision !== localSyncRevision) DOM.progressBanner.classList.remove('active');
     }
   }
 
@@ -4090,6 +4066,7 @@
       try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
       document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
       applySmartVolume();
+      updateAutoEqualizerUI();
     });
     if (DOM.autoEqSwitch) DOM.autoEqSwitch.addEventListener('change', e => {
       initAudioNodes();

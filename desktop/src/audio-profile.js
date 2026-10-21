@@ -27,6 +27,8 @@
  function variation(p){return valid(p)&&validVariance(p.variance)?p.variance.map(v=>2*Math.sqrt(v)):null;}
  const validTimbre=v=>Array.isArray(v)&&v.length===12&&v.every(n=>Number.isFinite(n)&&n>=0&&n<=1);
  function texture(p){return valid(p)&&validTimbre(p.timbre)&&validVariance(p.timbreVariance,12)?{mean:p.timbre,variation:p.timbreVariance.map(v=>2*Math.sqrt(v))}:null;}
+ const detailValid=d=>d?.version===1&&Array.isArray(d.mean)&&d.mean.length===7&&d.mean.every(v=>Number.isFinite(v)&&v>=0&&v<=1)&&Number.isInteger(d.frames)&&d.frames>=0&&d.frames<=24&&Number.isFinite(d.seconds)&&d.seconds>=0&&d.seconds<=d.frames*1.5&&Array.isArray(d.positions)&&d.positions.length===d.frames&&d.positions.length<=24&&d.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(d.positions).size===d.positions.length;
+ const detail=p=>detailValid(p?.detail)&&p.detail.frames>=20&&p.detail.seconds>=10?p.detail.mean:null;
  function stored(p){return shape(p)&&validVariance(p.variance)&&p.version===VERSION&&(p.timbre===null&&p.timbreVariance===null||validTimbre(p.timbre)&&validVariance(p.timbreVariance,12))&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
  function similarity(a,b,partial=false){
   if(!ready(a,partial)||!ready(b,partial))return null;
@@ -34,6 +36,8 @@
   for(let i=0;i<6;i++)distance+=weights[i]*(a.vector[i]-b.vector[i])**2;
   const av=variation(a),bv=variation(b);
   if(av&&bv)for(let i=0;i<6;i++)distance+=.2*(av[i]-bv[i])**2;
+  const ad=detail(a),bd=detail(b);
+  const detailMatch=ad&&bd?Math.exp(-1.5*ad.reduce((sum,v,i)=>sum+(v-bd[i])**2,0)/7):1;
   if(validTimbre(a.timbre)&&validTimbre(b.timbre)&&validVariance(a.timbreVariance,12)&&validVariance(b.timbreVariance,12)){
    // Diagonal Gaussian Bhattacharyya distance: compare timbre distributions,
    // not just bass/treble averages. A variance floor regularizes short excerpts.
@@ -43,9 +47,9 @@
     const va=a.timbreVariance[i]+.0025,vb=b.timbreVariance[i]+.0025;
     timbreDistance+=(a.timbre[i]-b.timbre[i])**2/(4*(va+vb))+.25*Math.log(.25*(va/vb+vb/va+2));
    }
-   return Math.exp(-3*(.75*timbreDistance/12+.25*distance));
+   return detailMatch*Math.exp(-3*(.75*timbreDistance/12+.25*distance));
   }
-  return Math.exp(-3*distance);
+  return detailMatch*Math.exp(-3*distance);
  }
  const signature=t=>JSON.stringify([t?.duration||0,t?.bytes||0,t?.mime||'',t?.modified||t?.dateModified||t?.lastModified||0,t?.uri||t?.path||'']);
  function read(store,track){if(!track||track.id==null||!store||!Object.hasOwn(store,track.id))return null;const p=store[track.id];return stored(p)&&p.signature===signature(track)?p:null;}
@@ -80,11 +84,13 @@
    }else source.connect(first);
   }catch(error){try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();}catch(_){}throw error;}
   const buffers=nodes.map(node=>({wave:new Float32Array(node.fftSize),spectrum:new Float32Array(node.frequencyBinCount)}));
+  const detailSupported=context.sampleRate>=16000&&context.sampleRate<=192000;
   let timer=null,previous=null,trackKey=null,activeTrack=null,profile=null,positions=new Set(),dirty=false,disposed=false,src=null;
   function listen(target,event,fn){if(target.addEventListener){target.addEventListener(event,fn);listeners.push(()=>target.removeEventListener(event,fn));}}
   function flush(){
    if(!dirty||!profile||!activeTrack)return;dirty=false;
    const saved={...profile,version:VERSION,vector:profile.vector.map(n=>Math.round(n*100000)/100000),positions:[...positions],updatedAt:Date.now()};
+   if(profile.detail)saved.detail={...profile.detail,mean:[...profile.detail.mean],positions:[...profile.detail.positions]};
    if(!stored(saved))return;
    try{Object.defineProperty(store,activeTrack.id,{value:saved,enumerable:true,writable:true,configurable:true});prune(store);}catch(_){}
    try{onProfile(activeTrack,saved);}catch(_){} // Analysis must never interrupt playback.
@@ -99,12 +105,13 @@
     if(key!==trackKey){
      boundary();trackKey=key;activeTrack={...track};const cached=read(store,track);
      profile=cached?{...cached,vector:[...cached.vector]}:{version:VERSION,signature:signature(track),vector:[0,0,0,0,0,0],variance:[0,0,0,0,0,0],timbre:null,timbreVariance:null,frames:0,seconds:0};positions=new Set(cached?.positions||[]);
+     profile.detail=detailValid(cached?.detail)?{...cached.detail,mean:[...cached.detail.mean],positions:[...cached.detail.positions]}:{version:1,mean:Array(7).fill(0),frames:0,seconds:0,positions:[]};
     }
     if(src!==sourceUrl){boundary();src=sourceUrl;}
     const mediaTime=audio.currentTime;
     if(audio.paused||audio.seeking||audio.readyState<3||context.state!=='running'||audio.muted||audio.volume===0||audio.playbackRate!==1||!Number.isFinite(mediaTime)||mediaTime<0){boundary();return;}
     // Reuse complete cached excerpts; no analysis of the rest of the library/track.
-    if(profile.frames>=ANALYSIS_FRAMES){boundary();return;}
+    if(profile.frames>=ANALYSIS_FRAMES&&(!detailSupported||profile.detail.frames>=24)){boundary();return;}
     const current={wall:now(),media:mediaTime},last=previous;previous=current;
     if(!last||!Number.isFinite(current.wall))return;
     const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
@@ -112,17 +119,29 @@
     const duration=Number(track.duration)/1000;
     // Keep the v4 position grid compatible with profiles measured before this budget cap.
     const step=Number.isFinite(duration)&&duration>0?Math.max(.5,Math.ceil(duration/MAX_FRAMES*2)/2):.5;
-    const position=Math.floor(mediaTime/step);if(!Number.isSafeInteger(position)||positions.has(position))return;
-    let vector=null,timbre=null,timbrePower=0,totalPower=0;
+    const position=Math.floor(mediaTime/step),detailPosition=Math.floor(mediaTime*2);
+    if(!Number.isSafeInteger(position)||!Number.isSafeInteger(detailPosition))return;
+    const updateBase=profile.frames<ANALYSIS_FRAMES&&!positions.has(position);
+    const updateDetail=detailSupported&&profile.detail.frames<24&&!profile.detail.positions.includes(detailPosition);
+    if(!updateBase&&!updateDetail)return;
+    const wasDetailReady=!!detail(profile);let publishDetail=false;
+    let vector=null,timbre=null,timbrePower=0,totalPower=0,instruments=null,detailPower=0;
     nodes.forEach((node,i)=>{
      const buffer=buffers[i];node.getFloatTimeDomainData(buffer.wave);node.getFloatFrequencyData(buffer.spectrum);
      const v=frame(buffer.wave,buffer.spectrum,context.sampleRate);if(!v)return;
      let power=0;for(const x of buffer.wave)power+=x*x;
-     const tone=Timbre.frame(buffer.spectrum,context.sampleRate);
+     const tone=updateBase?Timbre.frame(buffer.spectrum,context.sampleRate):null;
+     const extra=updateDetail?Timbre.detail(buffer.wave,buffer.spectrum,context.sampleRate):null;
+     if(extra){instruments=instruments?instruments.map((x,j)=>(x*detailPower+extra[j]*power)/(detailPower+power)):extra;detailPower+=power;}
      if(tone){timbre=timbre?timbre.map((x,j)=>(x*timbrePower+tone[j]*power)/(timbrePower+power)):tone;timbrePower+=power;}
      if(!vector)vector=v;else vector=vector.map((x,j)=>(x*totalPower+v[j]*power)/(totalPower+power));totalPower+=power;
     });
-    if(!vector)return;
+    if(updateDetail&&instruments){
+     const d=profile.detail;d.positions.push(detailPosition);dirty=true;
+     d.frames++;d.seconds+=Math.min(wall,media);d.mean=d.mean.map((v,i)=>v+(instruments[i]-v)/d.frames);
+     publishDetail=(!wasDetailReady&&!!detail(profile))||d.frames===24;
+    }
+    if(!vector||!updateBase){if(publishDetail)flush();return;}
     const wasPartialReady=ready(profile,true),wasReady=ready(profile);
     const n=profile.frames+1,mean=profile.vector.map((v,i)=>v+(vector[i]-v)/n);
     // Online population variance preserves contrast between sections without retaining PCM.
@@ -139,7 +158,7 @@
     profile.vector=mean;profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
     // Timer jitter can leave frame 4/20 just below 2/10 seconds. Publish when
     // evidence actually becomes usable, without waiting for the next periodic save.
-    if(!wasPartialReady&&ready(profile,true)||!wasReady&&ready(profile)||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
+    if(publishDetail||!wasPartialReady&&ready(profile,true)||!wasReady&&ready(profile)||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
    }catch(_){boundary();}
   }
   function start(){if(!disposed&&timer===null)timer=schedule(sample,500);}
@@ -152,5 +171,5 @@
   if(!audio.paused)start();
   return ()=>{if(disposed)return;disposed=true;stop();for(const remove of listeners)remove();try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();for(const node of nodes)node.disconnect();}catch(_){};};
  }
- return {frame,valid,similarity,variation,texture,signature,get,observe,restore,persist};
+ return {frame,valid,similarity,variation,texture,detail,signature,get,observe,restore,persist};
 });

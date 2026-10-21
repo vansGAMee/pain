@@ -8,7 +8,7 @@ const { exec } = require('child_process');
 
 const lyricsRoute = require('./lyrics-store');
 const parseRange = require('./range');
-const mergeStats = require('./stats-store');
+const PhoneSync = require('./phone-sync');
 const { Updater } = require('./updater');
 const { version: APP_VERSION } = require('../package.json');
 const PORT = 3000;
@@ -31,20 +31,14 @@ if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
-function saveStatsSnapshot(body) {
-  const incoming=JSON.parse(body);
-  if(!incoming||typeof incoming!=='object'||!Array.isArray(incoming.plays))throw new Error('Invalid statistics');
-  const file=path.join(DATA_DIR,'stats.json');let local={plays:[],slices:[]};
-  try{local=JSON.parse(fs.readFileSync(file,'utf8'));}catch(_){}
-  const merged=mergeStats(local,incoming);
-  fs.writeFileSync(file+'.tmp',JSON.stringify(merged),'utf8');fs.renameSync(file+'.tmp',file);
-  return merged;
-}
+const phoneSync = new PhoneSync(DATA_DIR);
+const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 
 let discoveredDevices = [];
 let hasAutoSynced = false;
+let autoSyncBusy = false;
 let udpSocket = null;
 
 // ==========================================
@@ -106,37 +100,14 @@ function probeDevice(ip, port = MOBILE_HTTP_PORT, timeoutMs = 1200) {
 
 // Background auto-sync function
 async function triggerBackgroundAutoSync(device) {
-  const libFile = path.join(DATA_DIR, 'library.json');
-  const needsSync = !hasAutoSynced || !fs.existsSync(libFile) || (fs.existsSync(libFile) && fs.statSync(libFile).size < 100);
-  if (!needsSync) return;
-  hasAutoSynced = true;
-
-  console.log(`[Auto-Sync] Initiating instant zero-touch library sync from http://${device.ip}:${device.port}...`);
-  // Fetch library
-  http.get(`http://${device.ip}:${device.port}/api/library`, (res) => {
-    let body = '';
-    res.on('data', c => body += c);
-    res.on('end', () => {
-      try {
-        const parsed = JSON.parse(body);
-        if (parsed.tracks && parsed.tracks.length > 0) {
-          fs.writeFileSync(libFile, body, 'utf8');
-          console.log(`[Auto-Sync] Successfully saved ${parsed.tracks.length} tracks to library.json!`);
-        }
-      } catch (e) {}
-    });
-  }).on('error', () => {});
-
-  // Fetch stats
-  http.get(`http://${device.ip}:${device.port}/api/stats`, (res) => {
-    let body = '';
-    res.on('data', c => body += c);
-    res.on('end', () => {
-      try {
-        saveStatsSnapshot(body);
-      } catch (e) {}
-    });
-  }).on('error', () => {});
+  if (autoSyncBusy) return;
+  autoSyncBusy = true;
+  try {
+    const base = `http://${device.ip}:${device.port}`;
+    if (!hasAutoSynced) { await phoneSync.synchronize(base); hasAutoSynced = true; }
+    else await phoneSync.flush(base);
+  } catch (_) { /* Keep pending changes; the next discovery retries. */ }
+  finally { autoSyncBusy = false; }
 }
 
 // Fast ARP Table Scanner (executes in <10ms, discovers all active LAN devices)
@@ -540,11 +511,12 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/save-library' && req.method === 'POST') {
+    req.setEncoding('utf8');
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
       try {
-        fs.writeFileSync(path.join(DATA_DIR, 'library.json'), body, 'utf8');
+        phoneSync.saveLibrary(JSON.parse(body));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok' }));
       } catch (e) {
@@ -556,6 +528,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/save-stats' && req.method === 'POST') {
+    req.setEncoding('utf8');
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
@@ -935,174 +908,32 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     return;
   }
 
-  // 2-Way Sync: Favorite / Like Toggle
-  if (pathname === '/api/sync-like' && req.method === 'POST') {
+  // Persist first; an offline phone must never lose a local like or listening record.
+  if (['/api/sync-like', '/api/sync-stats', '/api/sync-phone'].includes(pathname) && req.method === 'POST') {
+    req.setEncoding('utf8');
     let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      const send = (code, value) => { res.writeHead(code, {'Content-Type':'application/json'}); res.end(JSON.stringify(value)); };
+      let persisted = false;
       try {
         const parsed = JSON.parse(body);
-        const { trackId, favorite } = parsed;
-        const favVal = (favorite === true || favorite === 1) ? 1 : 0;
-
-        const libFile = path.join(DATA_DIR, 'library.json');
-        if (fs.existsSync(libFile)) {
-          try {
-            const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
-            const track = (lib.tracks || []).find(t => t.id === trackId);
-            if (track) {
-              track.favorite = favVal;
-              fs.writeFileSync(libFile, JSON.stringify(lib, null, 2), 'utf8');
-            }
-          } catch (e) {}
+        if (pathname === '/api/sync-like') { phoneSync.favorite(parsed.trackId, parsed.favorite); persisted = true; }
+        if (pathname === '/api/sync-stats') {
+          const {phoneUrl, ...play} = parsed; phoneSync.play(parsed.play || play); persisted = true;
         }
-
-        // Relay to mobile phone
-        const rawPhone = parsed.phoneUrl || getMobilePhoneBaseUrl();
-        const phoneUrl = rawPhone.replace(/\/+$/, '');
-
-        // Save last known phone IP for persistent reconnection
-        try {
-          const u = new URL(phoneUrl);
-          fs.writeFileSync(LAST_IP_FILE, `${u.hostname}:${u.port || MOBILE_HTTP_PORT}`, 'utf8');
-        } catch (e) {}
-
-        const favPayload = JSON.stringify({ trackId, favorite: favVal });
-        const favUrl = new URL(`${phoneUrl}/api/favorite`);
-        const postReq = http.request(favUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(favPayload) }
-        }, (phoneRes) => {
-          if (phoneRes.statusCode === 200) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'ok', syncedToPhone: true }));
-          } else {
-            // Fallback for older Android server versions
-            const libPayload = JSON.stringify({ tracks: [{ id: trackId, favorite: favVal }] });
-            const libUrl = new URL(`${phoneUrl}/api/library`);
-            const fallbackReq = http.request(libUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(libPayload) }
-            }, (fallbackRes) => {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ status: 'ok', syncedToPhone: fallbackRes.statusCode === 200 }));
-            });
-            fallbackReq.on('error', () => {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
-            });
-            fallbackReq.write(libPayload);
-            fallbackReq.end();
-          }
-        });
-        postReq.on('error', () => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
-        });
-        postReq.write(favPayload);
-        postReq.end();
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-    return;
-  }
-
-  // 2-Way Sync: Play Statistics
-  if (pathname === '/api/sync-stats' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
-      try {
-        const parsed = JSON.parse(body);
-        const statsFile = path.join(DATA_DIR, 'stats.json');
-        let stats = { plays: [], slices: [] };
-        if (fs.existsSync(statsFile)) {
-          try { stats = JSON.parse(fs.readFileSync(statsFile, 'utf8')); } catch (e) {}
+        const base = new URL(parsed.phoneUrl || getMobilePhoneBaseUrl());
+        if (base.protocol !== 'http:') throw new Error('Invalid phone URL');
+        fs.writeFileSync(LAST_IP_FILE, `${base.hostname}:${base.port || MOBILE_HTTP_PORT}`, 'utf8');
+        if (pathname === '/api/sync-phone') {
+          const snapshots = await phoneSync.synchronize(base.href);
+          send(200, {status:'ok', ...snapshots});
+        } else {
+          let syncedToPhone = false;
+          try { await phoneSync.flush(base.href); syncedToPhone = true; } catch (_) {}
+          send(200, {status:'ok', syncedToPhone});
         }
-
-        const trackId = parsed.track || (parsed.play && parsed.play.track);
-        const heard = parsed.heard || (parsed.play && parsed.play.heard) || 0;
-        const duration = parsed.duration || (parsed.play && parsed.play.duration) || heard;
-        const started = parsed.started || (parsed.play && parsed.play.started) || (Date.now() - heard);
-        const finished = (parsed.finished === true || parsed.finished === 1 || (parsed.play && parsed.play.finished == 1)) ? 1 : 0;
-
-        const playId = parsed.id || (parsed.play && parsed.play.id) || ('pc_' + Date.now() + '_' + Math.floor(Math.random() * 10000));
-        const playObj = parsed.play || {
-          id: playId,
-          track: trackId,
-          session: 'pc_companion',
-          started: started,
-          heard: heard,
-          media_heard: heard,
-          duration: duration,
-          finished: finished,
-          skipped: 0
-        };
-
-        const alreadyExists = stats.plays.some(p => p.id === playObj.id || (p.track === playObj.track && Math.abs(p.started - playObj.started) < 2000));
-        if (!alreadyExists) {
-          stats.plays.push(playObj);
-          fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
-        }
-
-        // Relay to mobile phone
-        const rawPhone = parsed.phoneUrl || getMobilePhoneBaseUrl();
-        const phoneUrl = rawPhone.replace(/\/+$/, '');
-
-        // Save last known phone IP
-        try {
-          const u = new URL(phoneUrl);
-          fs.writeFileSync(LAST_IP_FILE, `${u.hostname}:${u.port || MOBILE_HTTP_PORT}`, 'utf8');
-        } catch (e) {}
-
-        const recPayload = JSON.stringify({
-          track: trackId,
-          heard: heard,
-          started: started,
-          duration: duration,
-          finished: finished === 1
-        });
-        const recUrl = new URL(`${phoneUrl}/api/record-play`);
-        const postReq = http.request(recUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(recPayload) }
-        }, (phoneRes) => {
-          if (phoneRes.statusCode === 200) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'ok', syncedToPhone: true }));
-          } else {
-            // Fallback to /api/stats
-            const legacyStatsPayload = JSON.stringify({ plays: [playObj] });
-            const legacyUrl = new URL(`${phoneUrl}/api/stats`);
-            const fallbackReq = http.request(legacyUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(legacyStatsPayload) }
-            }, (fallbackRes) => {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ status: 'ok', syncedToPhone: fallbackRes.statusCode === 200 }));
-            });
-            fallbackReq.on('error', () => {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
-            });
-            fallbackReq.setTimeout(5000,()=>fallbackReq.destroy(new Error("Phone timed out")));
-            fallbackReq.write(legacyStatsPayload);
-            fallbackReq.end();
-          }
-        });
-        postReq.on('error', () => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', syncedToPhone: false }));
-        });
-        postReq.setTimeout(5000,()=>postReq.destroy(new Error("Phone timed out")));
-        postReq.write(recPayload);
-        postReq.end();
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
-      }
+      } catch (e) { send(persisted ? 200 : 500, persisted ? {status:'ok', syncedToPhone:false} : {error:e.message}); }
     });
     return;
   }

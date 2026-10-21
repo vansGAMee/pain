@@ -75,15 +75,18 @@ test('unusable skipped profiles do not erase recent acoustic rejection, and only
  const profiles={rejected:profile(rejected,700,4),near:profile(near,720),far:profile(far,1500),
   stale:profile({...stale,bytes:99}),brief:profile(brief,700,2),
   ...Object.fromEntries(later.map(t=>[t.id,profile(t,1500)]))};
- const plays=[rejected,unknown,stale,brief].map((t,i)=>({...skip(t),started:NOW-60000+i*10000}));
+ // Independent skips, rather than a rapid browsing burst (which is deliberately weak).
+ const plays=[rejected,unknown,stale,brief].map((t,i)=>({...skip(t),started:NOW-240000+i*60000}));
  const model=new Taste(tracks,plays,NOW,profiles);
- assert.ok(model.score(null,near).skipPenalty>30,'unmeasured skips must not erase rejected sound');
+ const original=new Taste(tracks,[plays[0]],NOW,profiles);
+ assert.ok(original.score(null,near).skipPenalty>0);
+ assert.equal(model.score(null,near).skipPenalty,original.score(null,near).skipPenalty,'unmeasured skips must not erase rejected sound');
  assert.ok(model.score(null,far).skipPenalty<5,'different timbre stays available');
  let alternatives=0;
  for(let seed=1;seed<=100;seed++)if(model.choose(null,[near,far],{},{seed}).track.id==='far')alternatives++;
  assert.ok(alternatives>=90,`${alternatives}/100 choices respect rejected sound`);
- const newer=later.map((t,i)=>({...skip(t),started:NOW-15000+i*5000}));
- const bounded=new Taste(tracks,[...plays,...newer],NOW,profiles);
+ const newer=later.map((t,i)=>({...skip(t),started:NOW+60000+i*60000}));
+ const bounded=new Taste(tracks,[...plays,...newer],NOW+185000,profiles);
  assert.equal(bounded.soundSkips.length,3);
  assert.ok(bounded.score(null,near).skipPenalty<5,'older rejection yields to three newer usable skips');
  assert.ok(bounded.score(null,far).skipPenalty>60);
@@ -164,4 +167,24 @@ test('excluded songs never re-enter an exhausted smart queue, including forward 
  assert.equal(q.next().id,'b');assert.equal(q.peekNext(),null);assert.equal(q.next(),null);
  q.prev();q.excludeTrack('b');assert.equal(q.peekNext(),null);assert.equal(q.next(),null);
  q.unexcludeTrack('b');q.setLoopMode('all');assert.equal(q.peekNext().id,'b');assert.equal(q.next().id,'b');
+});
+
+test('accepted session recordings hold a nuanced vibe without averaging opposite styles',()=>{
+ const current=song('bridge'),a=song('a'),b=song('b'),near=song('near'),drift=song('drift');
+ const tracks=[current,a,b,near,drift],profiles={bridge:profile(current,780),a:profile(a,700),b:profile(b,720),near:profile(near,710),drift:profile(drift,860)};
+ const plays=[a,b].map((t,i)=>({...completed(t),started:NOW-(i+1)*240000}));
+ const model=new Taste(tracks,plays,NOW,profiles),baseline=new Taste(tracks,[],NOW,profiles);
+ const context={recentTrackIds:['a','b']};
+ const improvement=(m)=>m.score(current,near,{},context).soundSimilarity-m.score(current,drift,{},context).soundSimilarity;
+ assert.ok(improvement(model)>improvement(baseline)+.05,'sustained accepted sound resists drifting to the other side of a bridge track');
+ // A deliberate change to a distant style or a frozen reference must win over old mood.
+ const frozen={vibeProfile:profiles.drift};
+ assert.equal(model.score(current,near,{},frozen).soundSimilarity,baseline.score(current,near,{},frozen).soundSimilarity);
+ const changed={...profiles,bridge:profile(current,2000)};
+ assert.equal(new Taste(tracks,plays,NOW,changed).score(current,near).soundSimilarity,new Taste(tracks,[],NOW,changed).score(current,near).soundSimilarity);
+ for(const rows of [plays.map(p=>({...p,started:p.started-3600000})),plays.map(p=>({...p,finished:0,heard:5000,skipped:1}))]){
+  assert.equal(new Taste(tracks,rows,NOW,profiles).score(current,near).soundSimilarity,baseline.score(current,near).soundSimilarity);
+ }
+ const excluded=new Taste(tracks,plays,NOW,profiles,{excludedTracks:['a']});
+ assert.equal(excluded.score(current,near).soundSimilarity,baseline.score(current,near).soundSimilarity);
 });
