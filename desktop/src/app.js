@@ -376,6 +376,22 @@
 
   // --- TIME-OF-DAY GREETING ---
   function updateGreeting() {
+    const greetingEl = document.getElementById('viewGreeting');
+    if (!greetingEl) return;
+
+    if (typeof PresenceEngine !== 'undefined' && typeof PresenceEngine.generateGreeting === 'function') {
+      try {
+        const greeting = PresenceEngine.generateGreeting(state.tracks, state.stats, { lang: state.lang });
+        if (greeting && greeting.text) {
+          const icon = greeting.icon || '✨';
+          greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${escapeHtml(greeting.text)}</span>`;
+          return;
+        }
+      } catch (err) {
+        console.warn('PresenceEngine greeting error, falling back:', err);
+      }
+    }
+
     const hour = new Date().getHours();
     let textRu, textEn, icon;
     if (hour >= 5 && hour < 12) {
@@ -395,11 +411,8 @@
       textEn = 'Good night';
       icon = '✨';
     }
-    const greetingEl = document.getElementById('viewGreeting');
-    if (greetingEl) {
-      const isRu = state.lang === 'ru';
-      greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${isRu ? textRu : textEn}</span>`;
-    }
+    const isRu = state.lang === 'ru';
+    greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${isRu ? textRu : textEn}</span>`;
   }
 
   // --- CACHE MANAGEMENT ---
