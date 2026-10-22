@@ -14,7 +14,7 @@ public final class ListeningMath {
   }
 
   public static boolean qualifies(long audible, long duration) {
-    return audible >= Math.min(30000, Math.max(1000, duration / 2));
+    return audible >= (duration>0?Math.min(30000, Math.max(1000, duration / 2)):30000);
   }
 
   public static boolean completed(long mediaHeard, long duration) {

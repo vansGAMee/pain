@@ -301,7 +301,29 @@
     // Equal fits must not always shortlist the first six files in library order.
     for(const item of pool)item.tie=random();
     pool.sort((a,b)=>b.rank-a.rank||a.tie-b.tie);
-    pool=pool.filter(item=>item.rank>=pool[0].rank-18).slice(0,6);
+    pool=pool.filter(item=>item.rank>=pool[0].rank-18);
+    // A top-six list of acoustic copies hides other good fits before sampling.
+    // Keep the best fit, then spread the remaining slots within the existing
+    // quality band. Only verified, unrejected sound earns diversity credit.
+    // Bound work to 24 candidates and five rounds; discovery stays unchanged.
+    if(!discovering&&pool.length>6&&pool[0].soundSimilarity>=.75&&Sound.texture(Sound.get(this.audioProfiles,pool[0].track))){
+     const selected=[pool[0]],remaining=pool.slice(1,24).map(item=>{
+      const profile=Sound.get(this.audioProfiles,item.track);
+      return {item,profile:item.soundSimilarity>=.75&&item.skipPenalty===0&&item.rejectionPenalty===0&&Sound.texture(profile)?profile:null,nearest:0};
+     });
+     while(selected.length<6&&remaining.length){
+      const last=Sound.get(this.audioProfiles,selected.at(-1).track);let best=0,priority=-Infinity;
+      for(let i=0;i<remaining.length;i++){
+       const entry=remaining[i];
+       if(entry.profile&&Sound.texture(last))entry.nearest=Math.max(entry.nearest,Sound.similarity(last,entry.profile));
+       const redundancy=entry.profile?Math.max(0,(entry.nearest-.94)/.06):1;
+       const value=entry.item.rank-6*Math.min(1,redundancy);
+       if(value>priority){priority=value;best=i;}
+      }
+      selected.push(remaining.splice(best,1)[0].item);
+     }
+     pool=selected;
+    }else pool=pool.slice(0,6);
    }
    // Seeded Gumbel sampling keeps preview and playback consistent.
    let winner=null,best=-Infinity;

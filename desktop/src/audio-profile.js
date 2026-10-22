@@ -2,7 +2,7 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.AudioProfile=factory();})(globalThis,()=>{
  const Timbre=typeof module==='object'&&module.exports?require('./audio-timbre'):globalThis.AudioTimbre;
  const clamp=n=>Math.max(0,Math.min(1,n));
- const VERSION=4,MAX_FRAMES=360,ANALYSIS_FRAMES=48,MAX_CACHE=750;
+ const VERSION=4,MAX_FRAMES=360,ANALYSIS_FRAMES=48,BODY_FRAMES=24,MAX_CACHE=750;
  function frame(wave,spectrumDb,sampleRate){
   if(!wave?.length||wave.length>32768||!spectrumDb?.length||spectrumDb.length>16384||!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>384000)return null;
   let mean=0;for(const x of wave){if(!Number.isFinite(x))return null;mean+=x;}mean/=wave.length;
@@ -86,6 +86,7 @@
   const buffers=nodes.map(node=>({wave:new Float32Array(node.fftSize),spectrum:new Float32Array(node.frequencyBinCount)}));
   const detailSupported=context.sampleRate>=16000&&context.sampleRate<=192000;
   let timer=null,previous=null,trackKey=null,activeTrack=null,profile=null,positions=new Set(),dirty=false,disposed=false,src=null;
+  let step=.5,bodyPosition=Infinity,bodyFrames=0;
   function listen(target,event,fn){if(target.addEventListener){target.addEventListener(event,fn);listeners.push(()=>target.removeEventListener(event,fn));}}
   function flush(){
    if(!dirty||!profile||!activeTrack)return;dirty=false;
@@ -106,22 +107,26 @@
      boundary();trackKey=key;activeTrack={...track};const cached=read(store,track);
      profile=cached?{...cached,vector:[...cached.vector]}:{version:VERSION,signature:signature(track),vector:[0,0,0,0,0,0],variance:[0,0,0,0,0,0],timbre:null,timbreVariance:null,frames:0,seconds:0};positions=new Set(cached?.positions||[]);
      profile.detail=detailValid(cached?.detail)?{...cached.detail,mean:[...cached.detail.mean],positions:[...cached.detail.positions]}:{version:1,mean:Array(7).fill(0),frames:0,seconds:0,positions:[]};
+     const duration=Number(track.duration)/1000;
+     // Preserve the v4 grid and old evidence. Add at most 24 extra frames
+     // from the body during playback: an intro alone need not describe the song.
+     step=Number.isFinite(duration)&&duration>0?Math.max(.5,Math.ceil(duration/MAX_FRAMES*2)/2):.5;
+     bodyPosition=Number.isFinite(duration)&&duration>=60?Math.ceil(Math.max(30,duration*.35)/step):Infinity;
+     bodyFrames=[...positions].filter(p=>p>=bodyPosition).length;
     }
     if(src!==sourceUrl){boundary();src=sourceUrl;}
     const mediaTime=audio.currentTime;
     if(audio.paused||audio.seeking||audio.readyState<3||context.state!=='running'||audio.muted||audio.volume===0||audio.playbackRate!==1||!Number.isFinite(mediaTime)||mediaTime<0){boundary();return;}
-    // Reuse complete cached excerpts; no analysis of the rest of the library/track.
-    if(profile.frames>=ANALYSIS_FRAMES&&(!detailSupported||profile.detail.frames>=24)){boundary();return;}
+    const needsBody=bodyPosition!==Infinity&&bodyFrames<BODY_FRAMES&&profile.frames<ANALYSIS_FRAMES+BODY_FRAMES;
+    // Reuse both cached excerpts; never decode or scan tracks in the background.
+    if(profile.frames>=ANALYSIS_FRAMES&&!needsBody&&(!detailSupported||profile.detail.frames>=24)){boundary();return;}
     const current={wall:now(),media:mediaTime},last=previous;previous=current;
     if(!last||!Number.isFinite(current.wall))return;
     const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
     if(wall<=0||wall>1.5||media<=0||Math.abs(media-wall)>.35)return;
-    const duration=Number(track.duration)/1000;
-    // Keep the v4 position grid compatible with profiles measured before this budget cap.
-    const step=Number.isFinite(duration)&&duration>0?Math.max(.5,Math.ceil(duration/MAX_FRAMES*2)/2):.5;
     const position=Math.floor(mediaTime/step),detailPosition=Math.floor(mediaTime*2);
     if(!Number.isSafeInteger(position)||!Number.isSafeInteger(detailPosition))return;
-    const updateBase=profile.frames<ANALYSIS_FRAMES&&!positions.has(position);
+    const updateBase=!positions.has(position)&&(profile.frames<ANALYSIS_FRAMES||needsBody&&position>=bodyPosition);
     const updateDetail=detailSupported&&profile.detail.frames<24&&!profile.detail.positions.includes(detailPosition);
     if(!updateBase&&!updateDetail)return;
     const wasDetailReady=!!detail(profile);let publishDetail=false;
@@ -156,9 +161,10 @@
      }
     }else {profile.timbre=null;profile.timbreVariance=null;}
     profile.vector=mean;profile.frames++;profile.seconds+=Math.min(wall,media);positions.add(position);dirty=true;
+    if(position>=bodyPosition)bodyFrames++;
     // Timer jitter can leave frame 4/20 just below 2/10 seconds. Publish when
     // evidence actually becomes usable, without waiting for the next periodic save.
-    if(publishDetail||!wasPartialReady&&ready(profile,true)||!wasReady&&ready(profile)||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES)flush();
+    if(publishDetail||!wasPartialReady&&ready(profile,true)||!wasReady&&ready(profile)||profile.frames%20===0||profile.frames===ANALYSIS_FRAMES||profile.frames===ANALYSIS_FRAMES+BODY_FRAMES||position>=bodyPosition&&bodyFrames===BODY_FRAMES)flush();
    }catch(_){boundary();}
   }
   function start(){if(!disposed&&timer===null)timer=schedule(sample,500);}

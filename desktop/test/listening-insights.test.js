@@ -3,6 +3,14 @@ const NOW=new Date(2026,9,21,12).getTime();
 const at=(days,hour=10)=>new Date(2026,9,21-days,hour).getTime();
 const track=(id,favorite=0)=>({id,title:id,duration:180000,favorite});
 const play=(id,days,extra={})=>({id:`${id}-${days}`,track:id,started:at(days),heard:180000,duration:180000,...extra});
+test('desktop and phone accounting excludes seeks, previews and sub-minute streak days',()=>{
+ const x=Insights.build([track('a'),track('b'),track('c')],{plays:[
+  play('a',2,{finished:1,media_heard:5000}),play('b',1,{heard:5000,media_heard:5000,skipped:1}),
+  play('c',0,{media_heard:170000,finished:0}),play('c',0,{id:'duplicate',heard:30000,media_heard:1000})
+ ]},NOW);
+ assert.equal(x.behavior.completed,1);assert.equal(x.behavior.early,1);assert.equal(x.behavior.other,1);
+ assert.equal(x.behavior.qualified,2);assert.equal(x.behavior.streak,1);assert.equal(x.behavior.longestStreak,1);
+});
 test('empty history shows no invented rituals, returns, records or percentages',()=>{
  const x=Insights.build([track('a')],{},NOW);
  assert.equal(x.totalMs,0);assert.equal(x.ritual,null);assert.equal(x.comeback,null);assert.equal(x.record,null);

@@ -5,6 +5,10 @@ import android.content.Intent;
 import android.os.*;
 import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
+import androidx.media3.exoplayer.audio.*;
+import androidx.media3.common.audio.AudioProcessor;
+import android.content.Context;
 import androidx.media3.session.*;
 import java.util.*;
 import org.json.*;
@@ -32,6 +36,14 @@ public final class PlaybackService extends MediaSessionService {
   public long sleepDeadline;
   public boolean sleepAtEnd;
   private Runnable restore;
+  private PlaybackAudio audioProcessor;
+  private final List<String> smartScope = new ArrayList<>();
+  private final List<String> pinnedNext = new ArrayList<>();
+  private int smartRequest;
+  private boolean arranging;
+  private boolean wentBack;
+  private boolean resetSmart;
+  public String smartReason = "";
   private final Coverage coverage = new Coverage();
   private final Runnable tick =
       new Runnable() {
@@ -57,7 +69,12 @@ public final class PlaybackService extends MediaSessionService {
     app.service = this;
     sessionId = app.prefs.getString("listeningSession", "");
     sessionLast = app.prefs.getLong("lastAudible", 0);
-    player = new ExoPlayer.Builder(this).build();
+    audioProcessor=new PlaybackAudio(this,app);
+    player = new ExoPlayer.Builder(this,new DefaultRenderersFactory(this){
+      @Override protected AudioSink buildAudioSink(Context context,boolean enableFloatOutput,boolean enablePlaybackParameters){
+        return new DefaultAudioSink.Builder(context).setAudioProcessors(new AudioProcessor[]{audioProcessor}).build();
+      }
+    }).build();
     player.setAudioAttributes(
         new AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -84,7 +101,7 @@ public final class PlaybackService extends MediaSessionService {
             lastElapsed = SystemClock.elapsedRealtime();
             lastWall = System.currentTimeMillis();
             lastPosition = player.getCurrentPosition();
-            if (!playing) flush(false, false);
+            if (!playing) {flush(false, false);app.music.call("boundary",new JSONObject(),null);app.refreshStats();}
           }
 
           @Override
@@ -92,10 +109,10 @@ public final class PlaybackService extends MediaSessionService {
               Player.PositionInfo old, Player.PositionInfo next, int reason) {
             sampleAt(old.positionMs, false);
             boolean changed =
-                old.mediaItemIndex != next.mediaItemIndex
-                    || reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
-                    || reason == Player.DISCONTINUITY_REASON_REMOVE;
+                !Objects.equals(old.mediaItem==null?null:old.mediaItem.mediaId,next.mediaItem==null?null:next.mediaItem.mediaId)
+                    || reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION;
             if (changed) {
+              wentBack=reason==Player.DISCONTINUITY_REASON_SEEK&&next.mediaItemIndex<old.mediaItemIndex;
               boolean automatic = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION;
               finish(automatic, !automatic);
               if (sleepAtEnd && automatic) {
@@ -117,6 +134,8 @@ public final class PlaybackService extends MediaSessionService {
               begin();
             }
             saveQueue();
+            pinnedNext.remove(id);
+            refreshSmart(false);
           }
 
           @Override
@@ -144,6 +163,7 @@ public final class PlaybackService extends MediaSessionService {
           @Override
           public void onRepeatModeChanged(int mode) {
             app.prefs.edit().putInt("repeat", mode).apply();
+            refreshSmart(false);
           }
 
           @Override
@@ -168,11 +188,14 @@ public final class PlaybackService extends MediaSessionService {
     player.setPlaybackSpeed(app.prefs.getFloat("speed", 1f));
     player.setRepeatMode(app.prefs.getInt("repeat", 0));
     player.setShuffleModeEnabled(app.prefs.getBoolean("shuffle", false));
+    if(app.prefs.getBoolean("smartDj",false))player.setShuffleModeEnabled(false);
+    audioProcessor.settings();
   }
 
   private void begin() {
     MediaItem item = player.getCurrentMediaItem();
     trackId = item == null ? "" : item.mediaId;
+    audioProcessor.track(trackId);
     playId = UUID.randomUUID().toString();
     started = System.currentTimeMillis();
     duration = player.getDuration();
@@ -236,6 +259,12 @@ public final class PlaybackService extends MediaSessionService {
         at = lastAudible - pending;
     pending = pendingMedia = 0;
     recorded = true;
+    if(app.prefs.getBoolean("history",true))try{
+      JSONObject feedback=new JSONObject().put("id",id).put("track",track).put("session",sid)
+          .put("started",start).put("duration",dur).put("heard",total).put("media_heard",totalMedia)
+          .put("finished",finished?1:0).put("skipped",skipped?1:0);
+      app.music.call("feedback",feedback,null);
+    }catch(Exception ignored){}
     app.io.execute(
         () -> app.repo.record(id, track, sid, start, dur, at, delta, media, finished, skipped));
   }
@@ -262,6 +291,57 @@ public final class PlaybackService extends MediaSessionService {
     sleepDeadline = minutes > 0 ? SystemClock.elapsedRealtime() + minutes * 60000L : 0;
   }
 
+  public String currentId(){MediaItem item=player.getCurrentMediaItem();return item==null?"":item.mediaId;}
+  public boolean smartEnabled(){return app.prefs.getBoolean("smartDj",false);}
+  public void setSmart(boolean enabled){
+    app.prefs.edit().putBoolean("smartDj",enabled).apply();smartRequest++;
+    if(enabled){player.setShuffleModeEnabled(false);captureScope();refreshSmart(true);}
+    else smartReason="";
+  }
+  public void setScope(List<Track> tracks){
+    smartScope.clear();for(Track t:tracks)if(!smartScope.contains(t.id))smartScope.add(t.id);
+    pinnedNext.clear();smartRequest++;resetSmart=true;saveScope();
+  }
+  public void addScope(List<Track> tracks,boolean next){
+    for(Track t:tracks){if(!smartScope.contains(t.id))smartScope.add(t.id);if(next)pinnedNext.add(t.id);}
+    smartRequest++;saveScope();
+  }
+  private void saveScope(){app.prefs.edit().putString("djScope",new JSONArray(smartScope).toString()).apply();}
+  public void removeScope(String id){smartScope.remove(id);pinnedNext.remove(id);smartRequest++;saveScope();}
+  public void clearUpcoming(){
+    smartScope.clear();if(!currentId().isEmpty())smartScope.add(currentId());pinnedNext.clear();smartRequest++;saveScope();
+  }
+  private void captureScope(){
+    smartScope.clear();for(int i=0;i<player.getMediaItemCount();i++){String id=player.getMediaItemAt(i).mediaId;if(!smartScope.contains(id))smartScope.add(id);}saveScope();
+  }
+  public void refreshSmart(boolean reset){
+    if(player==null||!smartEnabled()||arranging||currentId().isEmpty()||!app.music.isReady())return;
+    if(smartScope.isEmpty())captureScope();
+    final int request=++smartRequest;final String current=currentId();
+    try{
+      JSONObject data=new JSONObject().put("ids",new JSONArray(smartScope)).put("current",current).put("reset",reset||resetSmart)
+          .put("back",wentBack)
+          .put("loop",player.getRepeatMode()==Player.REPEAT_MODE_ONE?"one":player.getRepeatMode()==Player.REPEAT_MODE_ALL?"all":"off");
+      wentBack=false;resetSmart=false;
+      app.music.call("choose",data,(result,error) -> {
+        if(result==null||request!=smartRequest||!smartEnabled()||!current.equals(currentId()))return;
+        JSONArray reasons=result.optJSONArray("reasons");StringJoiner text=new StringJoiner(". ");
+        if(reasons!=null)for(int i=0;i<reasons.length();i++)text.add(reasons.optString(i));smartReason=text.toString();
+        if(!pinnedNext.isEmpty()||player.getRepeatMode()==Player.REPEAT_MODE_ONE)return;
+        String next=result.optString("next","");if(next.equals(current))return;
+        int index=player.getCurrentMediaItemIndex()+1,found=-1;
+        for(int i=index;i<player.getMediaItemCount();i++)if(player.getMediaItemAt(i).mediaId.equals(next)){found=i;break;}
+        arranging=true;
+        try{
+          if(next.isEmpty()||next.equals("null"))player.removeMediaItems(index,player.getMediaItemCount());
+          else if(found>=0){if(found!=index)player.moveMediaItem(found,index);}
+          else{Track t=app.track(next);if(t!=null)player.addMediaItem(index,t.mediaItem());}
+          if(player.getCurrentMediaItemIndex()>100)player.removeMediaItems(0,player.getCurrentMediaItemIndex()-100);
+        }finally{arranging=false;}
+      });
+    }catch(Exception ignored){}
+  }
+
   private void saveQueue() {
     if (!app.ready) return;
     JSONArray a = new JSONArray();
@@ -279,6 +359,8 @@ public final class PlaybackService extends MediaSessionService {
   private void restoreQueue() {
     if (player.getMediaItemCount() > 0) return;
     try {
+      JSONArray scope=new JSONArray(app.prefs.getString("djScope","[]"));
+      for(int i=0;i<scope.length();i++)if(app.track(scope.optString(i))!=null)smartScope.add(scope.optString(i));
       JSONArray a = new JSONArray(app.prefs.getString("queue", "[]"));
       List<MediaItem> items = new ArrayList<>();
       int index = 0;
@@ -313,6 +395,7 @@ public final class PlaybackService extends MediaSessionService {
 
   @Override
   public void onDestroy() {
+    audioProcessor.close();
     handler.removeCallbacksAndMessages(null);
     app.listeners.remove(restore);
     checkpoint();

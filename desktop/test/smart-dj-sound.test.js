@@ -61,6 +61,23 @@ test('timbre beats BPM, favourite and repeated historical preference for an acou
  assert.ok(matches>=95,`${matches}/100 acoustic matches`);
 });
 
+test('acoustic copies cannot hide a close alternative before sampling, even without session history',()=>{
+ const current=song('current'),copies=Array.from({length:10},(_,i)=>song('copy'+i));
+ const varied=song('varied'),far=song('far'),unknown=song('unknown'),tracks=[current,...copies,varied,far,unknown];
+ const profiles=Object.fromEntries(tracks.filter(t=>t!==unknown).map(t=>[t.id,profile(t,t===varied?730:t===far?1500:700)]));
+ const model=new Taste(tracks,[],NOW,profiles);let variations=0,copied=0;
+ for(let seed=1;seed<=250;seed++){
+  const context={seed,step:0},choice=model.choose(current,tracks.slice(1),{},context);
+  assert.ok(choice.soundSimilarity>.9,'novelty cannot bring in a poor or unmeasured fit');
+  assert.equal(choice.rank,choice.score,'diversity changes shortlist membership, not learned taste scores');
+  assert.equal(model.choose(current,tracks.slice(1),{},context).track.id,choice.track.id);
+  if(choice.track===varied)variations++;else copied++;
+ }
+ assert.ok(variations>=8&&copied>variations,`${variations}/250 variations: alternatives get a chance without forced novelty`);
+ const excluded=new Taste(tracks,[],NOW,profiles,{excludedTracks:[varied.id]});
+ for(let seed=1;seed<=20;seed++)assert.ok(excluded.choose(current,tracks.slice(1),{},{seed}).track.id.startsWith('copy'));
+});
+
 test('sampling varies among strong acoustic neighbours, with stable preview and no forced distant discovery',()=>{
  const current=song('current'),near=Array.from({length:5},(_,i)=>song('near'+i)),far=Array.from({length:7},(_,i)=>song('far'+i));
  const tracks=[current,...near,...far],profiles=Object.fromEntries(tracks.map(t=>[t.id,profile(t,t.id.startsWith('far')?1500:700)]));

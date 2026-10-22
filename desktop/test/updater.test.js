@@ -67,7 +67,7 @@ test('installer startup failure keeps the running app alive; a successful restar
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  let exits=0,spawns=0,fail=true;
  const updater=new Updater({currentVersion:'1.5.0',appRoot:root,dataDir:root,exit:()=>exits++,
-  spawn:()=>{spawns++;const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit(fail?'error':'spawn',new Error('No installer')));return child;}});
+  spawn:(command,args,options)=>{assert.equal(options.windowsHide,true);spawns++;const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit(fail?'error':'spawn',new Error('No installer')));return child;}});
  let restart=updater.launchInstaller('missing',[]);restart();restart();
  await new Promise(r=>setTimeout(r,300));
  assert.equal(exits,0);assert.equal(spawns,1);assert.equal(updater.publicState().status,'error');

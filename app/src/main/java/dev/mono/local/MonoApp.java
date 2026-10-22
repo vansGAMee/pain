@@ -20,6 +20,7 @@ public final class MonoApp extends Application {
   public boolean scanning, ready;
   public String scanMessage = "";
   public SyncServer syncServer;
+  public MusicEngine music;
   private ContentObserver observer;
   private final Runnable autoScan =
       () -> {
@@ -31,6 +32,7 @@ public final class MonoApp extends Application {
     super.onCreate();
     repo = new Repository(this);
     prefs = getSharedPreferences("mono", MODE_PRIVATE);
+    music = new MusicEngine(this);
     syncServer = new SyncServer(this);
     syncServer.start();
     refresh();
@@ -68,6 +70,7 @@ public final class MonoApp extends Application {
                 tracks = t;
                 stats = s;
                 ready = true;
+                music.refresh();
                 changed();
               });
         });
@@ -110,6 +113,7 @@ public final class MonoApp extends Application {
           main.post(
               () -> {
                 tracks = t;
+                music.refresh();
                 scanning = false;
                 scanMessage = result;
                 changed();
@@ -122,28 +126,4 @@ public final class MonoApp extends Application {
     return null;
   }
 
-  public List<Track> smartQueue(List<Track> input, String current) {
-    List<Track> remaining = new ArrayList<>(input), result = new ArrayList<>();
-    long now = System.currentTimeMillis();
-    remaining.sort(
-        Comparator.<Track>comparingDouble(
-                t ->
-                    stats.counts.getOrDefault(t.id, 0L) * 4
-                        + (now - stats.last.getOrDefault(t.id, 0L) < 86400000 ? 10 : 0)
-                        - (t.favorite ? 2 : 0))
-            .thenComparing(t -> t.id));
-    String artist = current;
-    while (!remaining.isEmpty()) {
-      int pick = 0;
-      for (int i = 0; i < remaining.size(); i++)
-        if (!remaining.get(i).artist.equals(artist)) {
-          pick = i;
-          break;
-        }
-      Track t = remaining.remove(pick);
-      result.add(t);
-      artist = t.artist;
-    }
-    return result;
-  }
 }

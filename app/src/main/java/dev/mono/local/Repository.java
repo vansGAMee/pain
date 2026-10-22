@@ -375,7 +375,7 @@ public final class Repository extends SQLiteOpenHelper {
         counts = new HashMap<>(),
         last = new HashMap<>(),
         days = new TreeMap<>();
-    public String obsession = "", insight = "Your listening history starts with track 1.";
+    public String obsession = "", insight = "Ваша история начинается с первого прослушивания.";
   }
 
   public Stats stats(long from) {
@@ -384,6 +384,7 @@ public final class Repository extends SQLiteOpenHelper {
     ZoneId zone = ZoneId.systemDefault();
     LocalDate today = LocalDate.now(zone);
     long todayStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
+    long now=System.currentTimeMillis(),sessionEnd=-1,sessionIndex=0;
     Map<String, Long> artists = new HashMap<>(),
         sessions = new HashMap<>(),
         todayArtists = new HashMap<>();
@@ -391,7 +392,7 @@ public final class Repository extends SQLiteOpenHelper {
     Map<String, Long> first = new HashMap<>();
     try (Cursor c =
         d.rawQuery(
-            "SELECT track,MIN(started) FROM plays WHERE heard>=MIN(30000,MAX(1000,duration/2))"
+            "SELECT track,MIN(started) FROM plays WHERE started>0 AND started<="+now+" AND heard>=CASE WHEN duration>0 THEN MIN(30000,MAX(1000,duration/2)) ELSE 30000 END"
                 + " GROUP BY track",
             null)) {
       while (c.moveToNext()) first.put(c.getString(0), c.getLong(1));
@@ -404,14 +405,18 @@ public final class Repository extends SQLiteOpenHelper {
                 + " s.at+s.ms>CAST(? AS INTEGER) ORDER BY s.at",
             new String[] {"" + from})) {
       while (c.moveToNext()) {
-        long at = c.getLong(0), end = at + c.getLong(1);
+        long at = c.getLong(0), ms=c.getLong(1);
+        if(at<=0||at>=now||ms<=0||ms>7*86400000L)continue;
+        long end = Math.min(now,at+ms);
         at = Math.max(at, from);
         String track = c.getString(2);
         long amount = end - at;
         if (amount <= 0) continue;
         s.heard += amount;
         artists.merge(c.getString(4), amount, Long::sum);
-        sessions.merge(c.getString(3), amount, Long::sum);
+        if(sessionEnd<0||at-sessionEnd>30*60000L)sessionIndex++;
+        sessionEnd=Math.max(sessionEnd,end);
+        sessions.merge(""+sessionIndex, amount, Long::sum);
         s.trackMs.merge(track, amount, Long::sum);
         distinct.add(track);
         while (at < end) {
@@ -449,6 +454,7 @@ public final class Repository extends SQLiteOpenHelper {
             heard = c.getLong(2),
             media = c.getLong(3),
             duration = c.getLong(4);
+        if(started<=0||started>now||heard<=0||heard>7*86400000L)continue;
         s.last.put(id, started);
         if (ListeningMath.qualifies(heard, duration)) {
           s.qualified++;
@@ -652,6 +658,7 @@ public final class Repository extends SQLiteOpenHelper {
     org.json.JSONObject root = new org.json.JSONObject();
     root.put("schema", 1);
     root.put("type", "library");
+    root.put("capabilities",new org.json.JSONObject().put("audioProfiles",1));
     root.put("exportedAt", Instant.now().toString());
     org.json.JSONArray arr = new org.json.JSONArray();
     try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM tracks WHERE available=1", null)) {

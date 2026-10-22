@@ -193,7 +193,7 @@ class Updater {
         this.state = { ...this.state, status: 'error', error: error.message || 'Could not start installer' };
       };
       try {
-        const child = this.spawn(command, args, { detached: true, stdio: 'ignore' });
+        const child = this.spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true });
         child.once('error', fail);
         child.once('spawn', () => { child.unref(); setTimeout(this.exit, 250); });
       } catch (error) { fail(error); }
@@ -204,7 +204,7 @@ class Updater {
     const script = path.join(directory, 'install.ps1');
     const source = quotePs(downloaded), exe = quotePs(this.executable);
     fs.writeFileSync(script, `\ufeff$ErrorActionPreference='Stop'\nfor($i=0;$i -lt 120 -and (Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue);$i++){Start-Sleep -Milliseconds 250}\nif(Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue){exit 1}\nMove-Item -LiteralPath ${source} -Destination ${exe} -Force\nStart-Process -FilePath ${exe}\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\n`, 'utf8');
-    return this.launchInstaller('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script]);
+    return this.launchInstaller('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script]);
   }
 
   linuxRestart(archive, directory) {

@@ -10,7 +10,8 @@
    const started=Number(p.started||p.timestamp),heard=Number(p.heard);
    if(!Number.isFinite(started)||started<=0||started>now||!Number.isFinite(heard)||heard<=0||heard>7*DAY)continue;
    const track=String(p.track),key=JSON.stringify([track,started]),old=rows.get(key);
-   rows.set(key,{...old,...p,track,started,heard:Math.max(heard,old?.heard||0),finished:flag(p.finished)||flag(old?.finished)?1:0});
+   const coverage=[p.media_heard,old?.media_heard].filter(n=>Number.isFinite(n)&&n>=0);
+   rows.set(key,{...old,...p,track,started,heard:Math.max(heard,old?.heard||0),media_heard:coverage.length?Math.max(...coverage):Math.max(heard,old?.heard||0),finished:flag(p.finished)||flag(old?.finished)?1:0,skipped:flag(p.skipped)||flag(old?.skipped)?1:0});
    if(p.id!=null)aliases.set(String(p.id),key);
   }
   const plays=[...rows.values()].sort((a,b)=>a.started-b.started),intervals=new Map();
@@ -60,7 +61,21 @@
   let knownTime=0,outsideFavorites=0,record=null;
   for(const [id,ms] of trackTime)if(library.has(id)){knownTime+=ms;if(!flag(library.get(id).favorite))outsideFavorites+=ms;}
   for(const [day,ms] of days)if(!record||ms>record.ms||ms===record.ms&&day>record.day)record={day,ms};
-  return {plays,totalMs,days,hours,calendar,ritual,comeback,record,discoveries,retained:retained.size,
+  const counts=new Map();let qualified=0,completed=0,early=0,other=0,replayed=0;
+  for(const p of plays){
+   const duration=Number(p.duration||library.get(p.track)?.duration),threshold=duration>0?Math.min(30000,Math.max(1000,duration/2)):30000;
+   if(p.heard>=threshold){qualified++;if(counts.has(p.track))replayed++;counts.set(p.track,(counts.get(p.track)||0)+1);}
+   if(duration>0&&p.media_heard>=duration*.9)completed++;
+   else if(flag(p.skipped)&&p.heard<30000)early++;
+   else if(flag(p.skipped)||flag(p.finished))other++;
+  }
+  const active=[...days].filter(([,ms])=>ms>=60000).map(([day])=>day).sort();let streak=0,longestStreak=0,run=0,previous=null;
+  for(const day of active){const at=Date.parse(day);run=previous!==null&&at-previous===DAY?run+1:1;longestStreak=Math.max(longestStreak,run);previous=at;}
+  const activeSet=new Set(active),cursor=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  if(!activeSet.has(dayKey(cursor)))cursor.setDate(cursor.getDate()-1);
+  while(activeSet.has(dayKey(cursor))){streak++;cursor.setDate(cursor.getDate()-1);}
+  const behavior={qualified,completed,early,other,replayed,newPlays:counts.size,streak,longestStreak,counts:Object.fromEntries(counts)};
+  return {plays,totalMs,days,hours,calendar,ritual,comeback,record,discoveries,retained:retained.size,behavior,
    heardLibrary:heardLibrary.size,librarySize:library.size,outsideFavorites,knownTime};
  }
  return {build,dayKey};

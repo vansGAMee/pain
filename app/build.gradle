@@ -4,7 +4,7 @@ android {
  compileSdk 36
  defaultConfig {
   applicationId 'dev.mono.local'; minSdk 26; targetSdk 35
-  versionCode 16; versionName '1.6.2'
+  versionCode 17; versionName '1.7.0'
   testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
  }
  buildFeatures { buildConfig true }
@@ -22,3 +22,28 @@ dependencies {
  implementation 'androidx.media3:media3-session:1.9.3'
  testImplementation 'junit:junit:4.13.2'
 }
+
+// One source of truth: Android packages the exact same algorithms as desktop.
+def sharedMusic = ['audio-timbre.js','audio-profile.js','session-graph.js','taste-model.js',
+                   'queue-engine.js','listening-insights.js','auto-eq.js','smart-volume.js',
+                   'dj-state.js','mobile-engine.js']
+def generateMusicEngine = tasks.register('generateMusicEngine') {
+ inputs.files(sharedMusic.collect { rootProject.file("desktop/src/$it") })
+ outputs.dir(layout.buildDirectory.dir('generated/musicAssets'))
+ doLast {
+  def directory = layout.buildDirectory.dir('generated/musicAssets').get().asFile
+  directory.mkdirs()
+  new File(directory, 'music-engine.js').text = sharedMusic.collect {
+   rootProject.file("desktop/src/$it").getText('UTF-8')
+  }.join('\n;\n') + '''
+const engine = new MobileEngine(event => postMessage({event}));
+onmessage = ({data}) => {
+ try { postMessage({id:data.id,result:engine[data.method](data.args||{})}); }
+ catch(error) { postMessage({id:data.id,error:String(error.message||error)}); }
+};
+postMessage({ready:true});
+'''
+ }
+}
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/musicAssets'))
+tasks.named('preBuild').configure { dependsOn(generateMusicEngine) }

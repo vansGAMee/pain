@@ -39,6 +39,7 @@ const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 let discoveredDevices = [];
 let hasAutoSynced = false;
 let autoSyncBusy = false;
+let lastFullSync=0,lastSyncDevice='';
 let udpSocket = null;
 
 // ==========================================
@@ -104,7 +105,7 @@ async function triggerBackgroundAutoSync(device) {
   autoSyncBusy = true;
   try {
     const base = `http://${device.ip}:${device.port}`;
-    if (!hasAutoSynced) { await phoneSync.synchronize(base); hasAutoSynced = true; }
+    if (!hasAutoSynced||base!==lastSyncDevice||Date.now()-lastFullSync>=30000) { await phoneSync.synchronize(base); hasAutoSynced = true;lastFullSync=Date.now();lastSyncDevice=base; }
     else await phoneSync.flush(base);
   } catch (_) { /* Keep pending changes; the next discovery retries. */ }
   finally { autoSyncBusy = false; }
@@ -114,7 +115,7 @@ async function triggerBackgroundAutoSync(device) {
 function scanArpTable() {
   try {
     const cmd = process.platform === 'win32' ? 'arp -a' : 'arp -a 2>/dev/null || ip neighbor 2>/dev/null';
-    exec(cmd, { timeout: 2000 }, (err, stdout) => {
+    exec(cmd, { timeout: 2000, windowsHide: true }, (err, stdout) => {
       if (err || !stdout) return;
       const ipMatches = stdout.match(/\b(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b/g);
       if (ipMatches) {
@@ -450,6 +451,15 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname;
 
   if (lyricsRoute(req,res,url,DATA_DIR)) return;
+
+  if(pathname==='/api/dj-state'){
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(phoneSync.read('dj-state.json',{})));return;}
+    if(req.method==='POST'){
+      let body='',size=0;req.setEncoding('utf8');
+      req.on('data',chunk=>{size+=Buffer.byteLength(chunk);if(size>8*1024*1024)req.destroy();else body+=chunk;});
+      req.on('end',()=>{try{const state=phoneSync.saveDjState(JSON.parse(body));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(state));}catch(_){res.writeHead(400);res.end('{}');}});return;
+    }
+  }
 
   if (pathname === '/profile') {
     res.writeHead(302, { 'Location': '/?view=insights#profile' });
@@ -983,11 +993,11 @@ function startServer(p) {
       if (process.platform === 'win32') {
         // Launch in Microsoft Edge App Mode (preinstalled on 100% of Windows 10 & 11)
         // Edge in app mode removes the URL bar, tabs, and browser chrome, rendering as a native app window.
-        exec(`start msedge --app=http://localhost:${p} --window-size=1200,820`, (err) => {
+        exec(`start msedge --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err) => {
           if (err) {
-            exec(`start chrome --app=http://localhost:${p} --window-size=1200,820`, (err2) => {
+            exec(`start chrome --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err2) => {
               if (err2) {
-                exec(`start "" "http://localhost:${p}"`);
+                exec(`start "" "http://localhost:${p}"`, { windowsHide: true });
               }
             });
           }

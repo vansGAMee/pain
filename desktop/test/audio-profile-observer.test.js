@@ -134,7 +134,7 @@ test('contrast between sections survives partial saves and matches measured vari
 
 test('long tracks stop analysis after the excerpt budget and reuse it on replay',t=>{
  const f=fixture(t);f.track={...f.track,duration:600000};f.prime();f.frames(800);
- const before=structuredClone(f.store.a);assert.equal(before.frames,48);
+ const before=structuredClone(f.store.a);assert.equal(before.frames,72);
  const high=Float32Array.from({length:1024},(_,i)=>i*48000/2048>2000?-20:-120);
  f.context.createAnalyser().getFloatFrequencyData=target=>target.set(high);
  f.frames(400);f.pause();
@@ -214,4 +214,69 @@ test('old detail caches exhausted by invalid samples can be repaired without dis
  const store={a:{...base,detail:{version:1,frames:0,seconds:0,mean:Array(7).fill(0),positions:Array.from({length:24},(_,i)=>i+1)}}};
  const f=fixture(t,{store});f.frames(24);f.pause();
  assert.ok(Audio.detail(store.a));assert.equal(store.a.frames,48);assert.deepEqual(store.a.timbre,base.timbre);
+});
+
+test('matching intros no longer hide different musical bodies from actual DJ selection',t=>{
+ const Taste=require('../src/taste-model'),now=Date.UTC(2026,9,22,12),store={};
+ const tracks=['current','near','far'].map(id=>({...track(id),artist:id,bpm:120}));
+ const spectrum=peak=>Float32Array.from({length:1024},(_,i)=>-80+55*Math.exp(-(((i*48000/2048-peak)/350)**2)));
+ const players=tracks.map(song=>{
+  const f=fixture(t,{store});f.track=song;f.prime();
+  f.context.createAnalyser().getFloatFrequencyData=target=>target.set(spectrum(700));
+  f.frames(48);return f;
+ });
+ const before=new Taste(tracks,[],now,structuredClone(store));
+ assert.equal(before.score(tracks[0],tracks[1]).soundSimilarity,before.score(tracks[0],tracks[2]).soundSimilarity);
+ players.forEach((f,i)=>{
+  const body=spectrum([1800,1850,300][i]);
+  f.context.createAnalyser().getFloatFrequencyData=target=>target.set(body);
+  f.frames(102);f.pause();assertProfile(store[f.track.id],72);
+ });
+ const after=new Taste(tracks,[],now,store);
+ assert.ok(after.score(tracks[0],tracks[1]).soundSimilarity>after.score(tracks[0],tracks[2]).soundSimilarity+.25);
+ const matches=model=>{
+  let n=0;for(let seed=1;seed<=200;seed++)if(model.choose(tracks[0],tracks.slice(1),{},{seed,step:0}).track.id==='near')n++;
+  return n;
+ };
+ const original=matches(before),improved=matches(after);
+ assert.ok(improved>=190&&improved>original+50,`${original} -> ${improved} suitable choices / 200`);
+ t.diagnostic(`Synthetic matching-intro case: ${original}/200 -> ${improved}/200 matching-body choices; not a real-user quality estimate.`);
+});
+
+test('completed intro caches gain body evidence once, including across restarts and seeks',t=>{
+ const first=fixture(t);first.frames(48);first.pause();first.dispose();
+ const intro=first.store.a,snapshot=structuredClone(intro);
+ const store=Audio.restore(JSON.stringify(first.store)),second=fixture(t,{store});
+ assert.equal(Audio.get(store,second.track).frames,48,'old profiles stay usable immediately');
+ second.audio.currentTime=64;second.audio.emit('seeked');second.prime();second.frames(10);second.pause();second.dispose();
+ assertProfile(store.a,58);assert.deepEqual(intro,snapshot,'upgrading must not mutate saved snapshots');
+ const resumed=Audio.restore(JSON.stringify(store)),third=fixture(t,{store:resumed});
+ third.audio.currentTime=64;third.audio.emit('seeked');third.prime();third.frames(10);third.pause();
+ assertProfile(resumed.a,58,'replaying the second excerpt is not new evidence');
+ third.play();third.frames(14);third.pause();assertProfile(resumed.a,72);
+ const complete=structuredClone(resumed.a);third.play();third.frames(100);third.pause();
+ assert.deepEqual(resumed.a,complete,'completed body excerpts are reused');
+});
+
+test('waiting for the body and replaying complete profiles performs no extra audio reads',t=>{
+ const f=fixture(t),analyser=f.context.createAnalyser(),read=analyser.getFloatTimeDomainData;let reads=0;
+ analyser.getFloatTimeDomainData=target=>{reads++;read(target);};
+ f.frames(48);assert.equal(reads,48);
+ f.frames(76);assert.equal(reads,48,'no FFT/PCM sampling in the gap between excerpts');
+ f.frames(26);assert.equal(reads,72);assertProfile(f.store.a,72);
+ f.frames(200);assert.equal(reads,72,'the additional work has a hard cap');
+});
+
+test('short tracks and unknown durations keep their existing analysis budget',async t=>{
+ for(const duration of [0,NaN,Infinity,-1,45000])await t.test(String(duration),t=>{
+  const f=fixture(t);f.track={...f.track,duration};f.prime();f.frames(48);f.pause();
+  const before=structuredClone(f.store.a);assert.equal(before.frames,48);
+  f.play();f.frames(200);f.pause();assert.deepEqual(f.store.a,before);
+ });
+});
+
+test('starting in the body already covers it without charging an unnecessary second excerpt',t=>{
+ const f=fixture(t);f.audio.currentTime=70;f.audio.emit('seeked');f.prime();f.frames(48);f.pause();
+ const before=structuredClone(f.store.a);assertProfile(before,48);
+ f.play();f.frames(100);f.pause();assert.deepEqual(f.store.a,before);
 });

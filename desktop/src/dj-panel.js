@@ -15,6 +15,7 @@
       saved.items.push({id:item.id,name:item.name.trim().slice(0,80),source:typeof item.source==='string'?item.source.slice(0,300):'',profile});
     }
     saved.activeId=saved.items.some(v=>v.id===data?.activeId)?data.activeId:null;
+    saved.updatedAt=Number.isSafeInteger(data?.updatedAt)?data.updatedAt:0;
   } catch (_) {}
   const active=()=>saved.items.find(v=>v.id===saved.activeId);
   queue.setVibeProfile(active()?.profile||null);
@@ -51,9 +52,11 @@
     if(saved.items.length>=limit)el('djVibeHint').textContent=text('Сохранено 8 вайбов. Удалите один, чтобы добавить новый.','8 vibes saved. Remove one to add another.');
   }
   function commit(next,message){
+    next.updatedAt=Date.now();
     try { localStorage.setItem(key,JSON.stringify(next)); }
     catch (_) { el('djStatus').textContent=text('Не удалось сохранить. Возможно, закончилось место.','Could not save. Storage may be full.');return false; }
     saved=next;
+    window.dispatchEvent(new Event('pain:dj-changed'));
     queue.setVibeProfile(active()?.profile||null);
     render();
     el('djStatus').textContent=message;
@@ -141,6 +144,7 @@
       (el('djVibes').querySelector('button')||el('djVibeName')).focus();
   });
   window.addEventListener('pain:queue-ui',render);
+  window.addEventListener('pain:dj-state',event=>{saved=event.detail;listKey='';queue.setVibeProfile(active()?.profile||null);render();});
   el('audioEngine').addEventListener('timeupdate',availability);
   el('langToggle').addEventListener('click',()=>queueMicrotask(render));
   render();

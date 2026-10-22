@@ -178,6 +178,10 @@ public final class SyncServer {
             "{\"status\":\"ok\",\"device\":\"Android\",\"appName\":\"Pain\",\"tracks\":%d,\"timestamp\":%d}",
             app.tracks.size(), System.currentTimeMillis());
         sendResponse(out, 200, "OK", "application/json", json);
+      } else if ("/api/dj-state".equals(path) && "GET".equalsIgnoreCase(method)) {
+        sendResponse(out,200,"OK","application/json",app.music.exportState());
+      } else if ("/api/dj-state".equals(path) && "POST".equalsIgnoreCase(method)) {
+        sendResponse(out,200,"OK","application/json",app.music.mergeState(request.body));
       } else if ("/api/library".equals(path) && "GET".equalsIgnoreCase(method)) {
         String json = app.repo.exportLibraryJson();
         sendResponse(out, 200, "OK", "application/json", json);

@@ -98,6 +98,24 @@
   let audioProfiles=Object.create(null);
   try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v4'));}catch(_){}
   let initialBpmCache = {};
+  let audioSyncTimer=null,audioSyncBusy=false,audioSyncAgain=false;
+  function sharedVibes(){try{const v=JSON.parse(localStorage.getItem('pain_dj_vibes_v1'));return v?{...v,updatedAt:v.updatedAt||0}:null;}catch(_){return null;}}
+  function mergeSharedAudio(remote){
+    if(!remote)return;
+    const state=DjState.merge({profiles:audioProfiles,vibes:sharedVibes()},remote),merged=state.profiles;
+    for(const [id,profile] of Object.entries(merged)){
+      if(JSON.stringify(audioProfiles[id])!==JSON.stringify(profile)){audioProfiles[id]=profile;queue?.setAudioProfile(id,profile);}
+    }
+    AudioProfile.persist(audioProfiles,localStorage);
+    if(state.vibes&&JSON.stringify(state.vibes)!==JSON.stringify(sharedVibes())){
+      try{localStorage.setItem('pain_dj_vibes_v1',JSON.stringify(state.vibes));window.dispatchEvent(new CustomEvent('pain:dj-state',{detail:state.vibes}));}catch(_){}
+    }
+  }
+  async function syncSharedAudio(){
+    if(audioSyncBusy){audioSyncAgain=true;return;}audioSyncBusy=true;
+    try{const response=await fetch('/api/dj-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profiles:audioProfiles,vibes:sharedVibes()})});if(response.ok)mergeSharedAudio(await response.json());}catch(_){}
+    finally{audioSyncBusy=false;if(audioSyncAgain){audioSyncAgain=false;syncSharedAudio();}}
+  }
   try {
     const rawBpm = localStorage.getItem('pain_bpm_cache_v2');
     if (rawBpm) initialBpmCache = JSON.parse(rawBpm);
@@ -530,9 +548,11 @@
     }
 
     await loadLocalData();
+    syncSharedAudio();
     await loadCachedTracksList();
     updateGreeting();
     setupEventListeners();
+    window.addEventListener('pain:dj-changed',syncSharedAudio);
     setInterval(() => { if (!document.hidden) updateGreeting(); }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) updateGreeting(); });
     setTimeout(() => checkForUpdates(false, true), 800);
@@ -616,6 +636,7 @@
           queue?.setAudioProfile(track.id,profile);
           if(state.eq.auto&&String(track.id)===String(state.currentTrackId))applyAutoEqualizer(track,profile);
           try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}
+          if(audioSyncTimer===null)audioSyncTimer=setTimeout(()=>{audioSyncTimer=null;syncSharedAudio();},1500);
         },audioProfiles);
       }catch(_){/* Playback remains available if measurement is unsupported. */}
     } catch (err) {
@@ -1043,9 +1064,11 @@
     if (!playCountsCache) {
       playCountsCache = new Map();
       const plays = state.stats.plays;
+      const identities=new Set(),now=Date.now();
       for (let i = 0; i < plays.length; i++) {
-        const tid = plays[i] && plays[i].track;
-        if (tid) playCountsCache.set(tid, (playCountsCache.get(tid) || 0) + 1);
+        const p=plays[i],tid=p?.track,key=JSON.stringify([tid,p?.started]),duration=Number(p?.duration);
+        const threshold=duration>0?Math.min(30000,Math.max(1000,duration/2)):30000;
+        if(tid&&p.started>0&&p.started<=now&&p.heard>=threshold&&!identities.has(key)){identities.add(key);playCountsCache.set(tid,(playCountsCache.get(tid)||0)+1);}
       }
     }
     return playCountsCache.get(trackId) || 0;
@@ -1736,54 +1759,24 @@
       });
     }
 
-    // 5. Streaks (Current & Longest Active Days)
-    const activeDays = new Set(details.days.keys());
-
-    const sortedDays = Array.from(activeDays).sort();
-    let currentStreak = 0, longestStreak = 0, streakCount = 0;
-    if (sortedDays.length > 0) {
-      longestStreak = 1;
-      streakCount = 1;
-      for (let i = 1; i < sortedDays.length; i++) {
-        const prev = new Date(sortedDays[i-1]);
-        const curr = new Date(sortedDays[i]);
-        const diffDays = Math.round((curr - prev) / 86400000);
-        if (diffDays === 1) {
-          streakCount++;
-          if (streakCount > longestStreak) longestStreak = streakCount;
-        } else if (diffDays > 1) {
-          streakCount = 1;
-        }
-      }
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-      const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
-      if (activeDays.has(todayStr) || activeDays.has(yesterdayStr)) {
-        currentStreak = streakCount;
-      }
-    }
+    // Shared accounting rules also used by the Android insights engine.
+    const {streak:currentStreak,longestStreak}=details.behavior;
 
     if (DOM.statStreak) DOM.statStreak.textContent = isRu ? `${currentStreak} дн` : `${currentStreak} days`;
     if (DOM.statLongestStreak) DOM.statLongestStreak.textContent = isRu ? `Рекорд: ${longestStreak} дн` : `Best: ${longestStreak} days`;
     if (DOM.statStreakText) DOM.statStreakText.textContent = isRu ? `${currentStreak} дн подряд` : `${currentStreak} day streak`;
 
     // 6. Behavioral Habits & Completion Ratios
-    let completed = 0, early = 0, totalPlays = plays.length;
-    plays.forEach(p => {
-      if (p.finished === 1 || p.finished === true) completed++;
-      else if (p.skipped === 1 || (p.duration > 0 && p.heard < p.duration * 0.5)) early++;
-    });
-    const compPct = totalPlays > 0 ? Math.round((completed / totalPlays) * 100) : 0;
-    const earlyPct = totalPlays > 0 ? Math.round((early / totalPlays) * 100) : 0;
+    const {completed,early,other,qualified,replayed,newPlays}=details.behavior;
+    const ended=completed+early+other;
+    const compPct=ended?Math.round(completed/ended*100):0;
+    const earlyPct=ended?Math.round(early/ended*100):0;
     if (DOM.statCompletionRate) DOM.statCompletionRate.textContent = `${compPct}%`;
     if (DOM.statEarlySkips) DOM.statEarlySkips.textContent = `${earlyPct}%`;
-
-    const trackCounts = {};
-    plays.forEach(p => trackCounts[p.track] = (trackCounts[p.track] || 0) + 1);
-    const replayed = Object.values(trackCounts).filter(c => c > 1).length;
-    const uniqueCount = Object.keys(trackCounts).length;
-    const replayPct = uniqueCount > 0 ? Math.round((replayed / uniqueCount) * 100) : 0;
-    const discoveryPct = totalPlays > 0 ? Math.round((uniqueCount / totalPlays) * 100) : 0;
+    const trackCounts=details.behavior.counts;
+    const uniqueCount=Object.keys(trackCounts).length,totalPlays=qualified;
+    const replayPct=qualified?Math.round(replayed/qualified*100):0;
+    const discoveryPct=qualified?Math.round(newPlays/qualified*100):0;
     if (DOM.statReplayRate) DOM.statReplayRate.textContent = `${replayPct}%`;
     if (DOM.statDiscoveryRate) DOM.statDiscoveryRate.textContent = `${discoveryPct}%`;
 
@@ -2603,6 +2596,12 @@
         skips.push(feedback);skips=skips.slice(-2000);
         try{localStorage.setItem('pain_taste_skips',JSON.stringify(skips));}catch(_){}
         if(queue)queue.setStats({plays:[...(state.stats.plays||[]),...skips]});
+        // The phone needs the same explicit feedback. Qualification rules keep
+        // these previews out of play counts, while preserving honest skip/time data.
+        const play={...feedback,id:'pc_'+(globalThis.crypto?.randomUUID?.()||Date.now()+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',
+          media_heard:Math.round(listening.ranges.reduce((n,r)=>n+r[1]-r[0],0)*1000),finished:0};
+        state.stats.plays.push(play);localSyncRevision++;
+        try{await fetch('/api/sync-stats',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({play,phoneUrl:state.phoneUrl})});}catch(_){}
       }
       return;
     }
@@ -3170,7 +3169,8 @@
         body: JSON.stringify({phoneUrl: state.phoneUrl})
       });
       if (!result.ok) throw new Error('Phone sync failed');
-      const {library: libData, stats} = await result.json();
+      const {library: libData, stats, djState} = await result.json();
+      mergeSharedAudio(djState);
       if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
       // A local click/play during the exchange must not be rolled back by its response.
       if (revision !== localSyncRevision) { lastSyncAttempt = 0; return; }

@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
+import org.json.*;
 
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class MainActivity extends Activity {
@@ -517,27 +518,19 @@ public final class MainActivity extends Activity {
                         + " кодек содержат данные для gapless. На этом экране сохранены элементы"
                         + " исходного дизайна."));
         scene.action(
-            "Кроссфейд",
+            "Автоэквалайзер",
             24,
             342,
             342,
             59,
-            () ->
-                info(
-                    "Кроссфейд",
-                    "Перекрытие двух треков появится позже. Сейчас работает"
-                        + " один аудиодвижок, без искусственной паузы."));
+            this::equalizer);
         scene.action(
-            "ReplayGain",
+            "Умная громкость",
             24,
             407,
             342,
             48,
-            () ->
-                info(
-                    "ReplayGain",
-                    "Чтение тегов ReplayGain и нормализация — следующий этап. Сейчас громкость"
-                        + " исходного файла не изменяется."));
+            this::equalizer);
         scene.action("Библиотека и теги", 24, 482, 342, 56, this::scanOptions);
         scene.action("Внешний вид", 24, 550, 342, 56, this::appearance);
         scene.action(
@@ -799,7 +792,7 @@ public final class MainActivity extends Activity {
         }
         break;
       case 3:
-        scene.text("3:142", "Инсайты / " + LocalDate.now().getYear());
+        scene.text("3:142", isRu()?"Инсайты / всё время":"Insights / all time");
         scene.text("9:3", "" + (s.heard / 60000));
         scene.bounds("9:3", 42, 157, 190, 50);
         scene.text("9:5", s.sessionCount + " сессий");
@@ -900,16 +893,16 @@ public final class MainActivity extends Activity {
           scene.bounds("22:15", 42, 299, 250, 20);
           scene.text("22:16", "Плавный переход между треками альбома");
           scene.bounds("22:16", 42, 319, 270, 20);
-          scene.text("22:19", "Кроссфейд");
+          scene.text("22:19", "Автоэквалайзер");
           scene.bounds("22:19", 42, 350, 220, 20);
-          scene.text("22:20", "Скоро");
+          scene.text("22:20", app.prefs.getBoolean("autoEq",false)?"Вкл.":"Выкл.");
           scene.bounds("22:20", 270, 350, 90, 24);
           scene.text("22:24", "");
-          scene.text("22:25", "в планах");
+          scene.text("22:25", "");
           scene.bounds("22:25", 270, 391, 80, 16);
-          scene.text("22:26", "ReplayGain");
+          scene.text("22:26", "Умная громкость");
           scene.bounds("22:26", 42, 413, 220, 20);
-          scene.text("22:27", "Скоро. Выравнивание громкости");
+          scene.text("22:27", "Выравнивание треков: "+state("smartVolume",false));
           scene.bounds("22:27", 42, 433, 270, 20);
           scene.text("22:31", "БИБЛИОТЕКА И ТЕГИ");
           scene.bounds("22:31", 42, 494, 280, 20);
@@ -930,7 +923,7 @@ public final class MainActivity extends Activity {
           scene.bounds("22:40", 42, 647, 270, 20);
           scene.text("22:43", "УСТРОЙСТВА И СИНХРОНИЗАЦИЯ");
           scene.bounds("22:43", 42, 698, 280, 20);
-          scene.text("22:44", "Linux / Windows · скоро");
+          scene.text("22:44", "ПК и телефон в одной сети Wi-Fi");
           scene.bounds("22:44", 42, 715, 285, 20);
           scene.text("22:46", "ДОПОЛНИТЕЛЬНО");
           scene.bounds("22:46", 24, 760, 280, 20);
@@ -953,16 +946,16 @@ public final class MainActivity extends Activity {
           scene.bounds("22:15", 42, 299, 250, 20);
           scene.text("22:16", "Seamless album transitions");
           scene.bounds("22:16", 42, 319, 270, 20);
-          scene.text("22:19", "Кроссфейд");
+          scene.text("22:19", "Automatic EQ");
           scene.bounds("22:19", 42, 350, 220, 20);
-          scene.text("22:20", "Off · later");
+          scene.text("22:20", app.prefs.getBoolean("autoEq",false)?"On":"Off");
           scene.bounds("22:20", 280, 350, 76, 24);
           scene.text("22:24", "");
-          scene.text("22:25", "planned");
+          scene.text("22:25", "");
           scene.bounds("22:25", 294, 391, 59, 16);
-          scene.text("22:26", "ReplayGain");
+          scene.text("22:26", "Smart volume");
           scene.bounds("22:26", 42, 413, 220, 20);
-          scene.text("22:27", "Planned · original volume");
+          scene.text("22:27", app.prefs.getBoolean("smartVolume",false)?"Automatic level matching on":"Automatic level matching off");
           scene.bounds("22:27", 42, 433, 270, 20);
           scene.text("22:31", "LIBRARY & TAGS");
           scene.bounds("22:31", 42, 494, 280, 20);
@@ -983,7 +976,7 @@ public final class MainActivity extends Activity {
           scene.bounds("22:40", 42, 647, 270, 20);
           scene.text("22:43", "DEVICES & SYNC");
           scene.bounds("22:43", 42, 698, 280, 20);
-          scene.text("22:44", "Linux / Windows · next milestone");
+          scene.text("22:44", "PC and phone on the same Wi-Fi");
           scene.bounds("22:44", 42, 715, 285, 20);
           scene.text("22:46", "ADVANCED");
           scene.bounds("22:46", 24, 760, 280, 20);
@@ -1040,6 +1033,7 @@ public final class MainActivity extends Activity {
     if (tracks.isEmpty()) return;
     List<MediaItem> items = new ArrayList<>();
     for (Track t : tracks) items.add(t.mediaItem());
+    if(app.service!=null)app.service.setScope(tracks);
     player.setMediaItems(items, index, 0);
     player.prepare();
     player.play();
@@ -1656,7 +1650,7 @@ public final class MainActivity extends Activity {
 
   private void entryMenu(Entry e) {
     List<String> options =
-        new ArrayList<>(List.of("Воспроизвести", "Воспроизвести следующим", "Добавить в очередь", "Smart queue"));
+        new ArrayList<>(List.of("Воспроизвести", "Воспроизвести следующим", "Добавить в очередь", "Smart DJ"));
     if (e.leaf) options.add(e.tracks.get(0).favorite ? "Убрать из избранного" : "В избранное");
     options.add("Добавить в плейлист");
     if (e.leaf) {
@@ -1681,8 +1675,9 @@ public final class MainActivity extends Activity {
                 case "Добавить в очередь":
                   enqueue(e.tracks, false);
                   break;
-                case "Smart queue":
-                  play(app.smartQueue(e.tracks, ""), 0);
+                case "Smart DJ":
+                  if(app.service!=null)app.service.setSmart(true);
+                  play(e.tracks, 0);
                   break;
                 case "В избранное":
                 case "Убрать из избранного":
@@ -1744,13 +1739,14 @@ public final class MainActivity extends Activity {
   private void favorite(Track t) {
     boolean value = !t.favorite;
     t.favorite = value;
-    app.io.execute(() -> app.repo.favorite(t.id, value));
+    app.io.execute(() -> {app.repo.favorite(t.id, value);app.music.refresh();});
     toast(value ? "В избранном" : "Удалено из избранного");
     if (page == 2) rebuildLibrary();
   }
 
   private void enqueue(List<Track> tracks, boolean next) {
     if (player == null) return;
+    if(app.service!=null)app.service.addScope(tracks,next);
     List<MediaItem> items = new ArrayList<>();
     for (Track t : tracks) items.add(t.mediaItem());
     if (next && player.getMediaItemCount() > 0)
@@ -1876,6 +1872,7 @@ public final class MainActivity extends Activity {
                     player.moveMediaItem(index, index + 1);
                   break;
                 case 3:
+                  if(app.service!=null)app.service.removeScope(player.getMediaItemAt(index).mediaId);
                   player.removeMediaItem(index);
                   break;
               }
@@ -1885,20 +1882,9 @@ public final class MainActivity extends Activity {
   }
 
   private void smartSortQueue() {
-    if (player == null) return;
-    int current = player.getCurrentMediaItemIndex();
-    if (current < 0) return;
-    List<Track> upcoming = new ArrayList<>();
-    for (int i = current + 1; i < player.getMediaItemCount(); i++) {
-      Track t = app.track(player.getMediaItemAt(i).mediaId);
-      if (t != null) upcoming.add(t);
-    }
-    String artist = current() == null ? "" : current().artist;
-    upcoming = app.smartQueue(upcoming, artist);
-    player.removeMediaItems(current + 1, player.getMediaItemCount());
-    enqueue(upcoming, false);
-    player.setShuffleModeEnabled(false);
-    toast("Реже слушанное выше; исполнители чередуются");
+    if(app.service==null)return;
+    app.service.setSmart(true);
+    toast(app.music.error.isEmpty()?"Smart DJ: следующий трек по вашему вкусу":app.music.error);
   }
 
   private void queueModes() {
@@ -1911,16 +1897,22 @@ public final class MainActivity extends Activity {
         .setTitle("Порядок воспроизведения")
         .setItems(
             new String[] {
-              "Перемешивание: " + (player.getShuffleModeEnabled() ? "Включено" : "Выключено"),
+              "Порядок: " + (app.service!=null&&app.service.smartEnabled()?"Smart DJ":player.getShuffleModeEnabled()?"случайный":"по очереди"),
               "Повтор: " + repeat,
               "Очистить следующие треки"
             },
             (d, i) -> {
-              if (i == 0) player.setShuffleModeEnabled(!player.getShuffleModeEnabled());
+              if (i == 0) new AlertDialog.Builder(this).setTitle("Порядок воспроизведения")
+                  .setItems(new String[]{"По очереди","Случайный","Smart DJ"},(dd,mode)->{
+                    if(app.service!=null)app.service.setSmart(mode==2);
+                    player.setShuffleModeEnabled(mode==1);
+                  }).show();
               else if (i == 1) player.setRepeatMode((player.getRepeatMode() + 1) % 3);
-              else
+              else {
+                if(app.service!=null)app.service.clearUpcoming();
                 player.removeMediaItems(
                     Math.max(0, player.getCurrentMediaItemIndex() + 1), player.getMediaItemCount());
+              }
             })
         .show();
   }
@@ -1935,7 +1927,8 @@ public final class MainActivity extends Activity {
       "Таймер сна",
       "Скорость воспроизведения",
       "Эквалайзер",
-      "Настройки"
+      "Настройки",
+      "Smart DJ и сохранённые вайбы"
     };
     new AlertDialog.Builder(this)
         .setTitle(t == null ? "Плеер" : t.title)
@@ -1966,6 +1959,9 @@ public final class MainActivity extends Activity {
                   break;
                 case 7:
                   show(6, true);
+                  break;
+                case 8:
+                  smartDjMenu();
                   break;
               }
             })
@@ -2003,19 +1999,81 @@ public final class MainActivity extends Activity {
   }
 
   private void equalizer() {
-    if (app.service == null) return;
-    Intent intent = new Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
-    intent.putExtra(AudioEffect.EXTRA_AUDIO_SESSION, app.service.player.getAudioSessionId());
-    intent.putExtra(AudioEffect.EXTRA_PACKAGE_NAME, getPackageName());
-    intent.putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC);
-    try {
-      startActivity(intent);
-    } catch (ActivityNotFoundException e) {
-      info(
-          "Эквалайзер",
-          "На этом устройстве нет системной панели эквалайзера. Встроенный эквалайзер запланирован"
-              + " в следующей версии.");
+    String[] rows={"Автоэквалайзер: "+state("autoEq",false),"Умная громкость: "+state("smartVolume",false),"Ручной эквалайзер","Выключить эквалайзер","Системная панель звука"};
+    new AlertDialog.Builder(this).setTitle("Звук").setItems(rows,(d,i)->{
+      if(i==0){flip("autoEq",false);if(app.prefs.getBoolean("autoEq",false))app.prefs.edit().putBoolean("equalizer",false).apply();}
+      else if(i==1)flip("smartVolume",false);
+      else if(i==2){manualEqualizer();return;}
+      else if(i==3)app.prefs.edit().putBoolean("autoEq",false).putBoolean("equalizer",false).apply();
+      else {
+        if(app.service==null)return;
+        Intent intent=new Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+            .putExtra(AudioEffect.EXTRA_AUDIO_SESSION,app.service.player.getAudioSessionId())
+            .putExtra(AudioEffect.EXTRA_PACKAGE_NAME,getPackageName());
+        try{startActivity(intent);}catch(ActivityNotFoundException e){toast("Системная панель недоступна. Используйте встроенный эквалайзер.");}return;
+      }
+      if(app.service!=null)app.service.applyPreferences();bind();
+    }).setPositiveButton("Как работает",(d,w)->info("Звук","Автоэквалайзер мягко корректирует баланс по звучанию трека. Умная громкость измеряет звук после эквалайзера и сглаживает перепады; защита пиков работает совместно.\n\nПри звонке или другом аудио PAIN подчиняется аудиофокусу Android. Обе функции можно отключить.")).setNegativeButton("Закрыть",null).show();
+  }
+
+  private void manualEqualizer(){
+    LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(16),dp(24),dp(16));
+    ScrollView scroll=new ScrollView(this);scroll.addView(box);
+    JSONArray saved;try{saved=new JSONArray(app.prefs.getString("eqBands","[]"));}catch(Exception e){saved=new JSONArray();}
+    SeekBar[] sliders=new SeekBar[8];
+    for(int i=0;i<8;i++){
+      final String frequency=AudioDsp.FREQUENCIES[i]>=1000?String.format(Locale.ROOT,"%.1f кГц",AudioDsp.FREQUENCIES[i]/1000):(int)AudioDsp.FREQUENCIES[i]+" Гц";
+      TextView caption=label(frequency,14);box.addView(caption);
+      SeekBar slider=new SeekBar(this);slider.setMax(24);slider.setProgress(Math.max(0,Math.min(24,12+saved.optInt(i,0))));sliders[i]=slider;box.addView(slider);
+      caption.setText(frequency+"   "+(slider.getProgress()-12)+" дБ");
+      slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+        public void onProgressChanged(SeekBar s,int p,boolean u){caption.setText(frequency+"   "+(p-12)+" дБ");}
+        public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}
+      });
     }
+    new AlertDialog.Builder(this).setTitle("Эквалайзер").setView(scroll).setPositiveButton("Применить",(d,w)->{
+      JSONArray values=new JSONArray();for(SeekBar slider:sliders)values.put(slider.getProgress()-12);
+      app.prefs.edit().putString("eqBands",values.toString()).putBoolean("equalizer",true).putBoolean("autoEq",false).apply();
+      if(app.service!=null)app.service.applyPreferences();bind();
+    }).setNeutralButton("Сбросить",(d,w)->{app.prefs.edit().putString("eqBands","[]").putBoolean("equalizer",false).putBoolean("autoEq",false).apply();if(app.service!=null)app.service.applyPreferences();bind();}).setNegativeButton("Отмена",null).show();
+  }
+
+  private void smartDjMenu(){
+    Track t=current();boolean enabled=app.service!=null&&app.service.smartEnabled();
+    String reason=app.service==null?"":app.service.smartReason;
+    new AlertDialog.Builder(this).setTitle("Smart DJ").setItems(new String[]{
+      "Подбор: "+(enabled?"включён":"выключен"),"Почему этот трек","Сохранить вайб текущего трека","Сохранённые вайбы","Исключить текущий трек из подбора","Вернуть исключённые треки"},(d,i)->{
+      try{
+        if(i==0){if(app.service!=null)app.service.setSmart(!enabled);toast(app.music.error.isEmpty()?"Smart DJ: "+state("smartDj",false):app.music.error);}
+        else if(i==1)info(t==null?"Smart DJ":t.title,reason.isEmpty()?"Этот трек выбран вручную или запущен из сохранённой очереди.":reason);
+        else if(i==2&&t!=null){EditText name=input("Название вайба",t.title);new AlertDialog.Builder(this).setTitle("Сохранить вайб").setView(name).setPositiveButton("Сохранить",(dd,w)->{
+          try{changeVibe(new JSONObject().put("action","save").put("track",t.id).put("name",name.getText().toString()));}catch(Exception ignored){}
+        }).setNegativeButton("Отмена",null).show();}
+        else if(i==3)savedVibes();
+        else if(i==4&&t!=null){JSONArray excluded=new JSONArray(app.prefs.getString("djExcluded","[]"));boolean has=false;for(int n=0;n<excluded.length();n++)if(t.id.equals(excluded.optString(n)))has=true;if(!has)excluded.put(t.id);app.prefs.edit().putString("djExcluded",excluded.toString()).apply();app.music.refresh();toast("Трек исключён из Smart DJ. Файл остаётся в библиотеке.");}
+        else if(i==5){app.prefs.edit().putString("djExcluded","[]").apply();app.music.refresh();toast("Исключения сброшены");}
+      }catch(Exception e){toast("Не удалось сохранить настройку");}
+    }).setNegativeButton("Закрыть",null).show();
+  }
+  private void changeVibe(JSONObject request){app.music.call("vibe",request,(data,error)->{
+    if(error!=null){toast(error);return;}
+    app.music.saveVibes(data);
+    if(app.service!=null)app.service.refreshSmart(false);toast("Вайб сохранён");
+  });}
+  private void savedVibes(){
+    try{
+      JSONObject state=new JSONObject(app.prefs.getString("djVibes","{}"));JSONArray items=state.optJSONArray("items");
+      if(items==null||items.length()==0){info("Сохранённые вайбы","Выберите трек, послушайте его и сохраните его звучание через меню Smart DJ.");return;}
+      String[] names=new String[items.length()+1];names[0]="Отпустить вайб";
+      for(int i=0;i<items.length();i++){JSONObject item=items.getJSONObject(i);names[i+1]=(item.optString("id").equals(state.optString("activeId"))?"✓ ":"")+item.optString("name");}
+      new AlertDialog.Builder(this).setTitle("Сохранённые вайбы").setItems(names,(d,index)->{
+        try{if(index==0){changeVibe(new JSONObject().put("action","activate"));return;}
+          String id=items.getJSONObject(index-1).getString("id");new AlertDialog.Builder(this).setTitle(names[index]).setItems(new String[]{"Включить","Удалить"},(dd,i)->{
+            try{changeVibe(new JSONObject().put("action",i==0?"activate":"delete").put("id",id));}catch(Exception ignored){}
+          }).show();
+        }catch(Exception ignored){}
+      }).setNegativeButton("Закрыть",null).show();
+    }catch(Exception e){toast("Не удалось прочитать вайбы");}
   }
 
   private void scanOptions() {
@@ -2334,7 +2392,8 @@ public final class MainActivity extends Activity {
       "Эквалайзер",
       "Экспорт библиотеки и истории",
       "Очистить историю прослушивания",
-      "О приложении"
+      "О приложении",
+      "Smart DJ и вайбы"
     };
     new AlertDialog.Builder(this)
         .setTitle("Дополнительно")
@@ -2390,15 +2449,15 @@ public final class MainActivity extends Activity {
                   break;
                 case 7:
                   info(
-                      "MONO / LOCAL · 0.1.0",
-                      "Локальный музыкальный плеер.\n\n"
-                          + "Дизайн перенесён из вашего Figma: Ceramic hi-fi / quiet luxury, Geist,"
-                          + " Maple mark.\n\n"
-                          + "Воспроизведение: Android Media3. Статистика, очередь, тексты и"
-                          + " настройки хранятся на устройстве. Приложение не запрашивает доступ к"
-                          + " интернету.\n\n"
-                          + "Далее: ваш рекомендатель, Linux / Windows sync, crossfade и"
-                          + " ReplayGain.");
+                      "PAIN · " + BuildConfig.VERSION_NAME,
+                      "Локальный музыкальный плеер для телефона и ПК.\n\n"
+                          + "Smart DJ учитывает звучание, прослушивания, лайки и пропуски. "
+                          + "Анализ работает на устройстве.\n\n"
+                          + "Библиотека, история, избранное и аудиопрофили синхронизируются по Wi-Fi. "
+                          + "Проверка обновлений обращается к GitHub.");
+                  break;
+                case 8:
+                  smartDjMenu();
                   break;
               }
             })
@@ -2509,6 +2568,13 @@ public final class MainActivity extends Activity {
   }
 
   private void moreStats() {
+    app.music.call("insights",new JSONObject(),(data,error)->{
+      if(isFinishing()||isDestroyed())return;
+      if(data!=null)app.music.insights=data;
+      showMoreStats();
+    });
+  }
+  private void showMoreStats() {
     Repository.Stats s = detail == null ? app.stats : detail;
     List<String> rows = new ArrayList<>();
     rows.add("Прослушано: " + Repository.formatTime(s.heard));
@@ -2519,7 +2585,18 @@ public final class MainActivity extends Activity {
     rows.add("Сессий: " + s.sessionCount + "; в среднем: " + Repository.formatTime(s.average));
     rows.add("Самая длинная сессия: " + Repository.formatTime(s.longest));
     rows.add("Дней подряд: " + s.streak + "; рекорд: " + s.longestStreak);
-    rows.add("Изучено в библиотеке: " + percent(s.unique, app.tracks.size()));
+    long known=s.counts.keySet().stream().filter(id->app.track(id)!=null).count();
+    rows.add("Изучено в библиотеке: " + percent(known, app.tracks.size()));
+    JSONObject extra=app.music.insights;
+    if(extra.has("discoveries")){
+      rows.add("Открытий за 30 дней: "+extra.optInt("discoveries"));
+      rows.add("К скольким открытиям вернулись в другой день: "+extra.optInt("retained"));
+      rows.add("Вне избранного за всё время: "+percent(extra.optLong("outsideFavorites"),extra.optLong("knownTime"))+" времени");
+      JSONObject ritual=extra.optJSONObject("ritual"),comeback=extra.optJSONObject("comeback"),record=extra.optJSONObject("record");
+      if(ritual!=null){Track tr=app.track(ritual.optString("track"));if(tr!=null)rows.add("Ваш ритуал: "+tr.title+" — "+ritual.optInt("days")+" дней за 4 недели");}
+      if(comeback!=null){Track tr=app.track(comeback.optString("track"));if(tr!=null)rows.add("Возвращение: "+tr.title+" после "+comeback.optInt("days")+" дней");}
+      if(record!=null)rows.add("Рекорд дня за всё время: "+record.optString("day")+" — "+Repository.formatTime(record.optLong("ms")));
+    }
     rows.add("Любимые треки");
     s.trackMs.entrySet().stream()
         .sorted(Map.Entry.<String, Long>comparingByValue().reversed())

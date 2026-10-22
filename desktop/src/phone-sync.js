@@ -1,6 +1,7 @@
 // Durable local changes and one ordered exchange with the phone. No cloud service.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),{createHash}=require('node:crypto');
 const mergeStats=require('./stats-store');
+const DjState=require('./dj-state');
 const flag=value=>value===true||value===1?1:0;
 function request(base,route,body){
  return new Promise((resolve,reject)=>{
@@ -32,6 +33,7 @@ class PhoneSync{
   if(!stats||!Array.isArray(stats.plays))throw new Error('Invalid statistics');
   return this.write('stats.json',mergeStats(this.read('stats.json',{plays:[],slices:[]}),stats));
  }
+ saveDjState(state){return this.write('dj-state.json',DjState.merge(this.read('dj-state.json',{}),state));}
  favorite(trackId,favorite){
   if(typeof trackId!=='string'||!trackId||trackId.length>1024)throw new Error('Invalid track');
   const item={trackId,favorite:flag(favorite)};
@@ -79,7 +81,12 @@ class PhoneSync{
    stats=await request(base,'/api/stats');
    if(!Array.isArray(stats?.plays))throw new Error('Invalid phone statistics');
   }
-  return {library:this.saveLibrary(library),stats:this.saveStats(stats)};
+  let djState=this.read('dj-state.json',{});
+  if(library.capabilities?.audioProfiles===1){
+   // Optional for older phones. An unavailable analysis worker must not stop stats/likes.
+   try{djState=this.saveDjState(await request(base,'/api/dj-state',djState));}catch(_){}
+  }
+  return {library:this.saveLibrary(library),stats:this.saveStats(stats),djState};
  });}
 }
 module.exports=PhoneSync;
