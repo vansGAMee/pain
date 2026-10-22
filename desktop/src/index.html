@@ -941,6 +941,33 @@
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="backgroundDuckSwitch"><span class="switch-slider round"></span></label></div>
           </div>
         </div>
+        <div class="settings-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Everyday comfort" data-ru="Для себя">Для себя</div>
+            <div class="settings-section-desc" data-en="Small details that make listening yours. Saved on this device." data-ru="Детали для комфортного прослушивания. Сохраняются на этом устройстве.">Детали для комфортного прослушивания. Сохраняются на этом устройстве.</div>
+          </div>
+          <div class="fluid-setting-row comfort-limit-row">
+            <div class="fluid-row-label">
+              <label for="volumeLimitSlider" data-en="Volume ceiling" data-ru="Предел громкости">Предел громкости</label>
+              <span class="fluid-row-hint" data-en="Limits the player's volume, including after unmuting. Does not change system volume." data-ru="Ограничивает громкость плеера, в том числе после снятия беззвучного режима. Не меняет системную громкость.">Ограничивает громкость плеера, в том числе после снятия беззвучного режима. Не меняет системную громкость.</span>
+            </div>
+            <div class="comfort-range"><input type="range" id="volumeLimitSlider" min="25" max="100" step="5" value="100"><output id="volumeLimitValue" for="volumeLimitSlider">100%</output></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="reducedMotionSwitch" data-en="Reduced motion" data-ru="Меньше движения">Меньше движения</label>
+              <span class="fluid-row-hint" data-en="Still gradients, no spinning disc or animated transitions." data-ru="Спокойные градиенты, без вращения диска и анимированных переходов.">Спокойные градиенты, без вращения диска и анимированных переходов.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="reducedMotionSwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="saveHistorySwitch" data-en="Save listening history" data-ru="Сохранять историю">Сохранять историю</label>
+              <span class="fluid-row-hint" data-en="When off, new listens and skips do not affect statistics or taste. Existing history and likes stay." data-ru="Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.">Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="saveHistorySwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+        </div>
         <!-- Section: Ambient Fluid Glow -->
         <div class="settings-section">
           <div class="settings-section-head">

@@ -62,7 +62,7 @@
   finally{saveBusy=false;if(!panel.hidden)$('#karaokeSave').disabled=!track;}
  }
  function exportLrc(){const text=lines.filter(l=>l.time!==null).map(l=>`[${clock(l.time).padStart(8,'0')}]${l.text}`).join('\n');if(!text){note(t('Сначала отметьте строки.','Mark the lines first.'));return;}const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=(track?.title||'lyrics').replace(/[\\/:*?"<>|]/g,'_')+'.lrc';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
- function motion(){return matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';}
+ function motion(){return document.documentElement.hasAttribute('data-reduced-motion')||matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';}
  function highlight(){if(panel.hidden)return;let index=-1;lines.forEach((l,i)=>{if(l.time!==null&&l.time<=audio.currentTime)index=i;});if(index===active)return;active=index;
   panel.querySelectorAll('.karaoke-line').forEach((el,i)=>{el.classList.toggle('is-current',i===index);el.classList.toggle('is-past',i<index);el.classList.toggle('is-next',editing&&i===next);if(i===index)el.setAttribute('aria-current','true');else el.removeAttribute('aria-current');});
   if(!editing&&Date.now()>manualUntil&&index>=0)$(`[data-index="${index}"]`)?.scrollIntoView({block:'center',behavior:motion()});

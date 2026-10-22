@@ -1999,12 +1999,13 @@ public final class MainActivity extends Activity {
   }
 
   private void equalizer() {
-    String[] rows={"Автоэквалайзер: "+state("autoEq",false),"Умная громкость: "+state("smartVolume",false),"Ручной эквалайзер","Выключить эквалайзер","Системная панель звука"};
+    String[] rows={"Автоэквалайзер: "+state("autoEq",false),"Умная громкость: "+state("smartVolume",false),"Ручной эквалайзер","Выключить эквалайзер","Предел громкости: "+app.prefs.getInt("volumeLimit",100)+"%","Системная панель звука"};
     new AlertDialog.Builder(this).setTitle("Звук").setItems(rows,(d,i)->{
       if(i==0){flip("autoEq",false);if(app.prefs.getBoolean("autoEq",false))app.prefs.edit().putBoolean("equalizer",false).apply();}
       else if(i==1)flip("smartVolume",false);
       else if(i==2){manualEqualizer();return;}
       else if(i==3)app.prefs.edit().putBoolean("autoEq",false).putBoolean("equalizer",false).apply();
+      else if(i==4){comfortSettings();return;}
       else {
         if(app.service==null)return;
         Intent intent=new Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
@@ -2383,6 +2384,63 @@ public final class MainActivity extends Activity {
         .show();
   }
 
+  private void comfortSettings() {
+    LinearLayout box = new LinearLayout(this);
+    box.setOrientation(LinearLayout.VERTICAL);
+    box.setPadding(dp(24), dp(12), dp(24), dp(16));
+    ScrollView scroll = new ScrollView(this); scroll.addView(box);
+    TextView intro = label(isRu() ? "Настройки для этого устройства" : "Settings for this device", 13);
+    intro.setAlpha(.65f); box.addView(intro);
+    TextView volume = label("", 16); volume.setPadding(0, dp(22), 0, dp(6)); box.addView(volume);
+    SeekBar limit = new SeekBar(this); limit.setMax(15);
+    limit.setProgress((Math.max(25, Math.min(100, app.prefs.getInt("volumeLimit", 100))) - 25) / 5);
+    volume.setText((isRu() ? "Предел громкости · " : "Volume ceiling · ") + (25 + limit.getProgress() * 5) + "%");
+    limit.setContentDescription(isRu() ? "Предел громкости плеера" : "Player volume ceiling");
+    box.addView(limit);
+    limit.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      public void onProgressChanged(SeekBar view, int progress, boolean user) {
+        int value = 25 + progress * 5;
+        volume.setText((isRu() ? "Предел громкости · " : "Volume ceiling · ") + value + "%");
+        if (user) {
+          app.prefs.edit().putInt("volumeLimit", value).apply();
+          if (app.service != null) app.service.player.setVolume(value / 100f);
+        }
+      }
+      public void onStartTrackingTouch(SeekBar view) {}
+      public void onStopTrackingTouch(SeekBar view) {}
+    });
+    TextView hint = label(isRu() ? "Громкость внутри PAIN. Системная громкость не меняется." : "Volume inside PAIN. System volume stays unchanged.", 13);
+    hint.setAlpha(.65f); box.addView(hint);
+    comfortToggle(box, isRu() ? "Меньше движения" : "Reduced motion",
+        isRu() ? "Без вращения диска и анимированных переходов." : "No spinning disc or animated transitions.",
+        !app.prefs.getBoolean("motion", true), enabled -> {
+          app.prefs.edit().putBoolean("motion", !enabled).apply(); updatePlayback();
+        });
+    comfortToggle(box, isRu() ? "Сохранять историю" : "Save listening history",
+        isRu() ? "Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются."
+            : "When off, new listens and skips do not affect statistics or taste. Existing history and likes stay.",
+        app.prefs.getBoolean("history", true), enabled -> {
+          if (app.service != null) app.service.checkpoint();
+          app.prefs.edit().putBoolean("history", enabled).apply();
+          if (app.service != null) app.service.resetTracking();
+        });
+    new AlertDialog.Builder(this).setTitle(isRu() ? "Для себя" : "Everyday comfort")
+        .setView(scroll).setPositiveButton(isRu() ? "Готово" : "Done", null).show();
+  }
+
+  private void comfortToggle(LinearLayout box, String title, String hint, boolean checked,
+      java.util.function.Consumer<Boolean> change) {
+    LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+    row.setPadding(0, dp(22), 0, dp(6));
+    TextView caption = label(title, 16);
+    row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
+    Switch toggle = new Switch(this); toggle.setChecked(checked); toggle.setContentDescription(title);
+    toggle.setMinHeight(dp(48)); row.addView(toggle); box.addView(row);
+    row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
+    toggle.setOnCheckedChangeListener((v, enabled) -> change.accept(enabled));
+    TextView description = label(hint, 13); description.setAlpha(.65f); box.addView(description);
+  }
+
   private void advanced() {
     String[] names = {
       "Скорость воспроизведения",
@@ -2393,7 +2451,8 @@ public final class MainActivity extends Activity {
       "Экспорт библиотеки и истории",
       "Очистить историю прослушивания",
       "О приложении",
-      "Smart DJ и вайбы"
+      "Smart DJ и вайбы",
+      isRu() ? "Для себя · громкость, движение, история" : "Everyday comfort · volume, motion, history"
     };
     new AlertDialog.Builder(this)
         .setTitle("Дополнительно")
@@ -2458,6 +2517,9 @@ public final class MainActivity extends Activity {
                   break;
                 case 8:
                   smartDjMenu();
+                  break;
+                case 9:
+                  comfortSettings();
                   break;
               }
             })

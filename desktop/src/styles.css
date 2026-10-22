@@ -702,7 +702,9 @@ body,
 /* Pause heavy background animations when view pane is inactive */
 .view-pane:not(.active) .favorites-ambient-layer,
 .view-pane:not(.active) .aura-orb {
-  animation-play-state: paused !important;
+  animation-duration: .01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
 }
 
 .view-hero-header {
@@ -4609,6 +4611,16 @@ input:checked + .switch-slider:before {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.comfort-range { display: flex; align-items: center; gap: 12px; width: 190px; max-width: 100%; flex: 0 0 auto; }
+.comfort-range input { width: 100%; min-width: 0; accent-color: var(--ink); }
+.comfort-range output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+@media (max-width: 600px) { .comfort-limit-row { flex-wrap: wrap; } .comfort-range { width: 100%; } }
+html[data-reduced-motion] *, html[data-reduced-motion] *::before, html[data-reduced-motion] *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
 }
 
 .share-track-info {

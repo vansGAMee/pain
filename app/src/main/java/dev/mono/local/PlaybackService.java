@@ -184,6 +184,7 @@ public final class PlaybackService extends MediaSessionService {
 
   public void applyPreferences() {
     if (player == null) return;
+    player.setVolume(Math.max(25, Math.min(100, app.prefs.getInt("volumeLimit", 100))) / 100f);
     player.setSkipSilenceEnabled(app.prefs.getBoolean("skipSilence", false));
     player.setPlaybackSpeed(app.prefs.getFloat("speed", 1f));
     player.setRepeatMode(app.prefs.getInt("repeat", 0));

@@ -35,6 +35,9 @@
     hasAutoSynced: false,
     smartVolume: localStorage.getItem('pain_smart_volume') === 'true',
     backgroundDuck: localStorage.getItem('pain_background_duck') !== 'false',
+    volumeLimit: Math.max(25, Math.min(100, Number(localStorage.getItem('pain_volume_limit')) || 100)),
+    reducedMotion: localStorage.getItem('pain_reduced_motion') === 'true',
+    saveHistory: localStorage.getItem('pain_save_history') !== 'false',
     lastVolume: 1.0,
     isMuted: false,
 
@@ -2212,7 +2215,7 @@
     listening?.sample(performance.now(), audio.currentTime || 0, active && !audio.muted && audio.volume > 0, audio.playbackRate || 1);
   }
   function beginListening(track) {
-    listening = new ListeningLedger(track.id, Number(track.duration)||0);
+    listening = state.saveHistory ? new ListeningLedger(track.id, Number(track.duration)||0) : null;
   }
   function syncPlaybackState() {
     state.isPlaying = !audio.paused && !audio.ended;
@@ -2586,7 +2589,7 @@
   }
 
   async function recordTrackFinished(trackId,explicitSkip=false) {
-    if(!listening||listening.id!==trackId||listening.closed)return;
+    if(!state.saveHistory||!listening||listening.id!==trackId||listening.closed)return;
     const audible=listening.finish();
     if(!audible){
       if(explicitSkip && listening.heard>=1000 && listening.duration>0 && !listening._tasteRecorded){
@@ -3084,6 +3087,11 @@
   }
 
   function initSettingsUI() {
+    document.getElementById('volumeLimitSlider').value = state.volumeLimit;
+    document.getElementById('volumeLimitValue').textContent = state.volumeLimit + '%';
+    document.getElementById('reducedMotionSwitch').checked = state.reducedMotion;
+    document.getElementById('saveHistorySwitch').checked = state.saveHistory;
+    document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
     document.getElementById('smartVolumeSwitch').checked = state.smartVolume;
     document.getElementById('backgroundDuckSwitch').checked = state.backgroundDuck;
     document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
@@ -3857,12 +3865,14 @@
     try {
       const saved = JSON.parse(localStorage.getItem('pain_volume'));
       if (saved && Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 1) {
-        audio.volume = saved.volume;
+        audio.volume = Math.min(saved.volume, state.volumeLimit / 100);
         state.isMuted = saved.volume === 0;
         state.lastVolume = Number.isFinite(saved.lastVolume) && saved.lastVolume > 0 && saved.lastVolume <= 1
           ? saved.lastVolume : (saved.volume || 1);
       }
     } catch (_) { /* Invalid or unavailable storage must not prevent playback. */ }
+    audio.volume = Math.min(audio.volume, state.volumeLimit / 100);
+    DOM.volumeSlider.max = state.volumeLimit / 100;
     DOM.volumeSlider.value = audio.volume;
     updateVolumeIcon(audio.volume);
 
@@ -3873,7 +3883,7 @@
     }
 
     DOM.volumeSlider.addEventListener('input', (e) => {
-      const val = parseFloat(e.target.value);
+      const val = Math.min(parseFloat(e.target.value), state.volumeLimit / 100);
       audio.volume = val;
       if (val > 0) state.lastVolume = val;
       state.isMuted = val === 0;
@@ -3883,7 +3893,7 @@
 
     DOM.bottomMuteBtn.addEventListener('click', () => {
       if (state.isMuted) {
-        audio.volume = state.lastVolume > 0 ? state.lastVolume : 1.0;
+        audio.volume = Math.min(state.lastVolume > 0 ? state.lastVolume : 1.0, state.volumeLimit / 100);
         DOM.volumeSlider.value = audio.volume;
         state.isMuted = false;
       } else {
@@ -4168,6 +4178,33 @@
         applyFluidColor('#7c4dff');
       });
     }
+
+    document.getElementById('volumeLimitSlider').addEventListener('input', e => {
+      state.volumeLimit = Number(e.target.value);
+      document.getElementById('volumeLimitValue').textContent = state.volumeLimit + '%';
+      DOM.volumeSlider.max = state.volumeLimit / 100;
+      audio.volume = Math.min(audio.volume, state.volumeLimit / 100);
+      DOM.volumeSlider.value = audio.volume;
+      updateVolumeIcon(audio.volume);
+      try { localStorage.setItem('pain_volume_limit', String(state.volumeLimit)); } catch (_) {}
+      saveVolume();
+    });
+    document.getElementById('reducedMotionSwitch').addEventListener('change', e => {
+      state.reducedMotion = e.target.checked;
+      document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
+      try { localStorage.setItem('pain_reduced_motion', String(state.reducedMotion)); } catch (_) {}
+    });
+    document.getElementById('saveHistorySwitch').addEventListener('change', e => {
+      // Close only the audible part before the change; private listening never
+      // becomes a skip or gets backfilled when history is enabled again.
+      sampleListening();
+      if (state.currentTrackId) recordTrackFinished(state.currentTrackId);
+      state.saveHistory = e.target.checked;
+      const track = state.tracks.find(t => t.id === state.currentTrackId);
+      listening = null;
+      if (track && state.saveHistory) { beginListening(track); sampleListening(); }
+      try { localStorage.setItem('pain_save_history', String(state.saveHistory)); } catch (_) {}
+    });
 
     for (const [id, key, storageKey] of [
       ['smartVolumeSwitch', 'smartVolume', 'pain_smart_volume'],
