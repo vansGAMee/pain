@@ -37,10 +37,11 @@
 
       <nav aria-label="Основная навигация">
         <ul class="nav-links">
+          <li><a href="#recommendations">Умный DJ</a></li>
           <li><a href="#how-it-works">Как работает</a></li>
-          <li><a href="#usecase">Сценарий</a></li>
           <li><a href="#features">Возможности</a></li>
           <li><a href="#engineering">Архитектура</a></li>
+          <li><a href="#history">Хронология</a></li>
           <li><a href="#tests">Тесты</a></li>
           <li><a href="#downloads">Скачать</a></li>
         </ul>
@@ -192,6 +193,241 @@
               <span class="stage-caption-text" id="stageCaptionText">
                 Экран «Избранное» на ПК сопряжен со смартфоном по Wi-Fi (761 трек в реальном времени)
               </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: SMART DJ RECOMMENDATION SYSTEM (KILLER FEATURE) -->
+    <section class="content-section recommendations-section" id="recommendations">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Флагманская технология // Smart DJ</span>
+          <h2 class="section-heading">Рекомендательная система, ради которой стоит скачать Pain</h2>
+          <p class="section-description">
+            Главная причина существования Pain — это не просто воспроизведение локальных файлов, а уникальный автономный Smart DJ. Он физически слушает спектр аудиоволн, понимает контекст пропусков и собирает идеальный поток из вашей фонотеки без единого байта облачной рекламы и навязанных трендов.
+          </p>
+        </div>
+
+        <!-- Comparison Banner: Cloud Payola vs Local Smart DJ -->
+        <div class="dj-comparison-banner">
+          <div class="dj-compare-col cloud-col">
+            <div class="dj-compare-header">
+              <span class="compare-badge badge-cloud">Облачные стриминги (Spotify / Яндекс)</span>
+              <h3 class="compare-title">Коммерческий конвейер</h3>
+            </div>
+            <ul class="compare-list">
+              <li>
+                <span class="compare-icon cross">✕</span>
+                <span><strong>Проплаченная ротация (Payola):</strong> лейблы выкупают охваты, продвигая артистов дня в ваши плейлисты.</span>
+              </li>
+              <li>
+                <span class="compare-icon cross">✕</span>
+                <span><strong>Усредненные чарты:</strong> миллионам слушателей навязываются одинаковые алгоритмические подборки.</span>
+              </li>
+              <li>
+                <span class="compare-icon cross">✕</span>
+                <span><strong>Слепота к вашей коллекции:</strong> редкие оффлайн-треки, миксы и концертные записи в облаке недоступны.</span>
+              </li>
+              <li>
+                <span class="compare-icon cross">✕</span>
+                <span><strong>Тотальная телеметрия:</strong> профиль вашего настроения и тайминги прослушивания монетизируются для рекламы.</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="dj-compare-divider">
+            <span class="divider-pill">VS</span>
+          </div>
+
+          <div class="dj-compare-col pain-col">
+            <div class="dj-compare-header">
+              <span class="compare-badge badge-pain">Pain Smart DJ (Локальный движок)</span>
+              <h3 class="compare-title">Истинный вкус без посредников</h3>
+            </div>
+            <ul class="compare-list">
+              <li>
+                <span class="compare-icon check">✓</span>
+                <span><strong>100% честное обучение:</strong> рангер учится только на ваших подтвержденных прослушиваниях. Ноль коммерции.</span>
+              </li>
+              <li>
+                <span class="compare-icon check">✓</span>
+                <span><strong>Физика звука (13 MFCC):</strong> плеер анализирует звуковые волны PCM, а не битые или пустые ID3-теги.</span>
+              </li>
+              <li>
+                <span class="compare-icon check">✓</span>
+                <span><strong>Второе дыхание вашей фонотеке:</strong> алгоритм находит забытые жемчужины и выстраивает органичные переходы.</span>
+              </li>
+              <li>
+                <span class="compare-icon check">✓</span>
+                <span><strong>Полная автономность:</strong> работает без интернета, код открыт (MIT), ноль байт данных во внешнюю сеть.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- 6 Core Engineering Pillars of Smart DJ -->
+        <div class="dj-pillars-grid">
+
+          <!-- Pillar 1: Acoustic 13 MFCC -->
+          <div class="dj-card">
+            <div class="dj-card-tag">01 // АКУСТИЧЕСКИЙ СПЕКТР</div>
+            <h3 class="dj-card-title">13 MFCC тембральных дескрипторов вместо слепых ID3-тегов</h3>
+            <p class="dj-card-text">
+              Обычные плееры опираются на жанры и теги, где часто написано «Unknown» или реклама телеграм-каналов. Pain декодирует PCM-звук в реальном времени и рассчитывает 13 мел-кепстральных коэффициентов (MFCC mean и variation), спектральный центроид, скорость пересечения нуля (ZCR) и динамический диапазон. Плеер оценивает композицию ушами, определяя реальную плотность синтезаторов, акустических гитар или тяжелых ударных.
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">13 MFCC векторов</span>
+              <span class="tech-chip">Спектральный центроид</span>
+              <span class="tech-chip">ZCR & Dynamic Range</span>
+            </div>
+          </div>
+
+          <!-- Pillar 2: Multi-Centroid Taste -->
+          <div class="dj-card">
+            <div class="dj-card-tag">02 // МНОГОГРАННЫЙ ВКУС</div>
+            <h3 class="dj-card-title">Мульти-центроидное хранение: до 12 независимых кластеров</h3>
+            <p class="dj-card-text">
+              Примитивные системы усредняют все ваши треки в один вектор: в результате любитель эмбиента и металла получает рекомендацию в виде невнятной «серой каши». Pain сохраняет до 12 независимых положительных и отрицательных кластеров звучания с динамическим контролем расстояния. Если сходство двух кластеров превышает 0.97, дубликат отсекается — ваш вкус сохраняет богатство и полярность.
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">12 кластеров вкуса</span>
+              <span class="tech-chip">Дистанция сходства &lt; 0.97</span>
+              <span class="tech-chip">Без усреднения в кашу</span>
+            </div>
+          </div>
+
+          <!-- Pillar 3: Acoustic Skip Resolution -->
+          <div class="dj-card highlight-card">
+            <div class="dj-card-tag">03 // АУДИТ ПОВЕДЕНИЯ И СПАСЕНИЕ ОТ БАНОВ</div>
+            <h3 class="dj-card-title">Контекстный учет пропусков: быстрый скип — это не бан</h3>
+            <p class="dj-card-text">
+              Аудит 1600+ событий прослушивания показал: частые быстрые переключения происходят в режиме <em>поиска</em>, а не отвращения. В Pain быстрый перебор (&lt;45с) снижает вес скипа до 0.15. А когда слушатель находит желаемый трек и дослушивает его, включается <strong>контекстное разрешение</strong>: штраф накладывается только на <em>акустическую разницу</em> между отвергнутой песней и выбранной. Общие элементы (например, ритм или бас) не блокируются!
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">Режим поиска (вес 0.15)</span>
+              <span class="tech-chip">Штраф только на дельту</span>
+              <span class="tech-chip">Сохранение любимого настроения</span>
+            </div>
+          </div>
+
+          <!-- Pillar 4: Dual-Horizon SGD & Circadian Rhythm -->
+          <div class="dj-card">
+            <div class="dj-card-tag">04 // ДВУХГОРИЗОНТНОЕ ОБУЧЕНИЕ</div>
+            <h3 class="dj-card-title">Sparse SGD с регуляризацией L2 и циркадные ритмы</h3>
+            <p class="dj-card-text">
+              Логистический рангер обучается прямо на устройстве через разреженный стохастический градиентный спуск (Sparse SGD) со сжатием L2. Алгоритм разделяет долговременный фундамент (полураспад весов 90 дней) и сиюминутное настроение недели (полураспад 7 дней). Время суток разделено на 4-часовые циркадные слоты: ночной расслабляющий джаз не включится в полдень посреди рабочего дня.
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">90-дневный базис</span>
+              <span class="tech-chip">7-дневный сессионный контекст</span>
+              <span class="tech-chip">4-часовые циркадные окна</span>
+            </div>
+          </div>
+
+          <!-- Pillar 5: Polyrhythmic BPM & Session Graph -->
+          <div class="dj-card">
+            <div class="dj-card-tag">05 // СВЕДЕНИЕ И ТЕМП</div>
+            <h3 class="dj-card-title">Полиритмический BPM (3:2, 2:3) и марковский граф сессий</h3>
+            <p class="dj-card-text">
+              Smart DJ сводит композиции с аккуратностью клубного диджея. Темп согласуется не только 1:1, но и по музыкальным гармоникам: 3:2, 2:3, half-time (вдвое медленнее) и double-time (вдвое быстрее) с гауссовым распределением. Направленный граф Session Graph отслеживает естественные цепочки прослушиваний за последние 30 минут, усиливая связки песен, которые идеально звучат друг за другом.
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">BPM 1:1, 3:2, 2:3, 1:2</span>
+              <span class="tech-chip">Session Graph (30 мин)</span>
+              <span class="tech-chip">Гауссова гладкость</span>
+            </div>
+          </div>
+
+          <!-- Pillar 6: Anti-Looping & Explainable AI -->
+          <div class="dj-card">
+            <div class="dj-card-tag">06 // ДИВЕРСИФИКАЦИЯ И ПРОЗРАЧНОСТЬ</div>
+            <h3 class="dj-card-title">Ходы открытий (Discovery Turns), защита от зацикливания и объяснения</h3>
+            <p class="dj-card-text">
+              Чтобы не крутить одних и тех же исполнителей, Pain применяет Artist Spacing и балансировку размера каталога (дискография из 500 треков не вытеснит автора с 3 песнями). Каждый 4-й ход — ход открытий: плеер поднимает треки, не звучавшие более 21 дня. Любое звучание можно зафиксировать как опорный Вайб (Vibe), а под каждым треком выводится честная причина выбора («Близкое звучание», «В настроении последних треков», «Сочетается с сессией»).
+            </p>
+            <div class="dj-card-chips">
+              <span class="tech-chip">Ходы открытий (каждый 4-й)</span>
+              <span class="tech-chip">Баланс каталога 3·ln(N)</span>
+              <span class="tech-chip">Explainable AI</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Interactive Transition Scorer Demo Widget -->
+        <div class="dj-interactive-inspector">
+          <div class="inspector-header">
+            <div>
+              <span class="inspector-tag">ИНТЕРАКТИВНЫЙ ИНСПЕКТОР СКОРИНГА</span>
+              <h3 class="inspector-title">Как Pain выбирает следующий трек прямо сейчас</h3>
+            </div>
+            <button type="button" class="btn btn-secondary sim-transition-btn" id="simTransitionBtn">
+              Смоделировать другой переход
+            </button>
+          </div>
+
+          <div class="inspector-grid">
+            <div class="inspector-tracks-col">
+              <div class="transition-track-card now-playing">
+                <span class="track-role-pill">Сейчас играет</span>
+                <div class="transition-track-title" id="inspectorCurrentTitle">Solar Fields — Sol (Acoustic Ambient)</div>
+                <div class="transition-track-meta" id="inspectorCurrentMeta">120 BPM • MFCC Эмбиент-спектр • Текстура: Пространственная</div>
+              </div>
+
+              <div class="transition-arrow-box">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                <span>Умный переход Smart DJ</span>
+              </div>
+
+              <div class="transition-track-card candidate-winner">
+                <span class="track-role-pill winner-pill">Выбранный кандидат (#1 в очереди)</span>
+                <div class="transition-track-title" id="inspectorCandidateTitle">Carbon Based Lifeforms — Photosynthesis</div>
+                <div class="transition-track-meta" id="inspectorCandidateMeta">120 BPM • Сходство спектра 0.84 • Циркадное окно: Вечер</div>
+                <div class="inspector-reason-badge" id="inspectorReasonBadge">«Близкое звучание • В настроении последних треков»</div>
+              </div>
+            </div>
+
+            <div class="inspector-breakdown-col">
+              <div class="breakdown-title">Расчет математического балла перехода:</div>
+              
+              <div class="score-breakdown-rows" id="inspectorScoreRows">
+                <div class="score-row">
+                  <span class="score-factor-name">Акустический тембр (13 MFCC векторов)</span>
+                  <span class="score-factor-value positive">+58.8</span>
+                </div>
+                <div class="score-row">
+                  <span class="score-factor-name">Сессионный граф (Session Graph совместных прослушиваний)</span>
+                  <span class="score-factor-value positive">+18.5</span>
+                </div>
+                <div class="score-row">
+                  <span class="score-factor-name">Гармония темпа BPM (120 → 120, расстояние 0)</span>
+                  <span class="score-factor-value positive">+6.0</span>
+                </div>
+                <div class="score-row">
+                  <span class="score-factor-name">Циркадный слот (Вечернее время 20:00–00:00)</span>
+                  <span class="score-factor-value positive">+7.2</span>
+                </div>
+                <div class="score-row">
+                  <span class="score-factor-name">Балансировка размера каталога (Catalog Spacing)</span>
+                  <span class="score-factor-value negative">-3.8</span>
+                </div>
+                <div class="score-row">
+                  <span class="score-factor-name">Акустическая скип-дельта (Acoustic Skip Penalty)</span>
+                  <span class="score-factor-value neutral">0.0</span>
+                </div>
+              </div>
+
+              <div class="inspector-total-bar">
+                <span class="total-label">Итоговый балл ранжирования:</span>
+                <span class="total-value" id="inspectorTotalScore">86.7 / 100</span>
+              </div>
             </div>
           </div>
         </div>
@@ -507,6 +743,278 @@
       </div>
     </section>
 
+    <!-- SECTION: EVOLUTION & RELEASE HISTORY TIMELINE -->
+    <section class="content-section history-section" id="history">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Хронология развития // Release Timeline</span>
+          <h2 class="section-heading">История Pain: от минималистичного плеера к автономной аудиосистеме</h2>
+          <p class="section-description">
+            Каждое обновление рождалось не из маркетинговых планов, а из реальных потребностей и ежедневного использования. Ниже — честная летопись развития проекта с февраля по октябрь 2026 года.
+          </p>
+        </div>
+
+        <div class="timeline-container">
+          
+          <!-- v1.7.1 -->
+          <div class="timeline-item current-release">
+            <div class="timeline-marker">
+              <span class="timeline-dot current"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill current">v1.7.1 · Текущий релиз</span>
+                <span class="timeline-date">22 октября 2026</span>
+              </div>
+              <h3 class="timeline-title">Everyday Comfort: предел громкости, спокойный режим и приватная история</h3>
+              <p class="timeline-text">
+                Настройки «Для себя» на Android и ПК. Предел громкости (Volume Ceiling 25–100%) программно ограничивает выход плеера без клиппинга и не сбивается при unmute/перезапуске. Режим «Меньше движения» (Reduced Motion) полностью останавливает анимации винила и градиентных аур (0% лишней нагрузки на GPU). Тумблер «Сохранять историю» позволяет слушать музыку в приватном режиме без искажения вкусовой модели Smart DJ.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Volume Ceiling 25–100%</span>
+                <span class="t-tag">Reduced Motion (0% GPU)</span>
+                <span class="t-tag">Private Listening Mode</span>
+                <span class="t-tag">254 теста ядра</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.7.0 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.7.0</span>
+                <span class="timeline-date">21 октября 2026</span>
+              </div>
+              <h3 class="timeline-title">Shared Music Engine: объединение ядра Android и ПК</h3>
+              <p class="timeline-text">
+                Слияние алгоритмов Smart DJ, вайбов, сессионного графа и DSP в единую переносимую кодовую базу. На Android внедрен PlaybackAudio-процессор в цепочку ExoPlayer/Media3 для нативного захвата PCM-звука и расчета RMS в фоне. Скрытое выполнение сетевого сканирования ARP на Windows без мигающей командной строки.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Shared Core Android + ПК</span>
+                <span class="t-tag">PCM DSP в Media3</span>
+                <span class="t-tag">Windows console suppression</span>
+                <span class="t-tag">Vibes на мобильных</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.6.2 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.6.2</span>
+                <span class="timeline-date">21 октября 2026</span>
+              </div>
+              <h3 class="timeline-title">Контекстный учет пропусков и защита от зацикливания текстуры</h3>
+              <p class="timeline-text">
+                На основе масштабного аудита 1600+ событий прослушивания решена проблема ложных банов при быстром переборе треков. Внедрено контекстное разрешение: штраф накладывается только на акустическую дельту отвергнутого трека относительно найденного. Добавлена защита Texture Variety от зацикливания одного тембра.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Acoustic Skip Resolution</span>
+                <span class="t-tag">Texture Variety</span>
+                <span class="t-tag">Аудит 1600+ сессий</span>
+                <span class="t-tag">237 тестов ядра</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.6.1 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.6.1</span>
+                <span class="timeline-date">17 октября 2026</span>
+              </div>
+              <h3 class="timeline-title">Procedural Presence Engine и карточка профиля Retina 2x</h3>
+              <p class="timeline-text">
+                Статичное «Добрый день» заменено на наблюдательную процедурную модель естественного языка: анализ сессий на разных масштабах, Evidence Ledger (никаких галлюцинаций) и пожизненный запрет текстовых повторов. Добавлен экспорт эстетичной карточки профиля с честной статистикой в PNG Retina 2x.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Procedural Presence Engine</span>
+                <span class="t-tag">Evidence Ledger</span>
+                <span class="t-tag">Retina 2x Export</span>
+                <span class="t-tag">Zero LLM / 100% Offline</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.6.0 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.6.0</span>
+                <span class="timeline-date">14 октября 2026</span>
+              </div>
+              <h3 class="timeline-title">Listening Insights, Smart Volume Leveler и SQLite Outbox</h3>
+              <p class="timeline-text">
+                28-дневный календарь активности с тепловой картой, учет треков-ритуалов и возвращений. Звуковой компрессор и выравниватель громкости по стандарту EBU R128 с защитой Anti-Windup от разгона гейна в паузах. Очередь локальных изменений sync-pending.json для надежной оффлайн-синхронизации с телефоном.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">28-дневный календарь</span>
+                <span class="t-tag">EBU R128 Leveler</span>
+                <span class="t-tag">Anti-Windup Guard</span>
+                <span class="t-tag">Offline Outbox Sync</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.5.0 – v1.5.2 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.5.0 – v1.5.2</span>
+                <span class="timeline-date">Сентябрь 2026</span>
+              </div>
+              <h3 class="timeline-title">Сохраненные вайбы Smart DJ и нативная интеграция в Windows</h3>
+              <p class="timeline-text">
+                Появилась возможность закрепить любимое звучание как опорный ориентир (Vibe). Добавлен прозрачный Explainable AI с выводом причин выбора песни прямо в интерфейс. Исполняемый файл Pain.exe пропатчен под PE Subsystem 2 (запуск без консоли) со встроенной многослойной иконкой.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Saved Vibes</span>
+                <span class="t-tag">Explainable AI</span>
+                <span class="t-tag">PE Subsystem 2 GUI</span>
+                <span class="t-tag">Встроенные PE-иконки</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.4.6 – v1.4.9 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.4.6 – v1.4.9</span>
+                <span class="timeline-date">Август 2026</span>
+              </div>
+              <h3 class="timeline-title">Переход к акустическому анализу 13 MFCC и Auto EQ</h3>
+              <p class="timeline-text">
+                Исторический рубеж: Smart DJ перестал зависеть от текстовых тегов и начал анализировать реальные спектрограммы треков через 13 MFCC. Добавлено согласование темпа по музыкальным гармоникам (1:1, 3:2, 2:3), авто-эквалайзер, сохранение любимых моментов и безопасный механизм автообновлений.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">13 MFCC дескрипторов</span>
+                <span class="t-tag">Полиритмический BPM</span>
+                <span class="t-tag">Auto Equalizer</span>
+                <span class="t-tag">Verified Updates</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.3.0 – v1.4.0 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.3.0 – v1.4.0</span>
+                <span class="timeline-date">Июнь – Июль 2026</span>
+              </div>
+              <h3 class="timeline-title">Session Graph, Ambient Fluid аура и очистка от спам-тегов</h3>
+              <p class="timeline-text">
+                Построен Session Graph — направленный граф переходов между треками внутри сессий. Внедрен строгий фильтр доверенных исполнителей, отсекающий рекламные суффиксы каналов и битые метаданные. Запущена фирменная текучая градиентная аура Ambient Fluid, подстраивающаяся под обложку.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Session Graph</span>
+                <span class="t-tag">Ambient Fluid Aura</span>
+                <span class="t-tag">Anti-Spam Tag Filter</span>
+                <span class="t-tag">Оффлайн-дискавери</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.2.0 – v1.2.1 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.2.0 – v1.2.1</span>
+                <span class="timeline-date">Апрель – Май 2026</span>
+              </div>
+              <h3 class="timeline-title">Караоке LRC с живым редактором и первый прототип Smart DJ</h3>
+              <p class="timeline-text">
+                Полноэкранное караоке с синхронизированными построчными текстами .LRC и встроенным редактором таймкодов на лету прямо во время воспроизведения. Запущен первый алгоритмический прототип Smart DJ: локальное обучение ранжированию на истории прослушиваний.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Караоке .LRC</span>
+                <span class="t-tag">Редактор таймкодов на лету</span>
+                <span class="t-tag">Smart DJ v1 Prototype</span>
+                <span class="t-tag">Модульная статистика</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.1.0 – v1.1.3 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.1.0 – v1.1.3</span>
+                <span class="timeline-date">Март 2026</span>
+              </div>
+              <h3 class="timeline-title">Локальный сетевой транспорт и потоковый стриминг HTTP 206</h3>
+              <p class="timeline-text">
+                Решена ключевая проблема мультиплатформенности: десктоп и телефон находят друг друга по UDP Multicast (порт 41234). ПК стримит гигабайты музыки напрямую из памяти телефона блоками через HTTP 206 Partial Content (RFC 7233 Range) без скачивания на диск. Интеграция в Arch Linux / AUR и типографика Geist.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">UDP Discovery 41234</span>
+                <span class="t-tag">HTTP 206 Range Streaming</span>
+                <span class="t-tag">Arch Linux / AUR</span>
+                <span class="t-tag">Шрифты Geist</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- v1.0.0 -->
+          <div class="timeline-item">
+            <div class="timeline-marker">
+              <span class="timeline-dot"></span>
+            </div>
+            <div class="timeline-card">
+              <div class="timeline-meta">
+                <span class="timeline-version-pill">v1.0.0</span>
+                <span class="timeline-date">Февраль 2026</span>
+              </div>
+              <h3 class="timeline-title">Рождение Pain: чистый минимализм и отказ от облака</h3>
+              <p class="timeline-text">
+                Первый публичный релиз на GitHub. Минималистичный нативный аудиоплеер для Android, вдохновленный выверенной эстетикой Figma: монохромный чистый интерфейс, тактильные микроанимации, оффлайн-воспроизведение без рекламы, подписок и трекеров.
+              </p>
+              <div class="timeline-tags">
+                <span class="t-tag">Figma Minimalist Design</span>
+                <span class="t-tag">Нативный Android (Kotlin/Java)</span>
+                <span class="t-tag">100% Offline</span>
+                <span class="t-tag">Открытый код (MIT)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
     <!-- SECTION: REAL AUTOMATED TESTS & VERIFICATION -->
     <section class="content-section" id="tests">
       <div class="container">
@@ -673,6 +1181,8 @@
       </div>
 
       <ul class="footer-nav-list">
+        <li><a href="#recommendations">Умный DJ</a></li>
+        <li><a href="#history">Хронология версий</a></li>
         <li><a href="https://t.me/mypainisyou" target="_blank" rel="noopener noreferrer" class="footer-tg-link">Telegram @mypainisyou</a></li>
         <li><a href="https://github.com/vansGAMee/pain" target="_blank" rel="noopener noreferrer">GitHub</a></li>
         <li><a href="https://github.com/vansGAMee/pain/releases" target="_blank" rel="noopener noreferrer">Все 23 релиза</a></li>

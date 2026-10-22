@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initHeroStageSwitcher();
   initTestRunner();
   initCopyHelpers();
+  initTransitionSimulator();
 });
 
 // Verified Release Metadata (v1.7.1)
@@ -353,3 +354,128 @@ function showToast(message) {
     toast.classList.remove('show');
   }, 2400);
 }
+
+/**
+ * 6. Smart DJ Live Scoring Simulator
+ */
+const DJ_SCENARIOS = [
+  {
+    current: {
+      title: 'Solar Fields — Sol (Acoustic Ambient)',
+      meta: '120 BPM • MFCC Эмбиент-спектр • Текстура: Пространственная'
+    },
+    candidate: {
+      title: 'Carbon Based Lifeforms — Photosynthesis',
+      meta: '120 BPM • Сходство спектра 0.84 • Циркадное окно: Вечер',
+      reason: '«Близкое звучание • В настроении последних треков»'
+    },
+    factors: [
+      { name: 'Акустический тембр (13 MFCC векторов)', value: '+58.8', type: 'positive' },
+      { name: 'Сессионный граф (Session Graph совместных прослушиваний)', value: '+18.5', type: 'positive' },
+      { name: 'Гармония темпа BPM (120 → 120, расстояние 0)', value: '+6.0', type: 'positive' },
+      { name: 'Циркадный слот (Вечернее время 20:00–00:00)', value: '+7.2', type: 'positive' },
+      { name: 'Балансировка размера каталога (Catalog Spacing)', value: '-3.8', type: 'negative' },
+      { name: 'Акустическая скип-дельта (Acoustic Skip Penalty)', value: '0.0', type: 'neutral' }
+    ],
+    total: '86.7 / 100'
+  },
+  {
+    current: {
+      title: 'Daft Punk — Giorgio by Moroder (Electronic)',
+      meta: '114 BPM • MFCC Диско-спектр • Текстура: Ритмичная / Живые синты'
+    },
+    candidate: {
+      title: 'Kavinsky — Nightcall (French Synthwave)',
+      meta: '84 BPM (Гармоника 3:2 к 126 BPM) • Сходство тембра 0.79 • Циркадное окно: Ночь',
+      reason: '«Полиритмический переход темпа • Сочетается с сессией»'
+    },
+    factors: [
+      { name: 'Акустический тембр (13 MFCC векторов)', value: '+52.4', type: 'positive' },
+      { name: 'Сессионный граф (Session Graph совместных прослушиваний)', value: '+24.1', type: 'positive' },
+      { name: 'Гармония темпа BPM (114 → 84, полиритм 3:2)', value: '+5.8', type: 'positive' },
+      { name: 'Циркадный слот (Ночное время 00:00–04:00)', value: '+8.9', type: 'positive' },
+      { name: 'Балансировка размера каталога (Catalog Spacing)', value: '-4.2', type: 'negative' },
+      { name: 'Акустическая скип-дельта (Acoustic Skip Penalty)', value: '0.0', type: 'neutral' }
+    ],
+    total: '87.0 / 100'
+  },
+  {
+    current: {
+      title: 'Radiohead — Weird Fishes / Arpeggi (Art Rock)',
+      meta: '153 BPM • Сложный полиритм • Текстура: Акустический арпеджиатор'
+    },
+    candidate: {
+      title: 'The Smile — Free in the Knowledge (Acoustic Ballad)',
+      meta: '76 BPM (Half-time переход) • Бонус первооткрывателя: 28 дней без воспроизведения',
+      reason: '«Ход открытий (Discovery) • Давно не звучало в библиотеке»'
+    },
+    factors: [
+      { name: 'Акустический тембр (13 MFCC векторов)', value: '+44.2', type: 'positive' },
+      { name: 'Сессионный граф (Связка проектов Тома Йорка)', value: '+22.0', type: 'positive' },
+      { name: 'Гармония темпа BPM (153 → 76, half-time 1:2)', value: '+5.9', type: 'positive' },
+      { name: 'Бонус первооткрывателя (Discovery +10 / √N)', value: '+16.4', type: 'positive' },
+      { name: 'Балансировка размера каталога (Catalog Spacing)', value: '-2.1', type: 'negative' },
+      { name: 'Акустическая скип-дельта (Acoustic Skip Penalty)', value: '0.0', type: 'neutral' }
+    ],
+    total: '86.4 / 100'
+  },
+  {
+    current: {
+      title: 'Massive Attack — Teardrop (Trip-Hop)',
+      meta: '77 BPM • Глубокий аналоговый бас • Текстура: Вокал + Винил'
+    },
+    candidate: {
+      title: 'Portishead — Glory Box (Downtempo)',
+      meta: '60 BPM • Сходство спектра 0.81 • Защита: Скипнутый рок-трек не забанил трип-хоп',
+      reason: '«Контекстное разрешение скипа • В настроении последних треков»'
+    },
+    factors: [
+      { name: 'Акустический тембр (13 MFCC векторов)', value: '+56.0', type: 'positive' },
+      { name: 'Сессионный граф (Классика трип-хопа)', value: '+19.8', type: 'positive' },
+      { name: 'Гармония темпа BPM (77 → 60, даунтемпо)', value: '+4.8', type: 'positive' },
+      { name: 'Циркадный слот (Вечерний чиллаут)', value: '+7.9', type: 'positive' },
+      { name: 'Скип-дельта (Штраф только на тяжелые гитары)', value: '-1.2', type: 'negative' },
+      { name: 'Балансировка размера каталога (Catalog Spacing)', value: '-3.5', type: 'negative' }
+    ],
+    total: '83.8 / 100'
+  }
+];
+
+let activeScenarioIndex = 0;
+
+function initTransitionSimulator() {
+  const btn = document.getElementById('simTransitionBtn');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    activeScenarioIndex = (activeScenarioIndex + 1) % DJ_SCENARIOS.length;
+    renderScenario(DJ_SCENARIOS[activeScenarioIndex]);
+  });
+}
+
+function renderScenario(data) {
+  const curTitle = document.getElementById('inspectorCurrentTitle');
+  const curMeta = document.getElementById('inspectorCurrentMeta');
+  const candTitle = document.getElementById('inspectorCandidateTitle');
+  const candMeta = document.getElementById('inspectorCandidateMeta');
+  const reasonBadge = document.getElementById('inspectorReasonBadge');
+  const scoreRows = document.getElementById('inspectorScoreRows');
+  const totalScore = document.getElementById('inspectorTotalScore');
+
+  if (curTitle) curTitle.textContent = data.current.title;
+  if (curMeta) curMeta.textContent = data.current.meta;
+  if (candTitle) candTitle.textContent = data.candidate.title;
+  if (candMeta) candMeta.textContent = data.candidate.meta;
+  if (reasonBadge) reasonBadge.textContent = data.candidate.reason;
+  if (totalScore) totalScore.textContent = data.total;
+
+  if (scoreRows) {
+    scoreRows.innerHTML = data.factors.map(f => `
+      <div class="score-row">
+        <span class="score-factor-name">${f.name}</span>
+        <span class="score-factor-value ${f.type}">${f.value}</span>
+      </div>
+    `).join('');
+  }
+}
+
