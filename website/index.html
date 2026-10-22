@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Pain — Вся ваша музыка. На телефоне и ПК. Без облака.</title>
+  <meta name="description" content="Официальный сайт плеера Pain (релиз v1.7.1). Локальная синхронизация по Wi-Fi, стриминг с телефона на ПК без скачивания, Joint Audio AI, 10-полосный эквалайзер, караоке LRC и честная статистика.">
+  <meta name="theme-color" content="#06080f">
+
+  <!-- Open Graph / Meta -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Pain — Вся ваша музыка. На телефоне и ПК. Без облака.">
+  <meta property="og:description" content="Pain синхронизирует библиотеку, историю, избранное и плейлисты по вашему Wi-Fi — без аккаунтов и подписок. 100% бесплатно и независимо.">
+  <meta property="og:url" content="https://painaudio.vercel.app">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="assets/maple.svg">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css?v=1.7.1">
+</head>
+<body>
+
+  <!-- Atmospheric Luminous Aura Beam -->
+  <div class="aura-beam-background" aria-hidden="true"></div>
+
+  <!-- Top Sticky Navigation -->
+  <header class="site-header">
+    <div class="container nav-bar">
+      <a href="#" class="brand-link" aria-label="Pain Главная">
+        <div class="brand-icon-box">
+          <img src="assets/logo-white.png" width="18" height="18" alt="Pain Canonical Logo">
+        </div>
+        <span class="brand-name">Pain</span>
+        <span class="brand-tag">v1.7.1</span>
+      </a>
+
+      <nav aria-label="Основная навигация">
+        <ul class="nav-links">
+          <li><a href="#how-it-works">Как работает</a></li>
+          <li><a href="#usecase">Сценарий</a></li>
+          <li><a href="#features">Возможности</a></li>
+          <li><a href="#engineering">Архитектура</a></li>
+          <li><a href="#tests">Тесты</a></li>
+          <li><a href="#downloads">Скачать</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="https://t.me/mypainisyou" target="_blank" rel="noopener noreferrer" class="btn btn-secondary nav-btn-social" title="Telegram канал @mypainisyou">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.295-.6.295l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.458c.538-.196 1.006.128.832.943z"/>
+          </svg>
+          <span class="nav-btn-text">Telegram</span>
+        </a>
+        <a href="https://github.com/vansGAMee/pain" target="_blank" rel="noopener noreferrer" class="btn btn-secondary nav-btn-social" title="GitHub репозиторий">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span class="nav-btn-text">GitHub</span>
+        </a>
+        <a href="#downloads" class="btn btn-primary nav-btn-cta">Скачать</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO SECTION -->
+    <section class="hero-section" id="hero">
+      <div class="container hero-container-grid">
+        
+        <!-- Left: Text & Direct Download Column -->
+        <div class="hero-content-col">
+          <div class="hero-badge">Официальный релиз v1.7.1 · Open Source</div>
+          <h1 class="hero-title">Вся ваша музыка.<br>На телефоне и ПК.<br>Без облака.</h1>
+          <p class="hero-subtitle">
+            Pain синхронизирует библиотеку, историю, избранное и плейлисты по вашему Wi-Fi — без аккаунтов и подписок. Слушайте гигабайты треков прямо с телефона на ПК без скачивания на диск.
+          </p>
+
+          <!-- Download Glass Card -->
+          <div class="download-glass-card" id="downloads">
+            <div class="download-card-meta-top">
+              <span class="detected-os-label" id="detectedOsBadge">Определена ваша ОС: Linux</span>
+              <span class="release-version-tag">Релиз v1.7.1</span>
+            </div>
+
+            <div class="download-action-row">
+              <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1.exe" id="heroDownloadLink" class="hero-download-btn" download>
+                <div class="btn-text-block">
+                  <span class="btn-main-title" id="heroDownloadBtnTitle">Скачать Pain для Windows</span>
+                  <span class="btn-meta-caption" id="heroDownloadBtnCaption">Pain-v1.7.1.exe • 37.0 МБ • Portable EXE</span>
+                </div>
+                <div class="btn-download-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                  </svg>
+                </div>
+              </a>
+
+              <!-- Platform Switcher Tray -->
+              <div class="platform-selector-tray" role="tablist" aria-label="Выбор платформы">
+                <button type="button" class="platform-btn" data-platform="windows" role="tab" aria-selected="false">Windows</button>
+                <button type="button" class="platform-btn" data-platform="android" role="tab" aria-selected="false">Android</button>
+                <button type="button" class="platform-btn active" data-platform="linux" role="tab" aria-selected="true">Linux</button>
+                <button type="button" class="platform-btn" data-platform="source" role="tab" aria-selected="false">Исходники</button>
+              </div>
+            </div>
+
+            <!-- Footer Meta & Hash Details -->
+            <div class="download-footer-details">
+              <span id="metaFormat">Standalone Tarball (Native UI + WebAudio engine)</span>
+              <div class="sha-box">
+                <span class="sha-label">SHA-256: </span>
+                <button type="button" class="copy-sha-btn" id="copyShaBtn" data-copy="fe9ed46843354949a29bcc5bfe2dbbb4926e101f996870f75cbaada530d75d65" title="Скопировать хеш SHA-256">
+                  <span id="metaSha">fe9ed468...5d65</span>
+                  <span class="copy-icon-svg">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Trust Proof Row -->
+          <div class="trust-proof-row">
+            <span class="trust-chip">Бесплатно</span>
+            <span class="trust-chip">Без рекламы</span>
+            <span class="trust-chip">Открытый код (MIT)</span>
+            <span class="trust-chip">0 байт в облако</span>
+            <span class="trust-chip">254 автотеста</span>
+          </div>
+        </div>
+
+        <!-- Right: Real Product Stage Column (Desktop + Android) -->
+        <div class="hero-stage-col">
+          <div class="hero-stage-container">
+            <div class="hero-stage-header">
+              <div class="stage-view-tabs" role="tablist" aria-label="Экраны приложения">
+                <button type="button" class="stage-tab-btn active" data-view="favorites">Избранное</button>
+                <button type="button" class="stage-tab-btn" data-view="sync">Wi-Fi Sync</button>
+                <button type="button" class="stage-tab-btn" data-view="joint-ai">Joint AI</button>
+                <button type="button" class="stage-tab-btn" data-view="equalizer">Эквалайзер</button>
+                <button type="button" class="stage-tab-btn" data-view="insights">Инсайты</button>
+                <button type="button" class="stage-tab-btn" data-view="karaoke">Караоке</button>
+              </div>
+
+              <!-- Mobile Device Switcher (Visible only on mobile screens) -->
+              <div class="stage-device-toggle-mobile" role="group" aria-label="Выбор отображаемого устройства">
+                <button type="button" class="device-toggle-btn active" data-device="mobile">📱 Телефон</button>
+                <button type="button" class="device-toggle-btn" data-device="desktop">💻 Компьютер</button>
+              </div>
+
+              <div class="stage-status-indicator">
+                <span class="sync-status-icon">⇄</span>
+                <span>Прямой LAN-стриминг (HTTP Range)</span>
+              </div>
+            </div>
+
+            <!-- The Live Stage Scene -->
+            <div class="mockup-stage-scene" id="mockupStageScene" data-mobile-view="mobile">
+              <!-- Desktop Window Frame -->
+              <div class="desktop-mockup-frame" id="desktopMockupFrame">
+                <div class="desktop-titlebar">
+                  <div class="window-controls">
+                    <span class="window-dot dot-close"></span>
+                    <span class="window-dot dot-min"></span>
+                    <span class="window-dot dot-max"></span>
+                  </div>
+                  <div class="window-title">Pain Desktop (v1.7.1)</div>
+                  <div class="window-spacer"></div>
+                </div>
+                <div class="desktop-screen-viewport">
+                  <img src="assets/screenshots/desktop_favorites.png" id="stageDesktopImg" alt="Интерфейс Pain Desktop" class="mockup-screen-img" loading="eager">
+                </div>
+              </div>
+
+              <!-- Android Phone Mockup Frame -->
+              <div class="android-mockup-frame" id="androidMockupFrame">
+                <div class="phone-speaker-notch"></div>
+                <div class="phone-screen-viewport">
+                  <img src="assets/screenshots/android_home.png" id="stageAndroidImg" alt="Интерфейс Pain Android" class="mockup-phone-img" loading="eager">
+                </div>
+                <div class="phone-home-indicator"></div>
+              </div>
+            </div>
+
+            <div class="stage-caption-bar">
+              <span class="stage-caption-text" id="stageCaptionText">
+                Экран «Избранное» на ПК сопряжен со смартфоном по Wi-Fi (761 трек в реальном времени)
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: HOW IT WORKS (3 SIMPLE STEPS) -->
+    <section class="content-section" id="how-it-works">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Как это устроено</span>
+          <h2 class="section-heading">Три шага к музыке без облачных посредников</h2>
+          <p class="section-description">
+            Никаких регистраций, настройки роутеров или проброса портов. Все работает из коробки в вашей домашней сети.
+          </p>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <div class="step-number">01</div>
+            <h3 class="step-title">Запустите на телефоне и ПК</h3>
+            <p class="step-text">
+              Установите Pain на Android и запустите на компьютере (Windows или Linux). Приложения полностью автономны и не требуют ввода логинов и паролей.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">02</div>
+            <h3 class="step-title">Мгновенный поиск по Wi-Fi</h3>
+            <p class="step-text">
+              Устройства автоматически обнаруживают друг друга по локальной сети через UDP-протокол. Ни один байт ваших метаданных не покидает пределы комнаты.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">03</div>
+            <h3 class="step-title">Вся музыка доступна сразу</h3>
+            <p class="step-text">
+              Слушайте треки с телефона прямо на ПК без копирования на диск. Лайки, история прослушиваний и плейлисты синхронизируются по локальной сети через HTTP API без внешних серверов.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: PRIMARY USE CASE & PHILOSOPHY -->
+    <section class="content-section" id="usecase">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Сценарий и независимость</span>
+          <h2 class="section-heading">Создано для тех, кто хранит музыку у себя</h2>
+          <p class="section-description">
+            Если вы годами бережно собирали коллекцию треков на телефоне, Pain даст вам свободу слушать её на любом ПК без проводов, облаков и подписок.
+          </p>
+        </div>
+
+        <div class="usecase-grid">
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">СТРИМИНГ ПО WI-FI // ZERO-DISK</div>
+            <h3 class="usecase-title">Слушайте прямо с телефона без скачивания на диск</h3>
+            <p class="usecase-text">
+              У вас 50 или 100 ГБ музыки на телефоне? Не нужно переносить гигабайты и забивать диск компьютера. Pain на ПК подключается к телефону по домашней сети и воспроизводит любые FLAC, MP3 и WAV через локальный HTTP-прокси с поддержкой перемотки по байтовым диапазонам (HTTP 206 Partial Content).
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">ТРАНСФЕР // НА ПОЛНОЙ СКОРОСТИ</div>
+            <h3 class="usecase-title">Мгновенный перенос фонотеки на ПК в 1 клик</h3>
+            <p class="usecase-text">
+              Когда понадобится сохранить копию на компьютере — передача идет на максимальной скорости вашего Wi-Fi роутера. Очередь Phone Sync Outbox гарантирует сохранность лайков и истории даже при внезапных разрывах связи.
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">АВТОНОМНОСТЬ // 100% СВОБОДА</div>
+            <h3 class="usecase-title">Полная независимость от корпораций и подписок</h3>
+            <p class="usecase-text">
+              Никаких ежемесячных списаний, навязчивой аудиорекламы и исчезающих альбомов из-за отзыва лицензий лейблами. Никаких обязательных учетных записей. 0 байт аналитики во внешние сервисы.
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">ЗВУК // СТУДИЙНЫЙ КОНТРОЛЬ</div>
+            <h3 class="usecase-title">Умный уровень громкости и 10-полосный звук</h3>
+            <p class="usecase-text">
+              Smart Volume Leveler мягко сглаживает перепады между тихими и громкими треками без разгона на паузах. 10-полосный эквалайзер с аудиофильскими пресетами подстраивает сцену под любые наушники и колонки.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: CONFIRMED FEATURES SHOWCASE -->
+    <section class="content-section" id="features">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Возможности из официальных релизов</span>
+          <h2 class="section-heading">Каждая функция подтверждена кодом</h2>
+          <p class="section-description">
+            Только реальные архитектурные решения из публичных релизов Pain на GitHub.
+          </p>
+        </div>
+
+        <div class="feature-chapters-stack">
+
+          <!-- 1. Wi-Fi Sync & Streaming -->
+          <article class="feature-chapter-row">
+            <div class="chapter-info-col">
+              <span class="chapter-badge">РЕЛИЗЫ V1.0 – V1.7.0 // СЕТЕВОЕ ЯДРО</span>
+              <h3 class="chapter-title">Оффлайн-синхронизация телефон ↔ ПК по домашнему Wi-Fi</h3>
+              <p class="chapter-desc">
+                Синхронизация в реальном времени без единого внешнего сервера: треки, альбомы, плейлисты, лайки и история. Очередь <strong>Phone Sync Outbox</strong> сохраняет события локально и гарантированно отправляет их при появлении связи. Побайтовая обработка UTF-8 обеспечивает идеальную передачу кириллицы и emoji в названиях.
+              </p>
+              <ul class="chapter-specs-list">
+                <li>Прямой HTTP/UDP стриминг без скачивания на жесткий диск</li>
+                <li>Автоматический поиск по локальной сети без ввода IP-адресов</li>
+                <li>Гарантированная доставка событий через локальный Outbox</li>
+              </ul>
+            </div>
+            <div class="chapter-visual-col">
+              <div class="chapter-image-card">
+                <img src="assets/screenshots/desktop_sync.png" alt="Синхронизация устройств Pain" class="chapter-img" loading="lazy">
+              </div>
+            </div>
+          </article>
+
+          <!-- 2. Joint Audio AI -->
+          <article class="feature-chapter-row reverse">
+            <div class="chapter-info-col">
+              <span class="chapter-badge">РЕЛИЗ V1.5.0 // НЕЙРОСЕТЕВОЙ ДВИЖОК</span>
+              <h3 class="chapter-title">Joint Audio AI: акустические спектры и граф прослушиваний</h3>
+              <p class="chapter-desc">
+                Синтез умных плейлистов на 50 треков на стыке двух технологий: 512-мерных эмбеддингов нейросети CLAP (тембр, динамика, акустическая плотность) и графа со-прослушиваний ListenBrainz на 56 000 треков. Добавьте сид-треки из своей библиотеки — и получите идеальный микс без облачных алгоритмов.
+              </p>
+              <ul class="chapter-specs-list">
+                <li>CLAP 512D: акустический анализ звучания без отправки аудио наружу</li>
+                <li>56k треков в графе связей ListenBrainz для точного попадания в настроение</li>
+                <li>Мгновенный экспорт сгенерированного слейта в постоянный плейлист</li>
+              </ul>
+            </div>
+            <div class="chapter-visual-col">
+              <div class="chapter-image-card">
+                <img src="assets/screenshots/desktop_joint_ai.png" alt="Нейросеть Joint Audio AI в Pain" class="chapter-img" loading="lazy">
+              </div>
+            </div>
+          </article>
+
+          <!-- 3. Listening Insights & Share Card -->
+          <article class="feature-chapter-row">
+            <div class="chapter-info-col">
+              <span class="chapter-badge">РЕЛИЗ V1.6.0 – V1.7.0 // АНАЛИТИКА И ДВИЖОК</span>
+              <h3 class="chapter-title">Детали привычек и экспорт карточки профиля Retina 2x</h3>
+              <p class="chapter-desc">
+                28-дневный календарь активности, учет открытий, повторяющиеся ритуалы и треки-возвращения. 24-часовой циферблат распределения, 7-дневный пульс недели, ударный режим (Daily Streak) и процент дослушиваний. В один клик экспортируйте эстетичную карточку музыкального профиля в высоком разрешении.
+              </p>
+              <ul class="chapter-specs-list">
+                <li>Честный учет: время считается по факту прослушивания без перемоток</li>
+                <li>Карточка профиля Retina 2x Canvas для сохранения в PNG и копирования в буфер</li>
+                <li>Procedural Presence Engine: умный текст на главном экране по Evidence Ledger</li>
+              </ul>
+            </div>
+            <div class="chapter-visual-col">
+              <div class="chapter-image-card">
+                <img src="assets/screenshots/desktop_insights.png" alt="Статистика и аналитика прослушиваний Pain" class="chapter-img" loading="lazy">
+              </div>
+            </div>
+          </article>
+
+          <!-- 4. Studio Sound: Smart Leveler & 10-Band EQ -->
+          <article class="feature-chapter-row reverse">
+            <div class="chapter-info-col">
+              <span class="chapter-badge">РЕЛИЗ V1.6.0 // АУДИОФИЛЬСКИЙ ЗВУК</span>
+              <h3 class="chapter-title">Smart Volume Leveler и 10-полосный эквалайзер</h3>
+              <p class="chapter-desc">
+                Плавное выравнивание громкости между разными треками после эквалайзера и динамическое сглаживание резких перепадов. Защищен от нежелательного разгона громкости на паузах, тихих вступлениях и затуханиях. 10-полосный эквалайзер с аудиофильскими пресетами под любые жанры и акустику.
+              </p>
+              <ul class="chapter-specs-list">
+                <li>Динамический анализ крест-фактора звукового потока</li>
+                <li>Пресеты: Flat, Bass Boost, Vocal Warmth, Acoustic, Electronic, Rock, Treble Boost</li>
+                <li>Плавный Fluid Aura градиент с синхронизацией под темп трека (BPM)</li>
+              </ul>
+            </div>
+            <div class="chapter-visual-col">
+              <div class="chapter-image-card">
+                <img src="assets/screenshots/desktop_equalizer.png" alt="10-полосный эквалайзер Pain" class="chapter-img" loading="lazy">
+              </div>
+            </div>
+          </article>
+
+          <!-- 5. Karaoke & LRC Lyrics -->
+          <article class="feature-chapter-row">
+            <div class="chapter-info-col">
+              <span class="chapter-badge">РЕЛИЗ V1.2.0 // КАРАОКЕ И ТЕКСТЫ</span>
+              <h3 class="chapter-title">Синхронизированный построчный текст (.LRC)</h3>
+              <p class="chapter-desc">
+                Построчное отображение текстов песен с плавной подсветкой текущей строки. Встроенный автономный редактор таймкодов позволяет размечать текст прямо во время прослушивания композиции — без интернета и внешних баз данных.
+              </p>
+              <ul class="chapter-specs-list">
+                <li>Автоматическое чтение локальных файлов .lrc рядом с треком</li>
+                <li>Полноэкранный режим караоке для погружения в музыку</li>
+                <li>Редактирование меток времени в один клик прямо во время трека</li>
+              </ul>
+            </div>
+            <div class="chapter-visual-col">
+              <div class="chapter-image-card">
+                <img src="assets/screenshots/desktop_karaoke.png" alt="Синхронизированный текст песен в Pain" class="chapter-img" loading="lazy">
+              </div>
+            </div>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: WHY PAIN VS CLOUD STREAMING (3 PILLARS) -->
+    <section class="content-section" id="why-pain">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Философия контроля</span>
+          <h2 class="section-heading">Почему Pain, а не облачный стриминг</h2>
+          <p class="section-description">
+            Три фундаментальных принципа, почему локальная музыка всегда превосходит корпоративные сервисы.
+          </p>
+        </div>
+
+        <div class="pillars-grid">
+          <div class="pillar-card">
+            <div class="pillar-icon">01</div>
+            <h3 class="pillar-title">Ваши файлы</h3>
+            <p class="pillar-text">
+              Ваши FLAC, MP3, WAV и AAC принадлежат только вам. Никаких внезапно удаленных треков из-за отзыва лицензий лейблами, региональных ограничений или изменения правил каталога.
+            </p>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-icon">02</div>
+            <h3 class="pillar-title">Ваши устройства</h3>
+            <p class="pillar-text">
+              Прямая защищенная связь телефон ↔ компьютер по вашей домашней сети. Серверов-посредников не существует. Связь работает даже при полном отключении внешнего интернета.
+            </p>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-icon">03</div>
+            <h3 class="pillar-title">Ваши данные</h3>
+            <p class="pillar-text">
+              Никаких обязательных аккаунтов, паролей, привязок банковских карт или трекеров рекламных сетей. Ноль байт телеметрии. Ваша статистика прослушиваний остается только у вас.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: REAL ENGINEERING & UNDER THE HOOD -->
+    <section class="content-section" id="engineering">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Архитектура и честная разработка</span>
+          <h2 class="section-heading">Как устроен Pain: факты и технологии без маркетингового шума</h2>
+          <p class="section-description">
+            Мы не пишем про «0 миллисекунд» или «магические нейросети». Ниже — прозрачный обзор того, как именно работает звуковой тракт, локальный транспорт и алгоритмы подбора в Pain.
+          </p>
+        </div>
+
+        <div class="usecase-grid">
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">ЗВУКОВОЙ ТРАКТ // EBU R128 & VOLUME CEILING</div>
+            <h3 class="usecase-title">Звуковой DSP, расчет динамики и предел громкости</h3>
+            <p class="usecase-text">
+              На Android встроенный декодер Media3 (ExoPlayer) дополнен аудиопроцессором, а на десктопе — цепочкой WebAudio biquad-фильтров. Выравнивание уровня вычисляет интегрированную громкость дорожек (LUFS) и пик-фактор (crest factor). Защита Anti-Windup блокирует ложный разгон усиления на тихих паузах и затуханиях. Начиная с v1.7.1, ползунок «Предел громкости» (25–100%) программно ограничивает выход плеера без клиппинга и не сбивается при снятии беззвучного режима или перезапуске.
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">АЛГОРИТМ SMART DJ // ДЕТЕРМИНИРОВАННЫЙ ВЫБОР</div>
+            <h3 class="usecase-title">Акустический спектр, темп и контекст пропусков</h3>
+            <p class="usecase-text">
+              Smart DJ не использует закрытые облачные черные ящики. Для каждого трека локально рассчитываются 13 мел-кепстральных коэффициентов (MFCC) тембрального профиля. Переходы проверяют полиритмическую гармонию темпа (BPM 1:1, 3:2, 2:3) и циркадные ритмы времени суток. Алгоритм Artist Spacing накладывает штраф за частый повтор одного автора, а ранний пропуск трека (в первые 10 секунд) накладывает временный сессионный штраф на близкое звучание, сохраняя стабильность долговременных предпочтений.
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">ТРАНСПОРТ ЛОКАЛЬНОЙ СЕТИ // RFC 7233 RANGE</div>
+            <h3 class="usecase-title">Автопоиск устройств и потоковый стриминг</h3>
+            <p class="usecase-text">
+              Устройства находят друг друга по локальной сети через UDP Broadcast на порт 41234 с резервным зондированием приватных IP-подсетей (на Windows ARP-запросы выполняются в скрытом режиме без всплывающих консольных окон). При воспроизведении треков с телефона на ПК передача идет через стандартные байтовые диапазоны HTTP 206 (Partial Content). Десктоп запрашивает аудио блоками по мере воспроизведения — не нужно ждать скачивания многогигабайтной фонотеки, а перемотка в любую точку трека происходит сразу после ответа локального сокета.
+            </p>
+          </div>
+
+          <div class="usecase-card">
+            <div class="usecase-tag-line">АВТОНОМНОСТЬ И РЕСУРСЫ // SQLITE & 0 ТЕЛЕМЕТРИИ</div>
+            <h3 class="usecase-title">Reduced Motion и приватное прослушивание</h3>
+            <p class="usecase-text">
+              Вся библиотека, история и плейлисты хранятся на ваших устройствах в локальной SQLite и JSON-файлах. В коде нет ни одной строчки внешней аналитики или сбора телеметрии. В версии 1.7.1 добавлен режим «Меньше движения» (Reduced Motion), полностью останавливающий вращение диска и CSS-анимации для снижения энергопотребления на слабых машинах и смартфонах, а также тумблер «Сохранять историю», позволяющий слушать музыку без учета в личной статистике.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: REAL AUTOMATED TESTS & VERIFICATION -->
+    <section class="content-section" id="tests">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Инженерная надежность</span>
+          <h2 class="section-heading">254 автотеста перед каждым релизом</h2>
+          <p class="section-description">
+            Каждое обновление проходит локальный запуск 254 автоматических тестов ядра, 7 Android unit-тестов и Wine GUI smoke-тест.
+          </p>
+        </div>
+
+        <div class="test-console-card">
+          <div class="console-header-bar">
+            <div class="console-dot-group">
+              <span class="console-dot"></span>
+              <span class="console-dot"></span>
+              <span class="console-dot"></span>
+            </div>
+            <span class="console-tag-title">pain-core-suite // node:test runner</span>
+            <button type="button" class="btn btn-secondary run-test-btn" id="runTestsBtn">
+              ▶ Запустить проверку сьюта
+            </button>
+          </div>
+
+          <div class="console-body-content">
+            <div class="test-progress-line">
+              <div class="test-progress-fill" id="testProgressBar"></div>
+            </div>
+
+            <div class="suites-grid" id="testSuiteList">
+              <!-- Populated by app.js -->
+            </div>
+
+            <div class="console-footer-bar">
+              <span id="testSummaryStatus">254 passed, 0 failed, 12 suites</span>
+              <span id="testSummaryTime">Время: 0.28s</span>
+              <span>exit code 0</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: ALL RELEASES (Responsive Cards on Mobile, Table on Desktop) -->
+    <section class="content-section" id="releases-table">
+      <div class="container">
+        
+        <div class="section-title-wrap">
+          <span class="section-label">Официальные сборки GitHub</span>
+          <h2 class="section-heading">Все файлы релиза v1.7.1</h2>
+          <p class="section-description">
+            Прямые ссылки на бинарные файлы с опубликованными SHA-256 контрольными суммами.
+          </p>
+        </div>
+
+        <div class="download-matrix-wrap">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th>Платформа</th>
+                <th>Файл сборки</th>
+                <th>Размер</th>
+                <th>Контрольная сумма SHA-256</th>
+                <th>Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Windows (EXE)</strong></td>
+                <td><code>Pain-v1.7.1.exe</code> (Portable)</td>
+                <td>37.0 МБ</td>
+                <td>
+                  <button type="button" class="copy-sha-btn" data-copy="a55c432271b5ba76fc4f5c27de9d6a10bc50bd0e93bfc0ad0321bbd55918f921">
+                    a55c4322...f921
+                  </button>
+                </td>
+                <td>
+                  <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1.exe" class="btn btn-primary matrix-download-btn" download>
+                    Скачать
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Windows (ZIP)</strong></td>
+                <td><code>Pain-v1.7.1-Windows.zip</code></td>
+                <td>14.4 МБ</td>
+                <td>
+                  <button type="button" class="copy-sha-btn" data-copy="70bcb84840f78399f78e4496e676ab0976de0958e1870536a54c564694f906db">
+                    70bcb848...06db
+                  </button>
+                </td>
+                <td>
+                  <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1-Windows.zip" class="btn btn-secondary matrix-download-btn" download>
+                    Скачать
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Android (APK)</strong></td>
+                <td><code>Pain-v1.7.1-Android.apk</code></td>
+                <td>6.9 МБ</td>
+                <td>
+                  <button type="button" class="copy-sha-btn" data-copy="d27acaefc20f85305684ad2995b7f3429d719c33f6359076500b7efa838dd60d">
+                    d27acaef...d60d
+                  </button>
+                </td>
+                <td>
+                  <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1-Android.apk" class="btn btn-primary matrix-download-btn" download>
+                    Скачать
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Linux (tar.gz)</strong></td>
+                <td><code>Pain-v1.7.1-Linux.tar.gz</code></td>
+                <td>379 КБ</td>
+                <td>
+                  <button type="button" class="copy-sha-btn" data-copy="fe9ed46843354949a29bcc5bfe2dbbb4926e101f996870f75cbaada530d75d65">
+                    fe9ed468...5d65
+                  </button>
+                </td>
+                <td>
+                  <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1-Linux.tar.gz" class="btn btn-secondary matrix-download-btn" download>
+                    Скачать
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Исходный код</strong></td>
+                <td><code>Pain-v1.7.1-Source.zip</code></td>
+                <td>9.5 МБ</td>
+                <td>
+                  <button type="button" class="copy-sha-btn" data-copy="8e6cba80685fbfb9f78ac2e547663c9d510116889ea6686f1372d54ee1be3a45">
+                    8e6cba80...3a45
+                  </button>
+                </td>
+                <td>
+                  <a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/Pain-v1.7.1-Source.zip" class="btn btn-secondary matrix-download-btn" download>
+                    Скачать
+                  </a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Clean Dark Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand-lockup">
+        <div class="brand-icon-box" style="width: 32px; height: 32px;">
+          <img src="assets/logo-white.png" width="18" height="18" alt="Pain Canonical Logo">
+        </div>
+        <div>
+          <div class="footer-title">Pain Music Player</div>
+          <div class="footer-copyright">© 2026 vansGAMee. Открытый исходный код под лицензией MIT.</div>
+        </div>
+      </div>
+
+      <ul class="footer-nav-list">
+        <li><a href="https://t.me/mypainisyou" target="_blank" rel="noopener noreferrer" class="footer-tg-link">Telegram @mypainisyou</a></li>
+        <li><a href="https://github.com/vansGAMee/pain" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+        <li><a href="https://github.com/vansGAMee/pain/releases" target="_blank" rel="noopener noreferrer">Все 23 релиза</a></li>
+        <li><a href="https://github.com/vansGAMee/pain/releases/download/v1.7.1/SHA256SUMS-v1.7.1.txt" target="_blank" rel="noopener noreferrer">SHA-256 Sums</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script src="app.js?v=1.7.1"></script>
+</body>
+</html>

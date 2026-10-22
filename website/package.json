@@ -1,0 +1,20 @@
+{
+  "name": "pain-showcase-website",
+  "version": "1.6.1",
+  "private": true,
+  "description": "Tactile showcase and download landing page for Pain music player",
+  "scripts": {
+    "dev": "npx -y serve . -l 3000",
+    "start": "npx -y serve . -l 3000",
+    "deploy": "npx -y vercel --prod"
+  },
+  "keywords": [
+    "pain",
+    "music-player",
+    "offline-first",
+    "landing-page",
+    "vercel"
+  ],
+  "author": "vansGAMee",
+  "license": "MIT"
+}
