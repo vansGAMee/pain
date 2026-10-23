@@ -209,6 +209,7 @@ function broadcastDiscovery() {
 }
 
 // Test/offline environments can explicitly disable LAN discovery.
+function startDiscovery(){
 if(process.env.PAIN_DISCOVERY !== 'false') {
 // Setup UDP
 try {
@@ -253,6 +254,7 @@ setTimeout(scanArpTable, 1500);
 setTimeout(scanSubnetsSmart, 500);
 setInterval(scanArpTable, 5000);
 setInterval(scanSubnetsSmart, 15000);
+}
 }
 
 
@@ -955,7 +957,7 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
   }
 
   // Serve static files
-  let safePath = pathname === '/' ? '/index.html' : pathname;
+  let safePath = pathname === '/' ? '/index.html' : pathname === '/favicon.ico' ? '/assets/app-icon.ico' : pathname;
   let filePath = path.join(__dirname, safePath);
 
   // Check if it's in assets
@@ -980,49 +982,63 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
 });
 
 let currentPort = parseInt(process.env.PORT, 10) || PORT;
+const firstPort=currentPort;
+let lastWindowOpen=0;
 
-function startServer(p) {
-  server.listen(p, '0.0.0.0', () => {
+function openWindow(){
+  if(!server.listening||Date.now()-lastWindowOpen<5000)return;
+  lastWindowOpen=Date.now();
+  if(process.env.OPEN_BROWSER==='false'){server.emit('activate-window');return;}
+  const p=server.address().port;
+  if (process.platform === 'win32') {
+    exec(`start "" msedge --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err) => {
+      if (err) exec(`start "" chrome --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err2) => {
+        if (err2) exec(`start "" "http://localhost:${p}"`, { windowsHide: true });
+      });
+    });
+    require('./windows-identity').apply();
+  } else if (process.platform === 'darwin') {
+    exec(`open "http://localhost:${p}"`);
+  } else {
+    exec(`(google-chrome --app=http://localhost:${p} --window-size=1200,820 || chromium --app=http://localhost:${p} --window-size=1200,820 || xdg-open http://localhost:${p}) >/dev/null 2>&1 &`);
+  }
+}
+
+// Register once, not once per failed port: Node retains listen callbacks after
+// EADDRINUSE, which used to open N windows after N occupied ports.
+server.once('listening', () => {
+    const p=server.address().port;
     console.log(`========================================================`);
     console.log(` Pain — Minimalist Audio Player & Sync Companion`);
     console.log(` Web UI: http://localhost:${p}`);
     console.log(` Running on Windows 10/11 & Linux`);
     console.log(` Keep this console window open while using Pain.`);
     console.log(`========================================================`);
-    if (process.env.OPEN_BROWSER !== 'false') {
-      if (process.platform === 'win32') {
-        // Launch in Microsoft Edge App Mode (preinstalled on 100% of Windows 10 & 11)
-        // Edge in app mode removes the URL bar, tabs, and browser chrome, rendering as a native app window.
-        exec(`start msedge --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err) => {
-          if (err) {
-            exec(`start chrome --app=http://localhost:${p} --window-size=1200,820`, { windowsHide: true }, (err2) => {
-              if (err2) {
-                exec(`start "" "http://localhost:${p}"`, { windowsHide: true });
-              }
-            });
-          }
-        });
-      } else if (process.platform === 'darwin') {
-        exec(`open "http://localhost:${p}"`);
-      } else {
-        exec(`(google-chrome --app=http://localhost:${p} --window-size=1200,820 || chromium --app=http://localhost:${p} --window-size=1200,820 || xdg-open http://localhost:${p}) >/dev/null 2>&1 &`);
-      }
-    }
-  });
-}
+    openWindow();
+    startDiscovery();
+    setTimeout(() => updater.check().catch(() => {}), 3000).unref();
+});
+
+function startServer(p) {server.listen(p, '0.0.0.0');}
 
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
+  if (err.code === 'EADDRINUSE' && currentPort-firstPort<20 && currentPort<65535) {
     console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
     currentPort++;
     startServer(currentPort);
   } else {
     console.error('Server error:', err);
+    process.exit(1);
   }
 });
 
-startServer(currentPort);
-setTimeout(() => updater.check().catch(() => {}), 3000).unref();
+if(process.platform==='win32'){
+  require('./instance-lock').claim({activate:openWindow}).then(lock=>{
+    if(!lock){process.exit(0);return;}
+    server.instanceLock=lock;
+    startServer(currentPort);
+  }).catch(error=>{console.error('Cannot acquire PAIN instance:',error);process.exit(1);});
+}else startServer(currentPort);
 
 
 module.exports = server;

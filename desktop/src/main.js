@@ -4,6 +4,7 @@ const fs = require('fs');
 const http = require('http');
 
 let mainWindow;
+if(process.platform==='win32')app.setAppUserModelId('dev.pain.desktop');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -26,6 +27,12 @@ function createWindow() {
   // Wait for the actual listening port, including when 3000 is already occupied.
   process.env.OPEN_BROWSER='false';
   const server=require('./server.js');
+  if(!server.listenerCount('activate-window'))server.on('activate-window',()=>{
+    if(mainWindow&&!mainWindow.isDestroyed()){
+      if(mainWindow.isMinimized())mainWindow.restore();
+      mainWindow.show();mainWindow.focus();
+    }
+  });
   const load=()=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.loadURL(`http://localhost:${server.address().port}`);};
   if(server.listening)load();else server.once('listening',load);
 

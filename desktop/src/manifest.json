@@ -1,6 +1,8 @@
 {
   "name": "Pain",
   "short_name": "Pain",
+  "id": "/",
+  "scope": "/",
   "description": "Pain — Minimalist Audio Player & Sync Companion",
   "start_url": "/",
   "display": "standalone",
