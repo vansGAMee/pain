@@ -8,11 +8,12 @@
   <link rel="shortcut icon" href="/assets/app-icon.ico">
   <link rel="icon" type="image/png" href="/assets/app-icon.png">
   <link rel="manifest" href="/manifest.json">
-  <script>try{const t=localStorage.getItem("pain_theme");if(["paper","dark","studio","spotify","stereo"].includes(t))document.documentElement.setAttribute("data-theme",t);}catch(_){}</script>
+  <script>try{const t=localStorage.getItem("pain_theme");if(["paper","dark","studio","spotify","stereo","form"].includes(t))document.documentElement.setAttribute("data-theme",t);}catch(_){}</script>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="studio-theme.css">
   <link rel="stylesheet" href="spotify-theme.css">
   <link rel="stylesheet" href="stereo-theme.css">
+  <link rel="stylesheet" href="form-theme.css">
   <link rel="stylesheet" href="font-settings.css">
 </head>
 <body>
@@ -35,6 +36,10 @@
       <nav class="nav-section">
         <div class="nav-header" data-en="Menu" data-ru="Меню">Menu</div>
         <ul class="nav-menu">
+          <li class="nav-item form-only" data-view="home" role="button" tabindex="0">
+            <svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/></svg>
+            <span class="nav-label" data-en="Home" data-ru="Главная">Главная</span>
+          </li>
           <li class="nav-item active" data-view="library">
             <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             <span class="nav-label" data-en="Library" data-ru="Фонотека">Library</span>
@@ -119,6 +124,19 @@
 
       <!-- Top Navigation & Actions Bar -->
       <header class="top-bar">
+        <details class="form-mobile-nav form-only" id="formNavigation">
+          <summary data-en="Navigation" data-ru="Разделы">Разделы</summary>
+          <nav aria-label="PAIN">
+            <button data-form-view="home" data-en="Home" data-ru="Главная">Главная</button>
+            <button data-form-view="library" data-en="Library" data-ru="Фонотека">Фонотека</button>
+            <button data-form-view="favorites" data-en="Favourites" data-ru="Избранное">Избранное</button>
+            <button data-form-view="player" data-en="Player" data-ru="Плеер">Плеер</button>
+            <button data-form-view="insights" data-en="Insights" data-ru="Статистика">Статистика</button>
+            <button data-form-view="sync" data-en="Devices" data-ru="Устройства">Устройства</button>
+            <button data-form-view="joint-ai">Joint AI</button>
+            <button data-form-view="language">RU / EN</button>
+          </nav>
+        </details>
         <div class="top-bar-left">
           <div class="search-box">
             <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -190,6 +208,7 @@
 
       <!-- Scrollable Views Viewport -->
       <div class="views-viewport">
+        <section class="view-pane" id="view-home"><div id="homeContent"></div></section>
 
         <!-- VIEW 1: LIBRARY -->
         <section class="view-pane active" id="view-library">
@@ -932,6 +951,7 @@
             <label class="appearance-option"><input type="radio" name="appearanceTheme" value="studio"><span class="appearance-preview preview-studio" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Studio" data-ru="Студия">Студия</span></label>
             <label class="appearance-option"><input type="radio" name="appearanceTheme" value="spotify"><span class="appearance-preview preview-spotify" aria-hidden="true"><i></i><b></b><em></em></span><span>Spotify</span></label>
             <label class="appearance-option"><input type="radio" name="appearanceTheme" value="stereo"><span class="appearance-preview preview-stereo" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Stereo" data-ru="Стерео">Стерео</span></label>
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="form"><span class="appearance-preview preview-form" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Form" data-ru="Форма">Форма</span></label>
           </div>
         </fieldset>
         <section class="settings-section font-settings">
@@ -1217,6 +1237,8 @@
   <script src="joint-ai.js"></script>
   <script src="favorite-moments.js"></script>
   <script src="listening-insights.js"></script>
+  <script src="home-model.js"></script>
+  <script src="home-view.js"></script>
   <script src="profile-card.js"></script>
   <script src="presence/signals.js"></script>
   <script src="presence/baselines.js"></script>

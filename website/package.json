@@ -1,6 +1,6 @@
 {
   "name": "pain-showcase-website",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "private": true,
   "description": "PAIN — independent local music player. Product site and listening guide.",
   "scripts": {

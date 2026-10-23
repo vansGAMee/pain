@@ -51,6 +51,9 @@
   initial-value: rgba(28, 28, 26, 0.20);
 }
 
+/* Optional edition navigation is absent from the original layouts. */
+.app-layout .form-only { display: none; }
+
 :root {
   --bg: #EFEDE6;
   --ink: #1C1C1A;

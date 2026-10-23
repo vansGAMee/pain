@@ -184,14 +184,17 @@
    // fewer full listens (or vice versa). Cap correction so rare events cannot dominate.
    const balance=key=>{
     let positive=0,negative=0;
-    for(const sample of samples){if(sample.target>=.75)positive+=sample[key];else if(sample.target<.25)negative+=sample[key];}
+    for(const sample of samples){if(sample[key]<=.02)continue;if(sample.target>=.75)positive+=sample[key];else if(sample.target<.25)negative+=sample[key];}
     if(!positive||!negative)return ()=>1;
     const total=positive+negative,p=Math.max(.5,Math.min(2,total/(2*positive))),n=Math.max(.5,Math.min(2,total/(2*negative)));
     return target=>target>=.75?p:target<.25?n:1;
    };
    const lifetimeBalance=balance('weight'),recentBalance=balance('recentWeight');
-   // Sparse SGD with L2 shrinkage: learned coefficients, not hand-written mood scores.
+   // Retire negligible evidence from both learning and L2 shrinkage, using
+   // the same floor as the recent model. Otherwise expired archive rows keep
+   // erasing fresh preferences even though they can no longer teach anything.
    for(let epoch=0;epoch<5;epoch++)for(const sample of samples){
+    if(sample.weight<=.02)continue;
     const error=(sample.target-this.predictFeatures(sample.features))*sample.weight*lifetimeBalance(sample.target)/Math.sqrt(1+(this.counts.get(sample.id)||0)/8);
     const rate=.16/Math.sqrt(1+epoch);
     for(const [key,value] of sample.features){const old=this.weights.get(key)||0;this.weights.set(key,old+rate*(error*value-.018*old));}

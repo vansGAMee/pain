@@ -556,11 +556,15 @@
     updateGreeting();
     setupEventListeners();
     window.addEventListener('pain:dj-changed',syncSharedAudio);
-    setInterval(() => { if (!document.hidden) updateGreeting(); }, 60000);
+    setInterval(() => { if (!document.hidden) { updateGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) updateGreeting(); });
     setTimeout(() => checkForUpdates(false, true), 800);
     setInterval(() => checkForUpdates(true, true), 6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
+    let homeFrame=0;
+    window.addEventListener('pain:queue-ui',()=>{
+      if(state.currentView==='home'&&!homeFrame)homeFrame=requestAnimationFrame(()=>{homeFrame=0;if(state.currentView==='home')renderHome();});
+    });
     startDiscoveryPolling();
 
     // Check query parameters and URL Hash for deep-linking
@@ -572,10 +576,10 @@
     if (hash === 'profile') {
       switchView('insights');
       setTimeout(openProfileModal, 150);
-    } else if (hash && ['library', 'favorites', 'player', 'insights', 'sync', 'joint-ai'].includes(hash)) {
+    } else if (hash && ['home', 'library', 'favorites', 'player', 'insights', 'sync', 'joint-ai'].includes(hash)) {
       switchView(hash);
     } else {
-      switchView('library');
+      switchView(state.theme==='form'?'home':'library');
     }
 
     window.addEventListener('hashchange', () => {
@@ -583,6 +587,8 @@
       if (h === 'profile') {
         switchView('insights');
         setTimeout(openProfileModal, 100);
+      } else if(state.theme==='form'&&h!==state.currentView&&['home','library','favorites','player','insights','sync','joint-ai'].includes(h)) {
+        switchView(h);
       }
     });
 
@@ -939,6 +945,7 @@
 
   // --- NAVIGATION & VIEW SWITCHING ---
   function switchView(viewName, playlistId = null) {
+    if(viewName==='home'&&state.theme!=='form')viewName='library';
     state.currentView = viewName;
     state.activePlaylistId = playlistId;
 
@@ -963,11 +970,14 @@
     }
 
     renderCurrentView();
+    if(state.theme==='form')document.querySelector('.views-viewport').scrollTop=0;
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
   }
 
   function renderCurrentView() {
-    if (state.currentView === 'library') {
+    if (state.currentView === 'home') {
+      renderHome();
+    } else if (state.currentView === 'library') {
       renderLibrary();
     } else if (state.currentView === 'favorites') {
       renderFavoritesView();
@@ -980,6 +990,15 @@
     } else if (state.currentView === 'joint-ai') {
       renderJointAIView();
     }
+  }
+
+  function renderHome(){
+    if(typeof HomeView==='undefined')return;
+    HomeView.render({tracks:state.tracks,stats:state.stats,playlists:state.playlists,queue,lang:state.lang,
+      current:queue?.getCurrentTrack(),isPlaying:state.isPlaying},
+      {cover:getCoverUrl,fallbackCover:getProceduralCoverSvg,navigate:switchView,resume:togglePlay,
+       playTrack:id=>{const track=state.tracks.find(t=>String(t.id)===id);if(track)playTrackById(track.id);},
+       playMix:(track,tracks)=>playTrackInContext(track,tracks,{type:'playlist',title:'Smart DJ'})});
   }
 
 
@@ -1749,7 +1768,7 @@
       DOM.hourlyBars.innerHTML = '';
       const maxH = Math.max(...hours, 60000);
       hours.forEach((ms, h) => {
-        const pct = Math.max(4, Math.round((ms / maxH) * 85));
+        const pct = Math.max(state.theme==='form'?0:4, Math.round((ms / maxH) * 85));
         const isPeak = h === peakHour && ms > 0;
         const col = document.createElement('div');
         col.className = 'hour-col';
@@ -1782,6 +1801,8 @@
     const discoveryPct=qualified?Math.round(newPlays/qualified*100):0;
     if (DOM.statReplayRate) DOM.statReplayRate.textContent = `${replayPct}%`;
     if (DOM.statDiscoveryRate) DOM.statDiscoveryRate.textContent = `${discoveryPct}%`;
+    for(const [element,value] of [[DOM.statCompletionRate,compPct],[DOM.statEarlySkips,earlyPct],[DOM.statReplayRate,replayPct],[DOM.statDiscoveryRate,discoveryPct]])
+      element?.closest('.stat-card')?.style.setProperty('--form-ratio',value);
 
     // 7. Real 7-Day Activity Pulse
     const dayNamesEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1805,7 +1826,7 @@
       DOM.weekBars.innerHTML = '';
       past7Days.forEach((d, idx) => {
         const ms = dayTotalsMs[idx];
-        const h = Math.max(6, Math.round((ms / maxDayMs) * 90));
+        const h = Math.max(state.theme==='form'?0:6, Math.round((ms / maxDayMs) * 90));
         const col = document.createElement('div');
         col.className = 'bar-col';
         col.title = `${d.toLocaleDateString()}: ${Math.round(ms / 60000)} ${isRu ? 'мин' : 'min'}`;
@@ -2254,6 +2275,7 @@
   }
 
   function updatePlayBtnUI() {
+    if(typeof HomeView!=='undefined')HomeView.setPlaying(state.isPlaying);
     if (state.isPlaying) {
       DOM.bottomPlayIcon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
       DOM.bottomPlayBtn.title = 'Pause';
@@ -2750,7 +2772,7 @@
 
   // --- THEME & LANGUAGE ---
   function applyTheme(theme) {
-    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo'].includes(theme) ? theme : 'paper';
+    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form'].includes(theme) ? theme : 'paper';
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => { input.checked = input.value === theme; });
@@ -2760,6 +2782,7 @@
     if (state.fluidColor && state.fluidColor.toLowerCase() !== '#7c4dff') {
       applyFluidColor(state.fluidColor);
     }
+    if(theme!=='form'&&state.currentView==='home')switchView('library');
   }
 
   function applyLang(lang) {
@@ -3675,10 +3698,16 @@
   function setupEventListeners() {
     // Nav Items
     DOM.navItems.forEach(item => {
+      item.setAttribute('role','button');item.tabIndex=0;
+      item.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();item.click();}});
       item.addEventListener('click', () => {
         switchView(item.dataset.view);
       });
     });
+    document.querySelectorAll('[data-form-view]').forEach(button=>button.addEventListener('click',()=>{
+      if(button.dataset.formView==='language')DOM.langToggle.click();else switchView(button.dataset.formView);
+      document.getElementById('formNavigation').open=false;
+    }));
 
     // Pinned Liked Songs Tile
     DOM.sidebarLikedSongsTile.addEventListener('click', () => {
@@ -3691,7 +3720,7 @@
     });
 
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => {
-      input.addEventListener('change', () => { if (input.checked) applyTheme(input.value); });
+      input.addEventListener('change', () => { if (input.checked) { applyTheme(input.value); if(input.value==='form')switchView('home'); } });
     });
 
     DOM.themeToggle.addEventListener('click', () => {
@@ -3708,7 +3737,7 @@
       clearTimeout(searchTimer);
       cancelTrackRender(DOM.tracksGrid);
       cancelTrackRender(DOM.tracksTableBody);
-      searchTimer = setTimeout(() => renderLibrary(), 120);
+      searchTimer = setTimeout(() => { if(state.theme==='form'&&state.currentView!=='library')switchView('library');else renderLibrary(); }, 120);
     });
 
     DOM.searchClearBtn.addEventListener('click', () => {
@@ -3727,7 +3756,7 @@
         chip.classList.add('active');
         state.categoryFilter = chip.dataset.filter;
         state.libraryDirty = true;
-        renderLibrary();
+        if(state.theme==='form')switchView('library');else renderLibrary();
       });
     });
 
@@ -3735,12 +3764,12 @@
     DOM.sortSelect.addEventListener('change', (e) => {
       state.sortOption = e.target.value;
       state.libraryDirty = true;
-      renderLibrary();
+      if(state.theme==='form')switchView('library');else renderLibrary();
     });
 
     // View Mode Toggles (Grid vs List)
-    DOM.viewModeGridBtn.addEventListener('click', () => applyViewMode('grid'));
-    DOM.viewModeListBtn.addEventListener('click', () => applyViewMode('list'));
+    DOM.viewModeGridBtn.addEventListener('click', () => {applyViewMode('grid');if(state.theme==='form')switchView('library');});
+    DOM.viewModeListBtn.addEventListener('click', () => {applyViewMode('list');if(state.theme==='form')switchView('library');});
 
     // Play All Button in Library
     DOM.playAllBtn.addEventListener('click', () => {

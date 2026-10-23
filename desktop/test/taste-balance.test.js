@@ -32,3 +32,17 @@ test('default time context belongs to the model snapshot, making the same decisi
  const model=new Taste(tracks,plays,NOW),hour=new Date(NOW).getHours();
  assert.deepEqual(model.score(null,tracks[1]),model.score(null,tracks[1],{},{hour}));
 });
+
+test('an expired archive cannot wash out newly learned likes or dislikes',()=>{
+ const tracks=[{id:'known',artist:'A',genre:'Electronic'},{id:'new',artist:'A',genre:'Electronic'}];
+ for(const good of [true,false]){
+  const recent=Array.from({length:6},(_,i)=>play('known',good,NOW-(i+1)*DAY));
+  // Each row is unique and retained by the normal history limit, but its
+  // age makes it negligible evidence. Archive volume must not undo learning.
+  const archive=Array.from({length:2000},(_,i)=>play('known',!good,NOW-(3650+i/20)*DAY));
+  const probability=plays=>new Taste(tracks,plays,NOW).score(null,tracks[1],{},{hour:12}).probability;
+  const fresh=probability(recent),withArchive=probability([...archive,...recent]);
+  assert.equal(fresh>.5,good);
+  assert.ok(Math.abs(withArchive-fresh)<.001,`Expired rows diluted ${good?'positive':'negative'} evidence: ${fresh} -> ${withArchive}`);
+ }
+});

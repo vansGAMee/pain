@@ -133,6 +133,13 @@
       (el('djVibes').querySelector('button')||el('djVibeName')).focus();
   });
   window.addEventListener('pain:queue-ui',render);
+  window.PainDJVibes={
+    list:()=>({items:saved.items.map(v=>({id:v.id,name:v.name})),activeId:saved.activeId,updatedAt:saved.updatedAt}),
+    select:id=>{
+      if(id!==null&&!saved.items.some(v=>v.id===id))return false;
+      return commit({...saved,activeId:id},id?activationMessage():text('Подбор снова свободный.','Selection is free again.'));
+    }
+  };
   window.addEventListener('pain:dj-state',event=>{saved=event.detail;listKey='';queue.setVibeProfile(active()?.profile||null);render();});
   el('audioEngine').addEventListener('timeupdate',availability);
   el('langToggle').addEventListener('click',()=>queueMicrotask(render));
