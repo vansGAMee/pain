@@ -2750,8 +2750,10 @@
 
   // --- THEME & LANGUAGE ---
   function applyTheme(theme) {
+    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo'].includes(theme) ? theme : 'paper';
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => { input.checked = input.value === theme; });
     try {
       localStorage.setItem('pain_theme', theme);
     } catch (e) {}
@@ -2960,7 +2962,7 @@
         root.style.setProperty('--fluid-accent-base', hex);
         root.style.setProperty('--fluid-accent-light', `rgb(${rLight}, ${gLight}, ${bLight})`);
 
-        const isDark = state.theme === 'dark' || root.getAttribute('data-theme') === 'dark';
+        const isDark = ['dark', 'spotify', 'stereo'].includes(state.theme) || ['dark', 'spotify', 'stereo'].includes(root.getAttribute('data-theme'));
         if (isDark) {
           root.style.setProperty('--fluid-bg-color-1', `rgba(${rD1}, ${gD1}, ${bD1}, 0.45)`);
           root.style.setProperty('--fluid-bg-color-2', `rgba(${rD2}, ${gD2}, ${bD2}, 0.55)`);
@@ -3686,6 +3688,10 @@
     // Language & Theme
     DOM.langToggle.addEventListener('click', () => {
       applyLang(state.lang === 'en' ? 'ru' : 'en');
+    });
+
+    document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => {
+      input.addEventListener('change', () => { if (input.checked) applyTheme(input.value); });
     });
 
     DOM.themeToggle.addEventListener('click', () => {

@@ -1,0 +1,164 @@
+/* Stereo: a listening console. Compact dock, large collection titles, a full
+   width transport timeline. Everything except the chooser is strictly opt-in.
+   Graphite #252722 / chassis #1c1e1a / ivory #f0eadf / copper #d8b183.
+   Existing font preference, playback, keyboard order and DOM remain intact. */
+.appearance-options{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+.preview-stereo{--preview-bg:#252722;--preview-side:#1c1e1a;--preview-disc:#d8b183;--preview-bar:#363931}
+.preview-stereo i{width:16%}
+.preview-stereo b{left:60%}
+.preview-stereo em{border-top:2px solid #d8b183}
+
+[data-theme="stereo"]{
+ color-scheme:dark;
+ --bg:#252722;--ink:#f0eadf;--ink-secondary:#d0ccbf;--ink-muted:#aaa99b;
+ --card-bg:#30332c;--card-relief:#40443a;--card-hover:#3a3e34;
+ --border:#eee5ce14;--border-strong:#eee5ce35;--accent:#d8b183;--heart-color:#d8b183;
+ --relief-shadow:none;--card-shadow:none;--bottom-bar-height:122px;
+ --fluid-accent-base:#d8b183;--fluid-accent-light:#ead7b6;
+ --fluid-bg-color-1:#4a40334d;--fluid-bg-color-2:#363d304d;--fluid-bg-color-3:#4b45334d;
+ --fluid-orb1-c1:#d8b18318;--fluid-orb1-c2:#d8b18308;
+ --fluid-orb2-c1:#a2b18b18;--fluid-orb2-c2:#a2b18b08;
+ --fluid-orb3-c1:#bca17118;--fluid-orb3-c2:#bca17108;
+}
+[data-theme="stereo"] .app-layout{grid-template-columns:144px minmax(0,1fr);grid-template-rows:minmax(0,1fr) var(--bottom-bar-height);height:100dvh;background:var(--bg)}
+[data-theme="stereo"] .sidebar{background:#1c1e1a;padding:24px 12px 16px;gap:20px;min-height:0;min-width:0}
+[data-theme="stereo"] .brand{gap:8px;justify-content:center;border:0;padding:0 0 8px}
+[data-theme="stereo"] .brand-avatar{width:32px;height:32px;border-radius:50%;box-shadow:none}
+[data-theme="stereo"] .brand-text{font-size:22px;letter-spacing:-1px}
+[data-theme="stereo"] .brand-sub{display:none}
+[data-theme="stereo"] .nav-header{text-transform:none;letter-spacing:0;font-size:10px;font-weight:450;padding-inline:4px}
+[data-theme="stereo"] .nav-section>.nav-header{text-align:center}
+[data-theme="stereo"] .nav-menu{gap:4px}
+[data-theme="stereo"] .nav-item{position:relative;flex-direction:column;gap:5px;padding:10px 5px;border-radius:9px;text-align:center;font-size:11px;font-weight:500;line-height:1.3;color:var(--ink-muted)}
+[data-theme="stereo"] .nav-item svg{width:21px;height:21px;flex-shrink:0}
+[data-theme="stereo"] .nav-item:hover{background:#ffffff05;color:var(--ink)}
+[data-theme="stereo"] .nav-item.active{background:#d8b1830e;color:#e7c79f;box-shadow:none}
+[data-theme="stereo"] .nav-item.active::before{content:'';position:absolute;left:0;top:25%;height:50%;width:2px;border-radius:2px;background:var(--accent)}
+[data-theme="stereo"] .liked-songs-tile{padding:10px 6px;gap:8px;border-radius:6px;box-shadow:none;background:transparent;border-color:var(--border)}
+[data-theme="stereo"] .liked-tile-icon{width:24px;height:30px;flex-shrink:0;border-radius:4px;background:#d8b18312;color:var(--accent)}
+[data-theme="stereo"] .liked-tile-icon svg{width:16px;height:16px}
+[data-theme="stereo"] .liked-tile-title{font-size:11px}
+[data-theme="stereo"] .playlist-list-item{font-size:11px;padding:9px 5px;gap:4px;box-shadow:none}
+[data-theme="stereo"] .sidebar-sync-badge{background:none;box-shadow:none;padding:0;font-size:10px;overflow-wrap:anywhere}
+[data-theme="stereo"] .status-dot{flex-shrink:0;width:6px;height:6px}
+[data-theme="stereo"] .bottom-controls{display:flex;flex-direction:column;align-items:stretch;gap:5px}
+[data-theme="stereo"] .bottom-controls button{display:flex;justify-content:center;align-items:center;gap:6px;min-height:30px;border-color:transparent;box-shadow:none;font-weight:450}
+[data-theme="stereo"] .main-stage{min-width:0;min-height:0}
+[data-theme="stereo"] .top-bar{display:grid;grid-template-columns:minmax(200px,1fr) auto;grid-template-areas:"search actions" "filters filters";height:auto;gap:20px;padding:24px 40px 0;border-bottom:1px solid var(--border)}
+[data-theme="stereo"] .top-bar-left{display:contents}
+[data-theme="stereo"] .top-bar-right{grid-area:actions;gap:8px;flex-wrap:wrap}
+[data-theme="stereo"] .search-box{grid-area:search;width:min(100%,440px);min-width:0}
+[data-theme="stereo"] .search-input{background:#1c1e1a;border:1px solid var(--border);border-radius:7px;padding-block:12px;box-shadow:none}
+[data-theme="stereo"] .filter-chips{grid-area:filters;gap:25px;flex-wrap:wrap}
+[data-theme="stereo"] .filter-chip{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;box-shadow:none;padding:0 0 14px;font-size:13px;gap:8px;color:var(--ink-muted)}
+[data-theme="stereo"] .filter-chip.active{background:none;color:var(--ink);border-bottom-color:var(--accent)}
+[data-theme="stereo"] :is(.btn-minimal,.sort-select,.view-mode-toggle,.lang-btn,.theme-btn,.eq-preset-chip){border-radius:6px;box-shadow:none}
+[data-theme="stereo"] .app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip){background-image:none;box-shadow:none}
+[data-theme="stereo"] .btn-minimal.primary{background:var(--accent);color:#25231d;border-color:var(--accent);padding:12px 20px;font-weight:650}
+[data-theme="stereo"] .views-viewport{padding:38px 40px}
+[data-theme="stereo"] .view-hero-header{align-items:flex-end;gap:20px;flex-wrap:wrap;margin-bottom:38px}
+[data-theme="stereo"] .view-heading{font-size:clamp(38px,4.4vw,68px);font-weight:550;letter-spacing:-.055em;line-height:1.1;margin:10px 0 12px}
+[data-theme="stereo"] .view-subheading{font-size:12px;color:var(--ink-muted);line-height:1.6}
+[data-theme="stereo"] .view-greeting{color:var(--ink-secondary);font-size:12px}
+[data-theme="stereo"] .tracks-table-wrapper{background:none;border:0;border-radius:0;box-shadow:none}
+[data-theme="stereo"] .tracks-table th{background:none;text-transform:none;letter-spacing:0;font-weight:450;color:var(--ink-muted);font-size:11px;padding-block:14px;border-bottom:1px solid var(--border-strong)}
+[data-theme="stereo"] .tracks-table td{padding-block:12px;border-bottom:1px solid var(--border)}
+[data-theme="stereo"] .tracks-table tbody tr:hover{background:#ffffff04}
+[data-theme="stereo"] .tracks-table tbody tr.playing-row{background:#d8b1830b}
+[data-theme="stereo"] .tracks-table tbody tr.playing-row .track-row-title{color:#ebc99f}
+[data-theme="stereo"] .track-row-title{font-weight:550;font-size:15px}
+[data-theme="stereo"] .track-row-sub{margin-top:4px;font-size:12px}
+[data-theme="stereo"] :is(.row-thumb-img,.track-card-cover,.track-thumb-container){border-radius:5px;box-shadow:none}
+[data-theme="stereo"] .track-card{background:none;border:0;box-shadow:none;padding:12px;border-radius:8px}
+[data-theme="stereo"] .track-card:hover{background:var(--card-bg)}
+[data-theme="stereo"] .track-card-play-overlay{background:var(--accent);color:#25231d}
+[data-theme="stereo"] :is(.stat-card,.chart-card,.leaderboard-card,.joint-card,.sync-status-card){border:1px solid var(--border);border-radius:10px;box-shadow:none;background:var(--card-bg)}
+[data-theme="stereo"] .stat-value{font-weight:500;letter-spacing:-1.5px}
+[data-theme="stereo"] .stat-label{text-transform:none;letter-spacing:0}
+[data-theme="stereo"] .hour-pill.peak{background:var(--accent)}
+[data-theme="stereo"] .share-profile-btn{background:var(--card-bg);color:var(--ink);border:1px solid var(--border-strong);border-radius:6px;box-shadow:none}
+[data-theme="stereo"] .joint-model-badge{color:var(--accent);background:#d8b1830c;border-color:#d8b18330;letter-spacing:0}
+[data-theme="stereo"] .joint-badge-dot{background:var(--accent);box-shadow:none}
+[data-theme="stereo"] .joint-btn-primary{background:var(--accent);color:#25231d;box-shadow:none;border-radius:6px}
+[data-theme="stereo"] :is(.row-fav-btn,.card-fav-btn).active{color:var(--heart-color)}
+[data-theme="stereo"] :is(.row-fav-btn,.card-fav-btn).active svg{fill:var(--heart-color);stroke:var(--heart-color)}
+[data-theme="stereo"] #view-favorites .tracks-table-wrapper{background:#252722eb;box-shadow:none;border-color:var(--border)}
+:root[data-theme="stereo"] #view-favorites .tracks-table tbody tr:hover{background:#ffffff06}
+[data-theme="stereo"] .playlist-hero-cover{border-radius:8px;box-shadow:none}
+[data-theme="stereo"] .playlist-hero-cover.heart-gradient{background:#bfa57d;color:#252722}
+/* The title leads; the record is the physical object on the other half. */
+[data-theme="stereo"] .vinyl-player-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-areas:"info disc";align-items:center;gap:clamp(30px,5vw,90px);min-height:calc(100dvh - 330px);padding:30px 0;max-width:1300px;margin:auto}
+[data-theme="stereo"] .vinyl-track-info{grid-area:info;text-align:left;align-items:flex-start;min-width:0;max-width:100%}
+[data-theme="stereo"] .vinyl-origin-badge{font-size:12px;letter-spacing:0;text-transform:none;font-weight:450;margin-bottom:24px;overflow-wrap:anywhere}
+[data-theme="stereo"] .vinyl-title{font-size:clamp(36px,4.8vw,76px);line-height:1.05;letter-spacing:-.055em;font-weight:550;margin-bottom:22px;overflow-wrap:anywhere;max-width:100%}
+[data-theme="stereo"] .vinyl-artist{font-size:20px;overflow-wrap:anywhere;max-width:100%}
+[data-theme="stereo"] .vinyl-album{font-size:14px;margin-top:10px;overflow-wrap:anywhere;max-width:100%}
+[data-theme="stereo"] .vinyl-outer-ring{grid-area:disc;width:100%;height:auto;aspect-ratio:1;max-width:510px;justify-self:center;background:#44473c;box-shadow:inset 0 1px 1px #eee5ce40,0 22px 50px -20px #0009}
+[data-theme="stereo"] .vinyl-disc-body{width:95%;height:95%}
+[data-theme="stereo"] .vinyl-groove-rings{width:90%;height:90%}
+[data-theme="stereo"] .vinyl-label-center{width:32%;height:32%}
+/* A single timeline spans the console. No duplicated transport controls. */
+[data-theme="stereo"] .bottom-player-bar{display:grid;grid-template-columns:minmax(210px,1fr) auto minmax(250px,1fr);grid-template-rows:20px minmax(0,1fr);gap:8px 28px;padding:10px 24px 14px;background:#34382f;border-top:1px solid #eee5ce24;box-shadow:none}
+[data-theme="stereo"] .bottom-player-center{display:contents}
+[data-theme="stereo"] .bottom-seek-row{grid-column:1/-1;grid-row:1}
+[data-theme="stereo"] .bottom-player-left{grid-row:2;grid-column:1;width:auto;min-width:0}
+[data-theme="stereo"] .bottom-ctrl-buttons{grid-row:2;grid-column:2;gap:16px}
+[data-theme="stereo"] .bottom-player-right{grid-row:2;grid-column:3;width:auto;min-width:0;gap:8px}
+[data-theme="stereo"] .bottom-play-btn{width:48px;height:48px;background:#ded3bc;color:#26281f;border:1px solid #f5ead133}
+[data-theme="stereo"] .bottom-play-btn svg{fill:#26281f}
+[data-theme="stereo"] .seek-track{height:4px;background:#15181170}
+[data-theme="stereo"] :is(.seek-fill,.seek-thumb){background:var(--accent)}
+[data-theme="stereo"] .volume-slider{accent-color:var(--accent)}
+[data-theme="stereo"] .ctrl-btn-subtle.active{background:#d8b18316;color:var(--accent)}
+[data-theme="stereo"] .ctrl-btn-subtle.smart-mode{background:#d8b18310;color:#ebc99f;border:1px solid #d8b18355;box-shadow:none}
+[data-theme="stereo"] .shuffle-badge.smart-badge{background:var(--accent);color:#252722;box-shadow:none}
+[data-theme="stereo"] .bottom-track-context.smart-active{color:#e4c49d}
+[data-theme="stereo"] :is(.settings-modal-card,.modal-card,.eq-modal-card,.dj-dialog){border-radius:12px;border-color:var(--border-strong);box-shadow:0 20px 80px #0007}
+[data-theme="stereo"] .settings-title{font-size:28px;letter-spacing:-1px;font-weight:550}
+[data-theme="stereo"] .settings-section{border-radius:6px;box-shadow:none;background:#2b2e27}
+[data-theme="stereo"] .switch-label input:checked+.switch-slider{background:var(--accent)}
+[data-theme="stereo"] .appearance-option input:checked+.appearance-preview{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+[data-theme="stereo"] :is(button,input,select,textarea):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+[data-theme="stereo"] .app-layout.player-fullscreen{grid-template-columns:minmax(0,1fr)}
+[data-theme="stereo"] .player-fullscreen .top-bar{display:none}
+[data-theme="stereo"] .player-fullscreen .vinyl-player-stage{min-height:calc(100dvh - var(--bottom-bar-height) - 90px)}
+@media(max-width:1100px){
+ [data-theme="stereo"] .top-bar{grid-template-columns:minmax(0,1fr);grid-template-areas:"search" "filters" "actions";gap:16px;padding:20px 24px 16px}
+ [data-theme="stereo"] .top-bar-right{justify-content:flex-start}
+ [data-theme="stereo"] .search-box{width:100%}
+ [data-theme="stereo"] .filter-chip{padding-bottom:9px}
+ [data-theme="stereo"] .views-viewport{padding:26px 24px}
+ [data-theme="stereo"] .bottom-player-bar{gap:8px 14px;padding-inline:14px}
+ [data-theme="stereo"] .bottom-ctrl-buttons{gap:8px}
+ [data-theme="stereo"] .volume-slider{width:64px}
+}
+@media(max-width:850px){
+ [data-theme="stereo"]{--bottom-bar-height:164px}
+ [data-theme="stereo"] .app-layout{grid-template-columns:124px minmax(0,1fr)}
+ [data-theme="stereo"] .sidebar{padding-inline:8px}
+ [data-theme="stereo"] .bottom-player-bar{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:20px 58px 32px;gap:4px 12px;padding:8px 12px}
+ [data-theme="stereo"] .bottom-player-right{grid-row:3;grid-column:1/-1;justify-content:flex-end}
+ [data-theme="stereo"] .bottom-ctrl-buttons{gap:6px}
+ [data-theme="stereo"] .vinyl-player-stage{grid-template-columns:minmax(0,1fr);grid-template-areas:"disc" "info";gap:28px;min-height:0}
+ [data-theme="stereo"] .vinyl-outer-ring{width:min(100%,360px)}
+ [data-theme="stereo"] .vinyl-title{font-size:38px}
+ [data-theme="stereo"] .vinyl-track-info{width:100%}
+ [data-theme="stereo"] .vinyl-origin-badge{margin-bottom:12px}
+}
+@media(max-width:550px){
+ [data-theme="stereo"]{--bottom-bar-height:208px}
+ [data-theme="stereo"] .app-layout{grid-template-columns:104px minmax(0,1fr)}
+ [data-theme="stereo"] .top-bar{padding:14px 12px}
+ [data-theme="stereo"] .views-viewport{padding:24px 12px}
+ [data-theme="stereo"] .filter-chips{gap:14px}
+ [data-theme="stereo"] .filter-chip{font-size:12px}
+ [data-theme="stereo"] .view-heading{font-size:32px}
+ [data-theme="stereo"] .liked-songs-tile{flex-direction:column;text-align:center}
+ [data-theme="stereo"] .liked-tile-title{white-space:normal}
+ [data-theme="stereo"] .playlists-header{flex-wrap:wrap;gap:6px}
+ [data-theme="stereo"] .bottom-player-bar{grid-template-columns:minmax(0,1fr);grid-template-rows:16px 52px 52px 32px;justify-items:stretch}
+ [data-theme="stereo"] .bottom-player-left{grid-row:2;grid-column:1}
+ [data-theme="stereo"] .bottom-ctrl-buttons{grid-row:3;grid-column:1;justify-content:center}
+ [data-theme="stereo"] .bottom-player-right{grid-row:4;grid-column:1;justify-content:center}
+ [data-theme="stereo"] .track-thumb-container{width:42px;height:42px}
+}

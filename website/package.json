@@ -1,8 +1,8 @@
 {
   "name": "pain-showcase-website",
-  "version": "1.6.1",
+  "version": "1.7.2",
   "private": true,
-  "description": "Tactile showcase and download landing page for Pain music player",
+  "description": "PAIN — independent local music player. Product site and listening guide.",
   "scripts": {
     "dev": "npx -y serve . -l 3000",
     "start": "npx -y serve . -l 3000",

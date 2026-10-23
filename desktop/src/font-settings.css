@@ -1,0 +1,11 @@
+@font-face{font-family:Manrope;src:url('/assets/Manrope.ttf') format('truetype');font-weight:200 800;font-display:swap}
+[data-app-font] body,[data-app-font] :is(button,input,select,textarea){font-family:var(--app-font),Geist,sans-serif}
+[data-app-font="geist-bold"] body,[data-app-font="geist-bold"] :is(button,input,select,textarea){font-variation-settings:"wght" 700}
+.font-settings label{font-size:13px}
+.font-select,.font-custom-row input{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--border-strong);padding:10px 12px;border-radius:6px;min-width:0;width:100%}
+.font-custom-row{display:flex;gap:8px;margin-top:10px}
+.font-custom-row button{flex-shrink:0}
+.font-settings input[type=file]{display:block;width:100%;margin-top:10px;font-size:12px;color:var(--ink-secondary)}
+.font-settings input[type=file]::file-selector-button{background:var(--card-bg);color:var(--ink);border:1px solid var(--border-strong);padding:9px;border-radius:6px;margin-right:8px;cursor:pointer}
+.font-sample{font-size:22px;line-height:1.4;overflow-wrap:anywhere;padding-top:4px}
+.font-select:focus-visible,.font-custom-row input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}

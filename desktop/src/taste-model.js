@@ -16,6 +16,16 @@
   return name;
  };
  const skipIdentity=track=>trustedArtist(track.artist)||'track:'+track.id;
+ // Recognise explicitly labelled speed edits, not arbitrary subtitles, live
+ // performances or remixes. Source tags cannot establish a shared recording.
+ const recordingIdentity=track=>{
+  const artist=trustedArtist(track?.artist);
+  let title=clean(track?.title).normalize('NFKC').replace(/\s+/g,' ');
+  if(!artist||!title)return '';
+  const edit=/\s*(?:[-–—]\s*|\(\s*|\[\s*)(?:(?:(?:super|ultra)\s+)?slowed(?:\s+down)?(?:\s*(?:\+|&|and)\s*reverb(?:ed)?)?|(?:sped|speed)[\s-]*up)(?:\s+(?:version|edit|mix))?\s*[\])]?$/;
+  title=title.replace(edit,'').trim();
+  return title?JSON.stringify([artist,title]):'';
+ };
  const sigmoid=x=>1/(1+Math.exp(-Math.max(-20,Math.min(20,x))));
  const knownBpm=(t,cache)=>{const n=Number(cache?.[t.id]||t.bpm);return n>=40&&n<=240?n:null;};
  const completed=p=>p.finished===1||p.finished===true||p.completed===true||p.completed===1;
@@ -42,6 +52,7 @@
   constructor(tracks=[],plays=[],now=Date.now(),audioProfiles={},options={}){
    this.excludedTracks=options.excludedTracks instanceof Set?options.excludedTracks:new Set(Array.from(options.excludedTracks||[]).map(String));
    this.audioProfiles=audioProfiles;
+   this.similarity=Sound.calibratedSimilarity(tracks.filter(t=>!this.excludedTracks.has(String(t.id))).map(t=>Sound.get(audioProfiles,t)));
    this.weights=new Map();this.counts=new Map();this.artistCounts=new Map();this.now=now;this.evidence=new Map();this.recentSkips=[];
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
    const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
@@ -158,7 +169,7 @@
      const last=selected.at(-1);let best=-1,priority=-1;
      for(let i=0;i<remaining.length;i++){
       const item=remaining[i];
-      if(last)item.nearest=Math.max(item.nearest,Sound.similarity(last.profile,item.example.profile));
+      if(last)item.nearest=Math.max(item.nearest,this.similarity(last.profile,item.example.profile));
       if(item.nearest>.97)continue;
       const value=item.example.strength*(1-item.nearest);
       if(value>priority){priority=value;best=i;}
@@ -219,7 +230,7 @@
    let positive=0,negative=0,provisional=false;
    for(const example of this.soundPreferences){
     if(example.id===id)continue; // Direct track history already has its own signal.
-    const similarity=Sound.similarity(profile,example.profile);
+    const similarity=this.similarity(profile,example.profile);
     const vote=example.strength*Math.max(0,(similarity-.65)/.35)**2;
     if(example.polarity>0){if(vote>positive){positive=vote;provisional=!!example.provisional;}}else negative=Math.max(negative,vote);
    }
@@ -234,7 +245,16 @@
    let pool=candidates.filter(track=>!excluded.has(String(track.id))).map(track=>({track,...this.score(current,track,cache,context)}));
    if(!pool.length)return null;
    const acoustic=pool.some(item=>item.soundSimilarity!==null);
-   const bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
+   let bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
+   const recentRecordings=new Set([current,...(context.recentTrackIds||[]).slice(0,2).map(id=>this.tracksById.get(String(id)))].map(recordingIdentity).filter(Boolean));
+   if(recentRecordings.size){
+    const alternatives=pool.filter(item=>!recentRecordings.has(recordingIdentity(item.track)));
+    // Defer another version only when a good alternative exists. Never force an
+    // unrelated sound, ignore rejection, or dead-end a small/finishing queue.
+    if(alternatives.length<pool.length&&alternatives.some(item=>item.score>=bestScore-18&&item.skipPenalty===0&&item.rejectionPenalty===0&&(!acoustic||item.soundSimilarity>=.65))){
+     pool=alternatives;bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
+    }
+   }
    // Searching for a song must not force novelty or amplify uncertainty bonuses.
    const pivot=this.recentSkips.length>=2;
    const discovery=!this.searching&&!this.recentSkips.length&&(context.step??0)%4===3;let discovering=false;
@@ -243,7 +263,8 @@
    // A saved vibe should not force an unmeasured detour when measured fits exist.
    const unmeasured=acoustic&&discovery&&!Sound.texture(context.vibeProfile)&&(context.step??0)%8===7?pool.filter(item=>{
     const e=this.evidence.get(item.track.id);
-    return item.soundSimilarity===null&&item.skipPenalty===0&&
+    // No independent comparison (e.g. the reference itself) is not missing audio.
+    return item.soundSimilarity===null&&!Sound.get(this.audioProfiles,item.track)&&item.skipPenalty===0&&
      (this.lastQuality.get(String(item.track.id))??1)>=.75&&
      (!e||e.count<1.5||e.reward/e.count>=.5);
    }):[];
@@ -290,7 +311,7 @@
      for(const item of pool){
       if(item.soundSimilarity<.75||item.score<bestScore-10)continue;
       const profile=Sound.get(this.audioProfiles,item.track);if(!Sound.texture(profile))continue;
-      const matches=recentSounds.map(p=>Sound.similarity(p,profile)).sort((a,b)=>b-a);
+      const matches=recentSounds.map(p=>this.similarity(p,profile)).sort((a,b)=>b-a);
       repeats.set(item,Math.max(0,(matches[1]-.94)/.06));
      }
      const alternative=[...repeats].some(([item,repeat])=>repeat===0&&item.skipPenalty===0&&item.rejectionPenalty===0);
@@ -315,7 +336,7 @@
       const last=Sound.get(this.audioProfiles,selected.at(-1).track);let best=0,priority=-Infinity;
       for(let i=0;i<remaining.length;i++){
        const entry=remaining[i];
-       if(entry.profile&&Sound.texture(last))entry.nearest=Math.max(entry.nearest,Sound.similarity(last,entry.profile));
+       if(entry.profile&&Sound.texture(last))entry.nearest=Math.max(entry.nearest,this.similarity(last,entry.profile));
        const redundancy=entry.profile?Math.max(0,(entry.nearest-.94)/.06):1;
        const value=entry.item.rank-6*Math.min(1,redundancy);
        if(value>priority){priority=value;best=i;}
@@ -345,7 +366,10 @@
     if(previous)reference=previous;
     else if(this.searching&&this.lastAcceptedTrack&&(this.lastQuality.get(String(this.lastAcceptedTrack.id))??0)>=.25&&Sound.get(this.audioProfiles,this.lastAcceptedTrack))reference=this.lastAcceptedTrack;
    }
-   const features=this.features(candidate,hour,reference);
+   // Keep one reference/normalisation scale across the candidate pool, but its
+   // own recording supplies no independent match, tempo or transition evidence.
+   const selfReference=reference!=null&&String(reference.id)===String(candidate.id);
+   const features=this.features(candidate,hour,selfReference?null:reference);
    const support=Math.max(this.recentCounts.get(candidate.id)||0,this.recentArtistCounts.get(trustedArtist(candidate.artist))||0);
    // Recent taste earns influence through repeated evidence; one skip cannot erase history.
    const recentMix=.75*support/(support+4);
@@ -364,22 +388,22 @@
    const artist=trustedArtist(candidate.artist),recent=context.recentArtists||[];
    if(artist&&artist===trustedArtist(current?.artist))score-=9;
    else if(artist&&recent.slice(-3).includes(artist))score-=4;
-   const a=reference?knownBpm(reference,cache):null,b=knownBpm(candidate,cache);
+   const a=reference&&!selfReference?knownBpm(reference,cache):null,b=knownBpm(candidate,cache);
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
    if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
    const vibeSound=Sound.texture(context.vibeProfile)?context.vibeProfile:null;
    const currentSound=vibeSound||Sound.get(this.audioProfiles,reference),candidateSound=Sound.get(this.audioProfiles,candidate);
-   let soundSimilarity=Sound.similarity(currentSound,candidateSound);
+   let soundSimilarity=selfReference&&!vibeSound?null:this.similarity(currentSound,candidateSound);
    // Compare with separate accepted recordings, not their averaged spectrum:
    // a sustained listening mood should survive one transitional song. A deliberate
    // switch to a different sound (or a saved vibe) must still take effect immediately.
-   if(!vibeSound&&Sound.texture(currentSound)&&Sound.texture(candidateSound)){
+   if(!vibeSound&&!selfReference&&Sound.texture(currentSound)&&Sound.texture(candidateSound)){
     const anchors=[...this.sessionSoundTracks.values()].reverse().filter(track=>
-     String(track.id)!==String(reference?.id)&&!this.excludedTracks.has(String(track.id))&&
+     String(track.id)!==String(reference?.id)&&String(track.id)!==String(candidate.id)&&!this.excludedTracks.has(String(track.id))&&
      (this.lastQuality.get(String(track.id))??0)>=.75).map(track=>Sound.get(this.audioProfiles,track))
-     .filter(profile=>Sound.texture(profile)&&(Sound.similarity(currentSound,profile)??0)>=.6).slice(0,3);
+     .filter(profile=>Sound.texture(profile)&&(this.similarity(currentSound,profile)??0)>=.6).slice(0,3);
     if(anchors.length>=2&&soundSimilarity!==null){
-     const continuity=anchors.reduce((sum,profile)=>sum+Sound.similarity(profile,candidateSound),0)/anchors.length;
+     const continuity=anchors.reduce((sum,profile)=>sum+this.similarity(profile,candidateSound),0)/anchors.length;
      soundSimilarity=.7*soundSimilarity+.3*continuity;
      if(continuity>.75)reasons.unshift('В настроении последних прослушанных треков');
     }
@@ -404,10 +428,10 @@
    let skipPenalty=0;
    const negativeSound=candidateSound||(this.soundSkips.length?Sound.get(this.audioProfiles,candidate,true):null);
    if(negativeSound)for(const skip of this.soundSkips){
-    const similarity=Sound.similarity(skip.profile,negativeSound,true);
+    const similarity=this.similarity(skip.profile,negativeSound,true);
     if(similarity!==null){
      let match=Math.max(0,(similarity-.55)/.45);
-     const acceptedSimilarity=Sound.similarity(skip.acceptedProfile,negativeSound,true);
+     const acceptedSimilarity=this.similarity(skip.acceptedProfile,negativeSound,true);
      // Penalize only the extra resemblance to a preview over the chosen sound.
      // This preserves a rejected direction without vetoing the confirmed mood.
      if(acceptedSimilarity!==null)match=Math.min(match,Math.max(0,(similarity-acceptedSimilarity)/.45));
@@ -417,7 +441,8 @@
    const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
    score-=Math.max(skipPenalty,rejectionPenalty);
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
-   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty};
+   return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty,
+    explanation:{referenceTitle:vibeSound||selfReference?null:reference?.title||null,referenceBpm:a,liked:candidate.favorite===true||candidate.favorite===1}};
   }
  }
  TasteModel.artistIdentity=track=>trustedArtist(track?.artist);

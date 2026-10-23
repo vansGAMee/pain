@@ -555,7 +555,8 @@
               fromTrack: current,
               toTrack: this.tracks[nextIndex],
               reasons: chosen.reasons || [],
-              bpm: chosen.bpm
+              bpm: chosen.bpm,
+              explanation: chosen.explanation ? {...chosen.explanation} : null
             };
           }
         }

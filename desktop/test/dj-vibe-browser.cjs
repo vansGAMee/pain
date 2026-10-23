@@ -68,7 +68,7 @@ const Audio=require('../src/audio-profile');
   await page.evaluate(()=>painQueue.setShuffleMode('smart'));
   await page.evaluate(()=>painQueue.next());
   await page.click('#bottomTrackContext');
-  assert.match(await page.locator('#djReason').textContent(),/сохранённого вайба/);
+  assert.match(await page.locator('#djReason').textContent(),/сохранённому вайбу/);
   for(const [width,height,theme] of [[1280,800,'paper'],[900,700,'dark'],[380,620,'paper']]){
    await page.setViewportSize({width,height});await page.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
    const bounds=await page.locator('#djDialog').boundingBox();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=width&&bounds.y+bounds.height<=height);

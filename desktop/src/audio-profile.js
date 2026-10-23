@@ -51,6 +51,56 @@
   }
   return detailMatch*Math.exp(-3*distance);
  }
+ // Local scaling makes a match relative to the surrounding audio, rather than
+ // declaring almost every bass-heavy recording similar. No decoding or training.
+ // https://jmlr.csail.mit.edu/papers/v13/schnitzer12a.html
+ let matchCache=null;
+ const neighbourhoodDistances=new WeakMap();
+ function neighbourhoodDistance(a,b){
+  let row=neighbourhoodDistances.get(a);const cached=row?.get(b);
+  if(cached!==undefined)return cached;
+  const distance=-Math.log(Math.max(similarity(a,b),1e-12));
+  if(!row){row=new WeakMap();neighbourhoodDistances.set(a,row);}row.set(b,distance);
+  let reverse=neighbourhoodDistances.get(b);
+  if(!reverse){reverse=new WeakMap();neighbourhoodDistances.set(b,reverse);}reverse.set(a,distance);
+  return distance;
+ }
+ function calibratedSimilarity(profiles=[]){
+  const source=profiles.filter(p=>texture(p));
+  if(matchCache&&source.length===matchCache.source.length&&source.every((p,i)=>p===matchCache.source[i]))return matchCache.match;
+  const unique=new Map();
+  for(const p of source){
+   const key=JSON.stringify([p.vector,p.variance,p.timbre,p.timbreVariance,detail(p)]);
+   if(!unique.has(key)){
+    let hash=2166136261;for(let i=0;i<key.length;i++)hash=Math.imul(hash^key.charCodeAt(i),16777619);
+    unique.set(key,{key,hash:hash>>>0,profile:p});
+   }
+  }
+  const ordered=[...unique.values()].sort((a,b)=>a.hash-b.hash||a.key.localeCompare(b.key));
+  let match=similarity;
+  if(ordered.length>=12){
+   // At most 96 references, sampled independently of title, artist and likes.
+   const count=Math.min(96,ordered.length),anchors=Array.from({length:count},(_,i)=>ordered[Math.floor(i*ordered.length/count)].profile);
+   const radii=new WeakMap(),neighbour=Math.max(2,Math.min(7,Math.round(count*.05)));
+   function radius(p){
+    if(radii.has(p))return radii.get(p);
+    const distances=[];
+    for(const anchor of anchors){const d=neighbourhoodDistance(p,anchor);if(d>1e-6)distances.push(d);}
+    distances.sort((a,b)=>a-b);
+    const value=distances.length>=neighbour?distances[neighbour-1]:null;radii.set(p,value);return value;
+   }
+   match=(a,b,partial=false)=>{
+    const raw=similarity(a,b,partial);
+    // Short previews / missing detail do not supply a local audio neighbourhood.
+    if(raw===null||raw>=.999999||!texture(a)||!texture(b))return raw;
+    const ra=radius(a),rb=radius(b);if(ra===null||rb===null)return raw;
+    const scale=Math.max(.02,Math.sqrt(ra*rb));
+    // Never promote a genuinely distant pair just because its style is rare.
+    return Math.min(raw,Math.exp(.5*Math.log(Math.max(raw,1e-12))/scale));
+   };
+  }
+  matchCache={source,match};return match;
+ }
  const signature=t=>JSON.stringify([t?.duration||0,t?.bytes||0,t?.mime||'',t?.modified||t?.dateModified||t?.lastModified||0,t?.uri||t?.path||'']);
  function read(store,track){if(!track||track.id==null||!store||!Object.hasOwn(store,track.id))return null;const p=store[track.id];return stored(p)&&p.signature===signature(track)?p:null;}
  function get(store,track,partial=false){const p=read(store,track);return ready(p,partial)?p:null;}
@@ -177,5 +227,5 @@
   if(!audio.paused)start();
   return ()=>{if(disposed)return;disposed=true;stop();for(const remove of listeners)remove();try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();for(const node of nodes)node.disconnect();}catch(_){};};
  }
- return {frame,valid,similarity,variation,texture,detail,signature,get,observe,restore,persist};
+ return {frame,valid,similarity,calibratedSimilarity,variation,texture,detail,signature,get,observe,restore,persist};
 });

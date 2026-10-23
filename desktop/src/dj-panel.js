@@ -19,20 +19,6 @@
   } catch (_) {}
   const active=()=>saved.items.find(v=>v.id===saved.activeId);
   queue.setVibeProfile(active()?.profile||null);
-  const translations={
-    'Близкое звучание':'Similar sound',
-    'Звучание сохранённого вайба':'Matches your saved vibe',
-    'Сочетается с вашей сессией':'Fits your listening session',
-    'По вашим прослушиваниям':'Based on your listening history',
-    'Новое у знакомого исполнителя':'Something new from a familiar artist',
-    'Близкий темп':'Similar tempo',
-    'Похоже на музыку, к которой вы возвращаетесь':'Sounds like music you return to',
-    'Давно не звучало':'A track you have not heard in a while',
-    'Открываем новое':'Exploring a less familiar track',
-    'Смена направления после пропусков':'A different direction after skips',
-    'Расширяем подбор':'Adding variety',
-    'Знакомимся с вашим вкусом':'Not enough listening history yet'
-  };
   function draftProfile(){
     if(!draft)return null;
     if(!draft.profile){
@@ -72,8 +58,11 @@
     trigger.setAttribute('aria-label',trigger.title);
     // Keep the existing queue context, with one quiet, actionable label.
     if(smart&&track){
-      const prefix=trigger.dataset.contextLabel||'';
-      trigger.textContent=prefix+' · Smart DJ'+(vibe?' · '+vibe.name:'');
+      const prefix=trigger.dataset.contextLabel||'',decision=queue.getLastTransition();
+      const matched=String(decision?.toTrack?.id)===String(track.id);
+      const reason=matched?DJExplanation.summary(decision,localStorage.getItem('pain_lang')):'';
+      trigger.textContent=prefix+' · '+(reason||'Smart DJ')+(vibe?' · '+vibe.name:'');
+      if(matched)trigger.title=DJExplanation.describe(decision,localStorage.getItem('pain_lang'))+'\n'+text('Нажмите, чтобы подробнее','Click for details');
     }else if(!track&&saved.items.length)trigger.textContent=text('Сохранённые вайбы','Saved vibes');
     if(!dialog.open)return;
     el('djClose').textContent=text('Закрыть','Close');
@@ -88,7 +77,7 @@
     const decision=queue.getLastTransition();
     const reasons=smart&&track&&String(decision?.toTrack?.id)===String(track.id)?decision.reasons:[];
     el('djReason').textContent=reasons?.length
-      ?reasons.map(r=>text(r,translations[r]||'Selected by Smart DJ')).join('. ')+'.'
+      ?DJExplanation.describe(decision,localStorage.getItem('pain_lang'))
       :(!track?text('Нет текущего трека.','No current track.'):text('Трек запущен из очереди.','Started from the queue.'));
     el('djActive').textContent=vibe
       ?(smart?text('Удерживаем: ','Keeping: '):text('На паузе до включения Smart DJ: ','Paused until Smart DJ is enabled: '))+vibe.name

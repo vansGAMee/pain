@@ -1,0 +1,126 @@
+/* Spotify-inspired: black shell, separate charcoal panels, green playback.
+   Existing Geist typeface, PAIN identity and controls are retained.
+   Only the appearance chooser is shared with other themes. */
+.appearance-options{grid-template-columns:repeat(4,minmax(0,1fr))}
+.preview-spotify{--preview-bg:#121212;--preview-side:#242424;--preview-disc:#1ed760;--preview-bar:#000}
+@media(max-width:480px){.appearance-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+[data-theme="spotify"]{
+ color-scheme:dark;
+ --bg:#121212;--ink:#fff;--ink-secondary:#c7c7c7;--ink-muted:#a7a7a7;
+ --card-bg:#242424;--card-relief:#303030;--card-hover:#333;
+ --border:#ffffff12;--border-strong:#ffffff30;--accent:#1ed760;--heart-color:#1ed760;
+ --relief-shadow:none;--card-shadow:none;--bottom-bar-height:94px;
+ --fluid-accent-base:#1db954;--fluid-accent-light:#8ee3aa;
+ --fluid-bg-color-1:#15412780;--fluid-bg-color-2:#182b2180;--fluid-bg-color-3:#183f2860;
+ --fluid-orb1-c1:#1db95424;--fluid-orb1-c2:#1db95408;
+ --fluid-orb2-c1:#45b46d20;--fluid-orb2-c2:#45b46d08;
+ --fluid-orb3-c1:#248e4d20;--fluid-orb3-c2:#248e4d08;
+}
+[data-theme="spotify"] .app-layout{background:#000;padding:8px 8px 0;gap:8px;grid-template-columns:240px minmax(0,1fr);grid-template-rows:minmax(0,1fr) var(--bottom-bar-height)}
+[data-theme="spotify"] :is(.sidebar,.main-stage){background:#121212;border:0;border-radius:8px;min-width:0;min-height:0}
+[data-theme="spotify"] .sidebar{padding:24px 12px 16px;gap:24px}
+[data-theme="spotify"] .brand{padding-bottom:22px;border:0}
+[data-theme="spotify"] .brand-avatar{background:#f3f3f3;border-radius:6px;padding:2px;box-shadow:none}
+[data-theme="spotify"] .brand-text{font-weight:750;letter-spacing:-.8px}
+[data-theme="spotify"] .nav-header{text-transform:none;letter-spacing:0;font-size:12px;color:#a7a7a7}
+[data-theme="spotify"] .nav-item{border-radius:6px;padding:12px;color:#b3b3b3;font-weight:600}
+[data-theme="spotify"] .nav-item:hover{background:#1f1f1f;color:#fff}
+[data-theme="spotify"] .nav-item.active{background:#282828;color:#fff;box-shadow:none}
+[data-theme="spotify"] .liked-songs-tile{background:#1f1f1f;border:0;border-radius:6px;box-shadow:none}
+[data-theme="spotify"] .liked-tile-icon{background:linear-gradient(135deg,#4833ae,#b5d6c5);border-radius:4px}
+[data-theme="spotify"] .sidebar-sync-badge{background:transparent;box-shadow:none;padding-inline:8px}
+[data-theme="spotify"] .bottom-controls{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+[data-theme="spotify"] .bottom-controls button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:30px;white-space:nowrap}
+[data-theme="spotify"] .bottom-controls .settings-btn{grid-column:1/-1}
+[data-theme="spotify"] .top-bar{display:grid;grid-template-columns:minmax(180px,1fr) auto;grid-template-areas:"search actions" "filters filters";height:auto;gap:14px;padding:18px 24px;border:0;background:#121212}
+[data-theme="spotify"] .top-bar-left{display:contents}
+[data-theme="spotify"] .top-bar-right{grid-area:actions;gap:8px;flex-wrap:wrap}
+[data-theme="spotify"] .search-box{grid-area:search;width:min(100%,360px);min-width:0}
+[data-theme="spotify"] .search-input{background:#242424;border:1px solid transparent;box-shadow:none;padding-block:12px;border-radius:24px}
+[data-theme="spotify"] .search-input:focus{border-color:#fff}
+[data-theme="spotify"] .filter-chips{grid-area:filters;gap:8px;flex-wrap:wrap}
+[data-theme="spotify"] .filter-chip{background:#292929;border:0;border-radius:20px;padding:9px 15px;box-shadow:none;font-weight:500}
+[data-theme="spotify"] .filter-chip.active{background:#fff;color:#121212}
+[data-theme="spotify"] .app-layout :is(.btn-minimal,.bottom-play-btn,.ctrl-btn-subtle,.filter-chip,.sync-action-btn,.lang-btn,.theme-btn,.eq-preset-chip){background-image:none;box-shadow:none}
+[data-theme="spotify"] :is(.btn-minimal,.sort-select,.lang-btn,.theme-btn,.eq-preset-chip){border-radius:20px}
+[data-theme="spotify"] .btn-minimal.primary{background:#1ed760;border-color:#1ed760;color:#000}
+[data-theme="spotify"] .views-viewport{padding:24px 32px}
+[data-theme="spotify"] .view-heading{font-size:clamp(28px,3vw,44px);font-weight:750;letter-spacing:-1.4px;line-height:1.15}
+[data-theme="spotify"] .view-hero-header{gap:16px;flex-wrap:wrap}
+[data-theme="spotify"] .tracks-table-wrapper{background:transparent;border:0;border-radius:0;box-shadow:none}
+[data-theme="spotify"] .tracks-table th{font-size:12px;text-transform:none;letter-spacing:0;font-weight:450;border-bottom:1px solid #ffffff20;padding-block:14px}
+[data-theme="spotify"] .tracks-table td{border-bottom:0;padding-block:9px}
+[data-theme="spotify"] .tracks-table tbody tr:hover{background:#ffffff0f}
+[data-theme="spotify"] .tracks-table tbody tr.playing-row{background:#ffffff0a}
+[data-theme="spotify"] .tracks-table tbody tr.playing-row .track-row-title{color:#1ed760}
+[data-theme="spotify"] .track-row-title{font-size:14px;font-weight:500}
+[data-theme="spotify"] :is(.row-thumb-img,.track-card-cover,.track-thumb-container){border-radius:4px;box-shadow:none}
+[data-theme="spotify"] .track-card{background:transparent;border:0;box-shadow:none;border-radius:6px}
+[data-theme="spotify"] .track-card:hover{background:#242424}
+[data-theme="spotify"] .track-card-play-overlay{background:#1ed760;color:#000}
+[data-theme="spotify"] :is(.stat-card,.chart-card,.leaderboard-card,.joint-card){background:#1c1c1c;border:0;border-radius:8px;box-shadow:none}
+[data-theme="spotify"] .stat-value{font-weight:750;letter-spacing:-1px}
+[data-theme="spotify"] #view-favorites .tracks-table-wrapper{background:#121212d9;border:0;box-shadow:none}
+:root[data-theme="spotify"] #view-favorites .tracks-table tbody tr:hover{background:#ffffff0f}
+[data-theme="spotify"] .vinyl-player-stage{min-height:calc(100dvh - 290px);gap:28px}
+[data-theme="spotify"] .vinyl-outer-ring{width:clamp(240px,34vh,380px);height:auto;aspect-ratio:1;max-width:100%;background:#252525;box-shadow:0 14px 42px #0007}
+[data-theme="spotify"] .vinyl-disc-body{width:92%;height:92%}
+[data-theme="spotify"] .vinyl-track-info{min-width:0;max-width:100%}
+[data-theme="spotify"] .vinyl-title{font-size:clamp(30px,3.8vw,56px);font-weight:750;letter-spacing:-1.5px;line-height:1.1;overflow-wrap:anywhere}
+[data-theme="spotify"] .vinyl-origin-badge{color:#b3b3b3;letter-spacing:.6px}
+[data-theme="spotify"] .vinyl-artist{font-size:18px}
+[data-theme="spotify"] .bottom-player-bar{background:#000;border:0;padding:0 16px;gap:20px;box-shadow:none}
+[data-theme="spotify"] .bottom-player-left{width:28%;min-width:0;flex-shrink:1}
+[data-theme="spotify"] .bottom-player-center{min-width:0}
+[data-theme="spotify"] .bottom-player-right{width:auto;min-width:0;gap:8px}
+[data-theme="spotify"] .bottom-play-btn{background:#1ed760;color:#000;box-shadow:none}
+[data-theme="spotify"] .bottom-play-btn svg{fill:#000}
+[data-theme="spotify"] .ctrl-btn-subtle.active{color:#1ed760;background:#1ed76012}
+[data-theme="spotify"] .ctrl-btn-subtle.smart-mode{color:#1ed760;background:#1ed76015;border:1px solid #1ed76040;box-shadow:none}
+[data-theme="spotify"] .shuffle-badge.smart-badge{background:#1ed760;color:#000;box-shadow:none}
+[data-theme="spotify"] .bottom-track-context.smart-active{color:#1ed760}
+[data-theme="spotify"] :is(.row-fav-btn,.card-fav-btn,.row-heart-btn,.card-heart-btn).active{color:#1ed760}
+[data-theme="spotify"] :is(.row-fav-btn,.card-fav-btn).active svg{fill:#1ed760;stroke:#1ed760}
+[data-theme="spotify"] .seek-track:hover .seek-fill{background:#1ed760}
+[data-theme="spotify"] .volume-slider{accent-color:#1ed760}
+[data-theme="spotify"] :is(.settings-modal-card,.modal-card,.eq-modal-card){border-radius:12px;box-shadow:0 24px 80px #0009}
+[data-theme="spotify"] .settings-section{background:#1c1c1c;border-radius:8px;box-shadow:none}
+[data-theme="spotify"] .appearance-option input:checked+.appearance-preview{border-color:#1ed760;box-shadow:0 0 0 1px #1ed760}
+[data-theme="spotify"] .switch-label input:checked+.switch-slider{background:#1ed760}
+[data-theme="spotify"] .app-layout.player-fullscreen{grid-template-columns:minmax(0,1fr)}
+[data-theme="spotify"] .player-fullscreen .top-bar{display:none}
+[data-theme="spotify"] .player-fullscreen .vinyl-player-stage{min-height:calc(100dvh - var(--bottom-bar-height) - 80px)}
+@media(max-width:1100px){
+ [data-theme="spotify"] .app-layout{grid-template-columns:192px minmax(0,1fr)}
+ [data-theme="spotify"] .top-bar{padding:16px}
+ [data-theme="spotify"] .bottom-player-bar{gap:12px;padding-inline:8px}
+ [data-theme="spotify"] .bottom-ctrl-buttons{gap:10px}
+ [data-theme="spotify"] .volume-slider{width:70px}
+}
+@media(max-width:950px){
+ [data-theme="spotify"]{--bottom-bar-height:136px}
+ [data-theme="spotify"] .app-layout{grid-template-columns:176px minmax(0,1fr)}
+ [data-theme="spotify"] .top-bar{grid-template-columns:minmax(0,1fr);grid-template-areas:"search" "filters" "actions"}
+ [data-theme="spotify"] .search-box{width:100%}
+ [data-theme="spotify"] .vinyl-player-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:0;gap:24px;padding:24px 0}
+ [data-theme="spotify"] .vinyl-track-info{align-items:flex-start;text-align:left}
+ [data-theme="spotify"] .vinyl-title{font-size:30px}
+ [data-theme="spotify"] .vinyl-outer-ring{width:100%}
+ [data-theme="spotify"] .bottom-player-bar{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,1fr);padding:10px;row-gap:6px}
+ [data-theme="spotify"] .bottom-player-left{width:100%}
+ [data-theme="spotify"] .bottom-player-center{width:100%;justify-self:end}
+ [data-theme="spotify"] .bottom-player-right{grid-column:1/-1;justify-content:flex-end}
+}
+@media(max-width:650px){
+ [data-theme="spotify"] .app-layout{grid-template-columns:150px minmax(0,1fr)}
+ [data-theme="spotify"] .sidebar{padding-inline:8px}
+ [data-theme="spotify"] .brand-sub{font-size:7px;letter-spacing:0}
+ [data-theme="spotify"] .nav-item{gap:8px;padding:12px 8px;font-size:12px}
+ [data-theme="spotify"] .top-bar{padding:12px}
+ [data-theme="spotify"] .vinyl-player-stage{display:flex}
+ [data-theme="spotify"] .vinyl-track-info{align-items:center;text-align:center}
+ [data-theme="spotify"] .bottom-ctrl-buttons{gap:5px}
+ [data-theme="spotify"] .bottom-player-left{gap:4px;flex-wrap:wrap}
+ [data-theme="spotify"] .bottom-player-left .track-thumb-container{width:32px;height:32px}
+}

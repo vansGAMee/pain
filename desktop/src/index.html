@@ -8,7 +8,12 @@
   <link rel="shortcut icon" href="/assets/app-icon.ico">
   <link rel="icon" type="image/png" href="/assets/app-icon.png">
   <link rel="manifest" href="/manifest.json">
+  <script>try{const t=localStorage.getItem("pain_theme");if(["paper","dark","studio","spotify","stereo"].includes(t))document.documentElement.setAttribute("data-theme",t);}catch(_){}</script>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="studio-theme.css">
+  <link rel="stylesheet" href="spotify-theme.css">
+  <link rel="stylesheet" href="stereo-theme.css">
+  <link rel="stylesheet" href="font-settings.css">
 </head>
 <body>
 
@@ -918,6 +923,38 @@
       </div>
 
       <div class="settings-modal-body">
+        <fieldset class="settings-section appearance-choices">
+          <legend class="settings-section-title" data-en="Appearance" data-ru="Оформление">Оформление</legend>
+          <p class="settings-section-desc" data-en="Choose a theme. You can switch back at any time." data-ru="Выберите тему. К прежней можно вернуться в любой момент.">Выберите тему. К прежней можно вернуться в любой момент.</p>
+          <div class="appearance-options">
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="paper"><span class="appearance-preview preview-paper" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Paper" data-ru="Бумага">Бумага</span></label>
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="dark"><span class="appearance-preview preview-dark" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Dark" data-ru="Тёмная">Тёмная</span></label>
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="studio"><span class="appearance-preview preview-studio" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Studio" data-ru="Студия">Студия</span></label>
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="spotify"><span class="appearance-preview preview-spotify" aria-hidden="true"><i></i><b></b><em></em></span><span>Spotify</span></label>
+            <label class="appearance-option"><input type="radio" name="appearanceTheme" value="stereo"><span class="appearance-preview preview-stereo" aria-hidden="true"><i></i><b></b><em></em></span><span data-en="Stereo" data-ru="Стерео">Стерео</span></label>
+          </div>
+        </fieldset>
+        <section class="settings-section font-settings">
+          <label class="settings-section-title" for="appFontSelect" data-en="Interface font" data-ru="Шрифт интерфейса">Шрифт интерфейса</label>
+          <select id="appFontSelect" class="font-select">
+            <option value="default" data-en="Geist · original" data-ru="Geist · исходный">Geist · исходный</option>
+            <option value="geist-bold">Geist Bold</option>
+            <option value="manrope">Manrope</option>
+            <option value="system" data-en="System font" data-ru="Системный">Системный</option>
+            <option value="installed" data-en="Another installed font" data-ru="Другой установленный шрифт">Другой установленный шрифт</option>
+            <option value="file" data-en="Your font file" data-ru="Свой файл шрифта">Свой файл шрифта</option>
+          </select>
+          <div id="installedFontControls" hidden>
+            <label for="installedFontName" data-en="Font name on this computer" data-ru="Название шрифта на этом компьютере">Название шрифта на этом компьютере</label>
+            <form id="installedFontForm" class="font-custom-row"><input id="installedFontName" maxlength="80" placeholder="Arial, Georgia, …" autocomplete="off"><button class="btn-minimal" type="submit" data-en="Apply" data-ru="Применить">Применить</button></form>
+          </div>
+          <div id="fontFileControls" hidden>
+            <label for="appFontFile" data-en="TTF, OTF, WOFF or WOFF2 · up to 6 MB" data-ru="TTF, OTF, WOFF или WOFF2 · до 6 МБ">TTF, OTF, WOFF или WOFF2 · до 6 МБ</label>
+            <input id="appFontFile" type="file" accept=".ttf,.otf,.woff,.woff2">
+          </div>
+          <p class="font-sample" data-en="Your music. Your rhythm." data-ru="Твоя музыка. Твой ритм.">Твоя музыка. Твой ритм.</p>
+          <p id="appFontStatus" class="settings-section-desc" role="status"></p>
+        </section>
         <div class="settings-section">
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
@@ -1190,7 +1227,9 @@
   <script src="presence/engine.js"></script>
   <script src="presence-engine.js"></script>
   <script src="app.js"></script>
+  <script src="dj-explanation.js"></script>
   <script src="dj-panel.js"></script>
+  <script src="font-settings.js"></script>
   <script src="presentation.js"></script>
   <script src="karaoke.js"></script>
 </body>
