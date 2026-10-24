@@ -224,6 +224,7 @@
       this.currentStartedAt = null;
       this.recommendationRevision = 0;
       this.vibeProfile = null;
+      this.sessionRootTrack = null;
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
       this.bpmCache = options.bpmCache || {};
@@ -294,6 +295,7 @@
     }
 
     smartChoose(current, indices) {
+      this.sessionRootTrack = this.sessionRootTrack || current;
       const target = indices.filter(i => !this.excludedTracks.has(String(this.tracks[i]?.id)));
       if (!target.length) return null;
       const model=this.tasteModel();
@@ -304,13 +306,14 @@
         seed: (this.smartSeed + Math.imul(this.smartStep, 2654435761)) >>> 0,
         excludedTracks: this.excludedTracks,
         vibeProfile: this.vibeProfile,
-        currentStartedAt: this.currentStartedAt
+        currentStartedAt: this.currentStartedAt,
+        sessionRootTrack: this.sessionRootTrack
       };
       // Prefetch and next often ask the same question. Include mutable metadata
       // and BPM, not just the seed: likes, tags and file replacements must count.
       const musicKey=t=>t?[t.id,t.title,t.artist,t.album,t.genre,t.favorite,t.bpm,Sound.signature(t),this.bpmCache[t.id]]:null;
       const key=JSON.stringify([musicKey(current),target.map(i=>[i,musicKey(this.tracks[i])]),
-        context.recentArtists,context.recentTrackIds,context.step,context.seed,context.currentStartedAt,context.vibeProfile]);
+        context.recentArtists,context.recentTrackIds,context.step,context.seed,context.currentStartedAt,context.vibeProfile,this.sessionRootTrack?.id]);
       const cached=this._smartDecision;
       if(cached?.model===model&&cached.key===key)return this.copyDecision(cached.result);
       const chosen = model.choose(current, target.map(i => this.tracks[i]), this.bpmCache, context);
@@ -376,9 +379,11 @@
       if (this.tracks.length > 0) {
         const idx = Math.max(0, Math.min(startIndex, this.tracks.length - 1));
         this.currentIndex = idx;
+        this.sessionRootTrack = this.tracks[idx] || null;
         this.markPlayed(idx);
       } else {
         this.currentIndex = -1;
+        this.sessionRootTrack = null;
       }
 
       this._notify();
@@ -683,6 +688,7 @@
       if (idx !== -1) {
         this.lastTransition=null;
         this.currentIndex = idx;
+        this.sessionRootTrack = this.tracks[idx] || null;
         this.markPlayed(idx);
         this._notify();
         return this.tracks[idx];

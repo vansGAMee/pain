@@ -27,6 +27,11 @@
   return result;
  };
  const skipIdentity=track=>trustedArtist(track.artist)||'track:'+track.id;
+ const PHONK_TOKENS=/\b(phonk|funk|soca|montagem|mtg|trepa|automotivo|mandelao|nightcore|drift phonk|brazilian phonk)\b/i;
+ const isPhonkTrack=track=>{
+  if(!track)return false;
+  return PHONK_TOKENS.test(`${track.title||''} ${track.artist||''} ${track.album||''} ${track.genre||''}`);
+ };
  // Recognise explicitly labelled speed edits, not arbitrary subtitles, live
  // performances or remixes. Source tags cannot establish a shared recording.
  const recordingIdentity=track=>{
@@ -316,7 +321,10 @@
    // Break the cache feedback loop: at most one in eight turns explores unmeasured
    // sound. Keep explicit rejections and provisional acoustic penalties in force.
    // A saved vibe should not force an unmeasured detour when measured fits exist.
+   const sessionRoot=context.sessionRootTrack||current;
+   const sessionIsPhonk=isPhonkTrack(sessionRoot);
    const unmeasured=acoustic&&discovery&&!Sound.texture(context.vibeProfile)&&(context.step??0)%8===7?pool.filter(item=>{
+    if(!sessionIsPhonk&&isPhonkTrack(item.track))return false;
     const e=this.evidence.get(item.track.id);
     // No independent comparison (e.g. the reference itself) is not missing audio.
     return item.soundSimilarity===null&&!this.sound(item.track)&&item.skipPenalty===0&&
@@ -326,6 +334,7 @@
    if(unmeasured.length){pool=unmeasured;discovering=true;}
    else if(discovery||guidedDiscovery){
     const fresh=pool.filter(item=>{
+     if(!sessionIsPhonk&&isPhonkTrack(item.track))return false;
      if(acoustic&&item.score<bestScore-12)return false;
      if(guidedDiscovery&&!(item.soundSimilarity>=.65&&item.skipPenalty===0&&item.rejectionPenalty===0))return false;
      const e=this.evidence.get(item.track.id);
@@ -456,9 +465,25 @@
    const artist=trustedArtist(candidate.artist),recent=context.recentArtists||[];
    if(artist&&artist===trustedArtist(current?.artist))spacingPenalty+=9;
    else if(artist&&recent.slice(-3).includes(artist))spacingPenalty+=4;
+   const sessionRootCandidate=context.sessionRootTrack||reference;
+   const sessionRoot=sessionRootCandidate&&this.canReference(sessionRootCandidate,context.currentStartedAt)&&(this.lastQuality.get(String(sessionRootCandidate.id))??1)>=.75?sessionRootCandidate:null;
+   const sessionIsPhonk=isPhonkTrack(context.sessionRootTrack||reference||current);
+   const candidateIsPhonk=isPhonkTrack(candidate);
+   if(!sessionIsPhonk&&candidateIsPhonk){
+    score-=85;
+   }else if(sessionIsPhonk&&!candidateIsPhonk){
+    score-=40;
+   }
+   if(evidence&&n>=8){
+    const hoursSince=Math.max(0,this.now-evidence.last)/3600000;
+    if(hoursSince<48){
+     const fatigue=Math.min(18,Math.log(n)*3.5*Math.exp(-hoursSince/20));
+     score-=fatigue;
+    }
+   }
    const a=reference&&!selfReference?knownBpm(reference,cache):null,b=knownBpm(candidate,cache);
    const dist=a&&b?Math.min(Math.abs(a-b),Math.abs(a*2-b),Math.abs(a-b*2)):null;
-   if(dist!==null){score+=6*Math.exp(-dist/12);if(dist<8)reasons.push('Близкий темп');}
+   if(dist!==null){score+=2.5*Math.exp(-dist/12);if(dist<6)reasons.push('Близкий темп');}
    const vibeSound=Sound.texture(context.vibeProfile)?context.vibeProfile:null;
    const currentSound=vibeSound||this.sound(reference),candidateSound=this.sound(candidate);
    let soundSimilarity=selfReference&&!vibeSound?null:this.similarity(currentSound,candidateSound);
@@ -486,12 +511,26 @@
     }else{
      const candidateDetailed=!!Sound.texture(candidateSound);
      const historyScale=candidateDetailed?0.55:0.30;
-     score=(1-confidence)*score+confidence*(historyScale*score+65*sim);
+     let acousticScore=historyScale*score+65*sim;
+     if(sim<0.52){
+      const clash=(0.52-sim)/0.52;
+      acousticScore-=70*Math.pow(clash,1.6);
+     }
+     score=(1-confidence)*score+confidence*acousticScore;
     }
     if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift(vibeSound?'Звучание сохранённого вайба':'Близкое звучание');
    }
+   if(sessionRoot&&candidateSound&&String(sessionRoot.id)!==String(candidate.id)){
+    const rootSound=this.sound(sessionRoot);
+    if(rootSound){
+     const rootSim=this.similarity(rootSound,candidateSound);
+     if(rootSim!==null&&rootSim<0.52){
+      const rootClash=(0.52-rootSim)/0.52;
+      score-=65*Math.pow(rootClash,1.6);
+     }
+    }
+   }
    score-=spacingPenalty;
-   if(candidate.favorite===true||candidate.favorite===1)score+=2;
    const soundPreference=this.soundPreference(candidate,candidateSound);
    score+=16*soundPreference;
    if(soundPreference>.15)reasons.push(this.soundPreferenceCache.get(String(candidate.id))?.provisional?'Похоже на первые удачные прослушивания':'Похоже на музыку, к которой вы возвращаетесь');
@@ -512,6 +551,12 @@
    }
    const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
    score-=Math.max(skipPenalty,rejectionPenalty);
+   const isFavorite=candidate.favorite===true||candidate.favorite===1;
+   if(isFavorite){
+    const effectiveBonus=skipPenalty>0?Math.max(0,24-skipPenalty*.5):24;
+    score+=effectiveBonus;
+    if(skipPenalty<20)reasons.unshift('Любимый трек');
+   }
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
    return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty,
     explanation:{referenceTitle:vibeSound||selfReference?null:reference?.title||null,referenceBpm:a,liked:candidate.favorite===true||candidate.favorite===1}};

@@ -14,7 +14,8 @@
     'Открываем новое':['Выбран менее знакомый трек, чтобы добавить разнообразия в подбор.','A less familiar track was picked to add variety to the mix.','Exploring a track'],
     'Смена направления после пропусков':['После серии пропусков подбор пробует другое направление. Это не означает, что пропущенные треки вам не нравятся.','After a run of skips, the mix is trying a different direction. This does not mean you dislike the skipped tracks.','A change of direction'],
     'Расширяем подбор':['Добавляем разнообразия: для этого трека нет одной уверенной причины предпочтения.','Adding variety: there is no single strong preference signal for this track.','Adding variety'],
-    'Знакомимся с вашим вкусом':['Истории пока недостаточно для уверенного выбора. Этот трек поможет уточнить ваши предпочтения.','There is not enough history for a confident choice yet. This track can help refine your preferences.','Getting to know your taste']
+    'Знакомимся с вашим вкусом':['Истории пока недостаточно для уверенного выбора. Этот трек поможет уточнить ваши предпочтения.','There is not enough history for a confident choice yet. This track can help refine your preferences.','Getting to know your taste'],
+    'Любимый трек':['Вы добавили этот трек в любимые — для вас он имеет наивысший приоритет.','You marked this track as a favorite — it has top priority for you.','Favorite track']
   };
   const reasons=d=>Array.isArray(d?.reasons)?[...new Set(d.reasons.filter(r=>typeof r==='string'))].slice(0,3):[];
   function summary(d,lang='ru'){const r=reasons(d)[0];return copy[r]?(lang==='ru'?r:copy[r][2]):'';}
