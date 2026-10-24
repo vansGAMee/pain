@@ -2452,7 +2452,7 @@
       const detectFn = QueueEngine?.detectBpmFromPcm || (QueueClass && QueueClass.detectBpmFromPcm);
       const detected = detectFn ? detectFn(pcmData, audioBuffer.sampleRate) : null;
       if (detected && detected >= 60 && detected <= 200) {
-        queue.bpmCache[track.id] = detected;
+        queue.setTrackBpm(track.id, detected);
         try {
           localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache));
         } catch (e) {}
@@ -2680,6 +2680,7 @@
   }
   function beginListening(track) {
     listening = state.saveHistory ? new ListeningLedger(track.id, Number(track.duration)||0) : null;
+    if(queue)queue.currentStartedAt=listening?.started||Date.now();
   }
   function syncPlaybackState() {
     state.isPlaying = !audio.paused && !audio.ended;
@@ -3155,7 +3156,8 @@
     if(!audible){
       if(explicitSkip && listening.heard>=1000 && listening.duration>0 && !listening._tasteRecorded){
         listening._tasteRecorded=true;
-        const feedback={track:trackId,started:listening.started,heard:Math.round(listening.heard),duration:listening.duration,skipped:1};
+        const feedback={track:trackId,started:listening.started,heard:Math.round(listening.heard),
+          media_heard:Math.round(listening.ranges.reduce((n,r)=>n+r[1]-r[0],0)*1000),duration:listening.duration,skipped:1,finished:0};
         let skips=readTasteSkips();
         skips.push(feedback);skips=skips.slice(-2000);
         try{localStorage.setItem('pain_taste_skips',JSON.stringify(skips));}catch(_){}
@@ -3163,7 +3165,7 @@
         // The phone needs the same explicit feedback. Qualification rules keep
         // these previews out of play counts, while preserving honest skip/time data.
         const play={...feedback,id:'pc_'+(globalThis.crypto?.randomUUID?.()||Date.now()+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',
-          media_heard:Math.round(listening.ranges.reduce((n,r)=>n+r[1]-r[0],0)*1000),finished:0};
+          finished:0};
         state.stats.plays.push(play);localSyncRevision++;
         try{await fetch('/api/sync-stats',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({play,phoneUrl:state.phoneUrl})});}catch(_){}
       }
@@ -3227,7 +3229,8 @@
 
   function playNextTrack(isAutoAdvance = false) {
     sampleListening();
-    const explicitSkip = isAutoAdvance ? false : !audio.ended;
+    // DOM click handlers pass an Event; only an explicit true means natural end.
+    const explicitSkip = isAutoAdvance === true ? false : !audio.ended;
     if (state.currentTrackId) recordTrackFinished(state.currentTrackId, explicitSkip);
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.next();

@@ -31,7 +31,7 @@ test('a candidate cannot earn sound or tempo bonuses by becoming its own fallbac
 test('a self reference keeps the neutral audio scale, not an unscaled history advantage',()=>{
  const t=song('one'),m=new Taste([t],[],NOW,{one:profile(t)}),pick=m.score(t,t);
  assert.equal(pick.soundSimilarity,null);assert.equal(pick.dist,null);
- assert.equal(pick.score,35+.25*(50+5-9));
+ assert.equal(pick.score,35+.25*(50+5)-9);
  assert.equal(pick.explanation.referenceTitle,null);
  const saved=m.score(t,t,{},{vibeProfile:profile(t)});
  assert.equal(saved.soundSimilarity,1,'an explicitly saved vibe remains a valid target');

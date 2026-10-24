@@ -15,13 +15,15 @@
   const artist=track=>track?.artist||t('Неизвестный исполнитель','Unknown artist');
   const current=data.current||m.recent[0]||data.tracks[0];
   const vibes=window.PainDJVibes?.list()||{items:[],activeId:null};
-  const key=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])],vibes.activeId,vibes.updatedAt,Math.floor(now/300000),variation]);
+  const key=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])],
+   data.current?.id,data.queue?.currentStartedAt,data.queue?.recommendationRevision,
+   vibes.activeId,vibes.updatedAt,Math.floor(now/300000),variation]);
   if(key!==mixKey){
    mixKey=key;mixPending=true;mixError=false;const generation=++ticket;
    // Paint Home first; bounded existing DJ scoring runs once per mix, not per frame.
    requestAnimationFrame(()=>setTimeout(()=>{
     if(generation!==ticket)return;
-    try{mix=HomeModel.mix(data.tracks,data.queue,6,variation);}catch(_){mix=[];mixError=true;}
+    try{mix=HomeModel.mix(snapshot.tracks,snapshot.queue,6,variation);}catch(_){mix=[];mixError=true;}
     mixPending=false;if(document.getElementById('view-home').classList.contains('active'))render(snapshot,actions);
    },0));
   }

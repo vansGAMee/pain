@@ -28,6 +28,7 @@
   q.setVibeProfile(live.vibeProfile);
   if(index<0){q.currentIndex=-1;q.resetCycle();}
   else{
+   q.currentStartedAt=live.currentStartedAt;
    const indices=new Map(allowed.map((t,i)=>[String(t.id),i]));
    q.playedHistory=live.playedHistory.map(i=>indices.get(String(live.tracks[i]?.id))).filter(i=>i!==undefined);
    q.recentArtists=[...live.recentArtists];

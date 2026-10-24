@@ -221,6 +221,8 @@
       this.now = typeof options.now === 'function' ? options.now : Date.now;
       this.recentArtists = [];
       this.lastTransition = null;
+      this.currentStartedAt = null;
+      this.recommendationRevision = 0;
       this.vibeProfile = null;
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
@@ -236,12 +238,14 @@
     setExcludedTracks(tracks) {
       this.excludedTracks = new Set(Array.from(tracks || []).map(String));
       this._taste = null;
+      this.recommendationRevision++;
     }
 
     excludeTrack(trackId) {
       if (trackId != null) {
         this.excludedTracks.add(String(trackId));
         this._taste = null;
+        this.recommendationRevision++;
       }
     }
 
@@ -249,6 +253,7 @@
       if (trackId != null) {
         this.excludedTracks.delete(String(trackId));
         this._taste = null;
+        this.recommendationRevision++;
       }
     }
 
@@ -263,6 +268,7 @@
     setStats(stats) {
       this.stats = stats;
       this._taste = null;
+      this.recommendationRevision++;
     }
 
     // Only the acoustic reference changes. Queue scope, history and skips stay intact.
@@ -274,30 +280,47 @@
       return true;
     }
 
-    smartScore(current, candidate, context) {
+    tasteModel() {
       const now = this.now();
       if (!this._taste || this._tasteTracks !== this.tracks || now-this._taste.now>=60000 || now<this._taste.now) {
         this._taste = new Taste(this.tracks, this.stats?.plays || [], now, this.audioProfiles, { excludedTracks: this.excludedTracks });
         this._tasteTracks = this.tracks;
       }
-      return this._taste.score(current,candidate,this.bpmCache,this.vibeProfile ? {...context,vibeProfile:this.vibeProfile} : context);
+      return this._taste;
+    }
+
+    smartScore(current, candidate, context) {
+      return this.tasteModel().score(current,candidate,this.bpmCache,{currentStartedAt:this.currentStartedAt,...context,...(this.vibeProfile?{vibeProfile:this.vibeProfile}:{})});
     }
 
     smartChoose(current, indices) {
       const target = indices.filter(i => !this.excludedTracks.has(String(this.tracks[i]?.id)));
       if (!target.length) return null;
-      this.smartScore(current, this.tracks[target[0]], {});
-      const chosen = this._taste.choose(current, target.map(i => this.tracks[i]), this.bpmCache, {
+      const model=this.tasteModel();
+      const context={
         recentArtists: this.recentArtists.slice(-10),
         recentTrackIds: this.playedHistory.slice(-4).reverse().map(i => this.tracks[i]?.id),
         step: this.smartStep,
         seed: (this.smartSeed + Math.imul(this.smartStep, 2654435761)) >>> 0,
         excludedTracks: this.excludedTracks,
-        vibeProfile: this.vibeProfile
-      });
+        vibeProfile: this.vibeProfile,
+        currentStartedAt: this.currentStartedAt
+      };
+      // Prefetch and next often ask the same question. Include mutable metadata
+      // and BPM, not just the seed: likes, tags and file replacements must count.
+      const musicKey=t=>t?[t.id,t.title,t.artist,t.album,t.genre,t.favorite,t.bpm,Sound.signature(t),this.bpmCache[t.id]]:null;
+      const key=JSON.stringify([musicKey(current),target.map(i=>[i,musicKey(this.tracks[i])]),
+        context.recentArtists,context.recentTrackIds,context.step,context.seed,context.currentStartedAt,context.vibeProfile]);
+      const cached=this._smartDecision;
+      if(cached?.model===model&&cached.key===key)return this.copyDecision(cached.result);
+      const chosen = model.choose(current, target.map(i => this.tracks[i]), this.bpmCache, context);
       if (!chosen) return null;
-      return { ...chosen, index: target.find(i => this.tracks[i] === chosen.track) };
+      const result={...chosen,index:target.find(i=>this.tracks[i]===chosen.track)};
+      this._smartDecision={model,key,result};
+      return this.copyDecision(result);
     }
+
+    copyDecision(result){return {...result,reasons:[...result.reasons],explanation:result.explanation?{...result.explanation}:null};}
 
     randomChoice(indices) {
       let z=(this.smartSeed+Math.imul(this.smartStep,2654435761)+0x6d2b79f5)>>>0;
@@ -305,15 +328,17 @@
       return indices[Math.floor((((z^(z>>>14))>>>0)/4294967296)*indices.length)];
     }
 
-    setAudioProfile(id,profile){this.audioProfiles[id]=profile;this._taste=null;}
+    setAudioProfile(id,profile){this.audioProfiles[id]=profile;this._taste=null;this.recommendationRevision++;}
 
     setBpmCache(cache) {
       this.bpmCache = Object.assign(this.bpmCache, cache);
+      this.recommendationRevision++;
     }
 
     setTrackBpm(trackId, bpm) {
       if (trackId && Number.isFinite(bpm)) {
         this.bpmCache[trackId] = Math.round(bpm);
+        this.recommendationRevision++;
       }
     }
 
@@ -379,7 +404,7 @@
       const decision=this.lastTransition,track=this.getCurrentTrack();
       this.lastTransition=decision&&track&&String(decision.toTrack?.id)===String(track.id)&&Sound.signature(decision.toTrack)===Sound.signature(track)
         ? {...decision,toTrack:track} : null;
-      this._taste=null;this._notify();
+      this._taste=null;this.recommendationRevision++;this._notify();
     }
 
     resetCycle(clearHistory = true) {
@@ -391,6 +416,7 @@
     }
 
     markPlayed(index, clearForward = true) {
+      this.currentStartedAt = null; // The audio player supplies the actual visit start.
       if(clearForward)this.forwardHistory=[];
       this.smartStep++;
       this.unplayedIndices.delete(index);
@@ -444,12 +470,14 @@
 
     setShuffleMode(mode) {
       if (['off', 'random', 'smart'].includes(mode)) {
+        const startedAt=this.currentStartedAt;
         if (this.shuffleMode !== mode) this.lastTransition = null;
         this.shuffleMode = mode;
         this.resetCycle();
         if (this.currentIndex >= 0) {
           this.markPlayed(this.currentIndex);
         }
+        this.currentStartedAt=startedAt; // Changing order does not restart playback.
         this._notify();
       }
     }
