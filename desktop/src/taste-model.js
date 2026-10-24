@@ -347,12 +347,13 @@
    const poolCounts=new Map();
    for(const item of pool){const key=artistKey(item.track);poolCounts.set(key,(poolCounts.get(key)||0)+1);}
    // Shortlist before drawing: random variation among good acoustic fits, not all songs.
+   const noiseScale=acoustic?2.8:4.0;
    for(const item of pool){
     const n=this.counts.get(item.track.id)||0;
     const artistEvidence=trustedArtist(item.track.artist)?this.artistCounts.get(trustedArtist(item.track.artist))||0:0;
     const uncertainty=discovery?10/Math.sqrt(1+n+Math.min(8,artistEvidence)*.25):0;
     const catalogSize=poolCounts.get(artistKey(item.track));
-    const catalogCorrection=acoustic?Math.min(8,3*Math.log(catalogSize)):9*Math.log(catalogSize);
+    const catalogCorrection=acoustic?Math.min(8,3*Math.log(catalogSize)):noiseScale*Math.log(catalogSize);
     item.rank=item.score+uncertainty-catalogCorrection;
    }
    // Similarity alone can repeat the same texture across different artists.
@@ -402,10 +403,10 @@
      pool=selected;
     }else pool=pool.slice(0,6);
    }
-   // Seeded Gumbel sampling keeps preview and playback consistent.
+   // Controlled calibrated sampling keeps preview and playback consistent without wild noise jumps.
    let winner=null,best=-Infinity;
    for(const item of pool){
-    const value=item.rank-(acoustic?4:9)*Math.log(-Math.log(Math.max(1e-9,random())));
+    const value=item.rank-noiseScale*Math.log(-Math.log(Math.max(1e-9,random())));
     if(value>best){winner=item;best=value;}
    }
    if(discovering){const e=this.evidence.get(winner.track.id);winner.reasons=[e&&this.now-e.last>21*86400000?'Давно не звучало':'Открываем новое',...winner.reasons].slice(0,2);}
@@ -477,16 +478,18 @@
    }
    if(currentSound){
     const detailed=!!Sound.texture(currentSound),confidence=detailed?1:.55;
-    // Keep history on the same scale for every candidate. Coarse spectra cannot
-    // claim a certain timbre match: shrink their evidence toward the neutral prior.
     if(detailed&&candidateSound&&!Sound.texture(candidateSound)&&soundSimilarity!==null)
      soundSimilarity=.5+.55*(soundSimilarity-.5);
-    // Timbre is primary (70 points); learned taste, BPM and spacing refine the fit.
-    // Unmeasured candidates get a neutral prior, not an unfair unscaled history score.
-    score=(1-confidence)*score+confidence*(70*(soundSimilarity??.5)+.25*score);
+    const sim=soundSimilarity??.5;
+    if(selfReference){
+     score=(1-confidence)*score+confidence*(70*sim+.25*score);
+    }else{
+     const candidateDetailed=!!Sound.texture(candidateSound);
+     const historyScale=candidateDetailed?0.55:0.30;
+     score=(1-confidence)*score+confidence*(historyScale*score+65*sim);
+    }
     if(soundSimilarity!==null&&soundSimilarity>.65)reasons.unshift(vibeSound?'Звучание сохранённого вайба':'Близкое звучание');
    }
-   // Spacing is a playback constraint: audio confidence must not divide it by four.
    score-=spacingPenalty;
    if(candidate.favorite===true||candidate.favorite===1)score+=2;
    const soundPreference=this.soundPreference(candidate,candidateSound);
