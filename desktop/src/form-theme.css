@@ -194,8 +194,11 @@
 [data-theme="form"] :is(.home-section-note,.home-empty){font-size:12px;color:var(--ink-secondary);line-height:1.6;max-width:65ch}
 [data-theme="form"] .home-empty{padding:var(--space-4) 0}
 [data-theme="form"] .home-mix{min-height:240px}
+[data-theme="form"] .home-mix[aria-busy="true"]{opacity:.7;pointer-events:none;transition:opacity .2s ease}
 [data-theme="form"] .home-track{display:flex;align-items:center;width:100%;min-width:0;gap:var(--space-3);padding:var(--space-3) 0;background:none;border:0;border-bottom:1px solid var(--border);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-[data-theme="form"] .home-track:hover{color:var(--accent);background:var(--form-active-wash)}
+[data-theme="form"] :is(.home-track:hover,.home-track.is-current){color:var(--accent);background:var(--form-active-wash)}
+[data-theme="form"] .home-track.is-current .home-track-number{color:var(--accent);font-weight:600}
+[data-theme="form"] .home-track.is-current .home-track-end{color:var(--accent)}
 [data-theme="form"] .home-track-number{font-size:11px;color:var(--ink-muted);min-width:16px;font-variant-numeric:tabular-nums}
 [data-theme="form"] .home-track img{width:40px;height:40px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0}
 [data-theme="form"] .home-track-copy{display:flex;flex-direction:column;gap:var(--space-1);min-width:0;flex:1}

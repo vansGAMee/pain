@@ -15,9 +15,9 @@
   const artist=track=>track?.artist||t('Неизвестный исполнитель','Unknown artist');
   const current=data.current||m.recent[0]||data.tracks[0];
   const vibes=window.PainDJVibes?.list()||{items:[],activeId:null};
+  const isPlayingMix=Boolean(data.isPlaying&&data.current&&mix.some(x=>String(x.track.id)===String(data.current.id)));
   const key=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])],
-   data.current?.id,data.queue?.currentStartedAt,data.queue?.recommendationRevision,
-   vibes.activeId,vibes.updatedAt,Math.floor(now/300000),variation]);
+   vibes.activeId,vibes.updatedAt,variation]);
   if(key!==mixKey){
    mixKey=key;mixPending=true;mixError=false;const generation=++ticket;
    // Paint Home first; bounded existing DJ scoring runs once per mix, not per frame.
@@ -31,7 +31,12 @@
   const focusKey=focused&&root.contains(focused)?[focused.dataset.homeAction,focused.dataset.id||'']:null;
   const button=(label,action,cls='',id='',disabled=false)=>`<button type="button" class="home-button ${cls}" data-home-action="${action}" data-id="${escape(id)}"${disabled?' disabled':''}>${escape(label)}</button>`;
   const empty=message=>`<p class="home-empty">${escape(message)}</p>`;
-  const rows=(tracks,group='track',limit=4)=>tracks.slice(0,limit).map((track,i)=>`<button type="button" class="home-track" data-home-action="${group}" data-id="${escape(track.id)}" title="${escape(title(track)+' — '+artist(track))}"><span class="home-track-number">${i+1}</span><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><span class="home-track-copy"><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></span><span class="home-track-end">${group==='mix'?icon:escape(duration(track.duration))}</span></button>`).join('');
+  const rows=(tracks,group='track',limit=4)=>tracks.slice(0,limit).map((track,i)=>{
+   const isCurrent=current&&String(current.id)===String(track.id);
+   const isPlayingCurrent=isCurrent&&data.isPlaying;
+   const end=group==='mix'?(isPlayingCurrent?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>':icon):escape(duration(track.duration));
+   return `<button type="button" class="home-track${isCurrent?' is-current':''}" data-home-action="${group}" data-id="${escape(track.id)}" title="${escape(title(track)+' — '+artist(track))}"><span class="home-track-number">${i+1}</span><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><span class="home-track-copy"><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></span><span class="home-track-end">${end}</span></button>`;
+  }).join('');
   const section=(heading,content,action='')=>`<section class="home-section"><header class="home-section-head"><h2>${escape(heading)}</h2>${action}</header>${content}</section>`;
   const stat=(label,value,note)=>`<div class="home-readout"><dt>${escape(label)}</dt><dd>${escape(value)}</dd><span>${escape(note)}</span></div>`;
   const percent=(a,b)=>b?Math.round(100*a/b):null;
@@ -61,7 +66,7 @@
     <figure class="home-explored"><figcaption><strong>${t('Глубина фонотеки','Library explored')}</strong><span>${d.heardLibrary} ${t('из','of')} ${d.librarySize}</span></figcaption><div class="home-ring" style="--ring-value:${explored||0}"><span>${explored===null?'—':explored+'%'}</span></div><small>${t('Хотя бы 30 секунд или половина короткого трека','At least 30 seconds or half a short track')}</small></figure>
    </div>
    <div class="home-dj-layout">
-    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Подборка Smart DJ по звучанию, вашей истории и выбранному вайбу.','A Smart DJ mix based on sound, your history and the selected vibe.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending?empty(t('Собираем подборку…','Building your mix…')):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):mix.length?rows(mix.map(x=>x.track),'mix',6):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
+    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Подборка Smart DJ по звучанию, вашей истории и выбранному вайбу.','A Smart DJ mix based on sound, your history and the selected vibe.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending&&!mix.length?empty(t('Собираем подборку…','Building your mix…')):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):mix.length?rows(mix.map(x=>x.track),'mix',6):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(isPlayingMix?t('Пауза','Pause'):t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending&&!mix.length||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
     ${section(t('Настроение на сегодня','A mood for today'),`<p class="home-section-note">${t('Сохранённое вами звучание — ориентир для следующего подбора.','Sounds you saved guide the next selection.')}</p><div class="home-vibes">${button(t('Свободный подбор','Free selection'),'vibe',!vibes.activeId?'is-selected':'','')}${vibes.items.map(v=>button(v.name,'vibe',v.id===vibes.activeId?'is-selected':'',v.id)).join('')}</div>${!vibes.items.length?empty(t('Сохраните вайб понравившегося трека, чтобы возвращаться к его звучанию.','Save a track’s vibe to return to its sound.')):''}${button(t('Сохранить текущий вайб','Save the current vibe'),'save-vibe','home-text-button','',!data.current)}<div class="home-fact"><h3>${t('Чуть больше о вас','A little more about you')}</h3><p>${outside===null?t('Факты появятся после первых прослушиваний.','Facts appear after your first listens.'):t(`${outside}% времени вы слушаете музыку за пределами избранного.`,`${outside}% of your listening time is spent outside your favourites.`)}</p><p>${t(`Музыка звучала в ${activeDays} из последних 28 дней.`,`Music played on ${activeDays} of the last 28 days.`)}</p></div>`)}</div>
    <div class="home-pair">${section(t('Недавно звучало','Recently played'),m.recent.length?rows(m.recent):empty(t('Здесь будет история полноценных прослушиваний.','Your meaningful listening history will appear here.')))}${section(t('Недавно открыты','Recently discovered'),`<p class="home-section-note">${t('Впервые в сохранённой истории за последние 30 дней.','First heard in your saved history within the last 30 days.')}</p>`+(m.fresh.length?rows(m.fresh):empty(t('Новые открытия ещё впереди.','Your next discoveries are ahead.'))))}</div>
    ${section(t('Всегда рядом','Always close'),m.favorites.length?`<div class="home-favorite-grid">${m.favorites.slice(0,6).map(track=>`<button type="button" class="home-favorite" data-home-action="track" data-id="${escape(track.id)}"><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></button>`).join('')}</div>`:empty(t('Отмечайте любимые треки сердцем — они появятся здесь.','Like your favourite tracks to keep them here.')),button(t('Всё избранное','All favourites'),'favorites','home-text-button'))}
@@ -160,8 +165,18 @@
   else if(action==='mix-play'||action==='mix'){
    const live=new Map(snapshot.tracks.map(t=>[String(t.id),t]));
    const tracks=mix.map(x=>live.get(String(x.track.id))).filter(t=>t&&!snapshot.queue.isExcluded(t.id));
-   const track=action==='mix'?tracks.find(t=>String(t.id)===id):tracks[0];
-   if(track)actions.playMix(track,tracks);
+   if(!tracks.length)return;
+   const isPlayingMix=snapshot.isPlaying&&snapshot.current&&tracks.some(t=>String(t.id)===String(snapshot.current.id));
+   if(action==='mix-play'){
+    if(isPlayingMix){actions.resume();}
+    else{const track=tracks[0];if(track)actions.playMix(track,tracks);}
+   }else{
+    const track=tracks.find(t=>String(t.id)===id);
+    if(track){
+     if(snapshot.current&&String(snapshot.current.id)===String(track.id)){actions.resume();}
+     else{actions.playMix(track,tracks);}
+    }
+   }
   }else if(action==='track')actions.playTrack(id);
   else if(action==='moment'){if(actions.playMoment)actions.playMoment(id);}
   else if(action==='start-reel'){if(actions.startReel)actions.startReel(null);}
@@ -187,6 +202,15 @@
    root.querySelectorAll('.home-moment-card.is-current .home-moment-overlay').forEach(overlay => {
      overlay.innerHTML = playing ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>' : icon;
    });
+   root.querySelectorAll('.home-mix .home-track').forEach(row => {
+     const isCurrent = row.classList.contains('is-current');
+     const end = row.querySelector('.home-track-end');
+     if (end) end.innerHTML = (isCurrent && playing) ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>' : icon;
+   });
+   const mixPlayBtn = root.querySelector('[data-home-action="mix-play"]');
+   if (mixPlayBtn && mix.some(x => snapshot.current && String(x.track.id) === String(snapshot.current.id))) {
+     mixPlayBtn.textContent = playing ? (ru ? 'Пауза' : 'Pause') : (ru ? 'Слушать подборку' : 'Play the mix');
+   }
   }
   window.HomeView={render,setPlaying};
 })();
