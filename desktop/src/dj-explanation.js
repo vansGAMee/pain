@@ -32,7 +32,7 @@
       }
       return copy[r]?.[ru?0:1];
     }).filter(Boolean);
-    if(details.liked===true)lines.push(ru?'Ваш лайк этого трека тоже немного повысил его приоритет.':'Your like on this track also gave it a small boost.');
+    if(details.liked===true&&!reasons(d).includes('Любимый трек'))lines.push(ru?'Этот трек отмечен вашим лайком и имеет наивысший приоритет.':'You liked this track, giving it top priority.');
     return lines.join(' ')||(ru?'Подробная причина этого выбора не сохранена.':'The detailed reason for this selection was not saved.');
   }
   return {describe,summary};
