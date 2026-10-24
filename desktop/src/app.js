@@ -215,8 +215,75 @@
     }
   } catch (e) {}
 
-  // --- AUDIO & WEB AUDIO NODES ---
-  const audio = document.getElementById('audioEngine');
+  // --- DUAL-DECK SEAMLESS AUDIO ENGINE ---
+  const deckA = (typeof document !== 'undefined') ? document.getElementById('audioEngine') : null;
+  let deckB = (typeof document !== 'undefined') ? document.getElementById('audioEngineB') : null;
+  if (!deckB && typeof document !== 'undefined' && document.createElement) {
+    deckB = document.createElement('audio');
+    deckB.id = 'audioEngineB';
+    deckB.crossOrigin = 'anonymous';
+    document.body.appendChild(deckB);
+  }
+  let activeDeck = deckA;
+  let standbyDeck = deckB;
+  let sourceNodeA = null;
+  let sourceNodeB = null;
+  let gainNodeA = null;
+  let gainNodeB = null;
+  let crossfadeTimerId = 0;
+  let isCrossfading = false;
+  let lastReelAdvanceTime = 0;
+
+  const audio = (deckA && typeof Proxy !== 'undefined') ? new Proxy(deckA, {
+    get(target, prop) {
+      if (prop === 'deckA') return deckA;
+      if (prop === 'deckB') return deckB;
+      if (prop === 'activeDeck') return activeDeck;
+      if (prop === 'standbyDeck') return standbyDeck;
+      if (prop === 'pause') {
+        return () => {
+          isCrossfading = false;
+          if (deckA) try { deckA.pause(); } catch (_) {}
+          if (deckB) try { deckB.pause(); } catch (_) {}
+        };
+      }
+      if (prop === 'addEventListener') {
+        return (event, handler, options) => {
+          if (deckA) deckA.addEventListener(event, (e) => {
+            if (activeDeck === deckA) handler(e);
+          }, options);
+          if (deckB) deckB.addEventListener(event, (e) => {
+            if (activeDeck === deckB) handler(e);
+          }, options);
+        };
+      }
+      const current = activeDeck || deckA;
+      const val = current[prop];
+      if (typeof val === 'function') return val.bind(current);
+      return val;
+    },
+    set(target, prop, value) {
+      if (prop === 'volume') {
+        if (deckA) deckA.volume = value;
+        if (deckB) deckB.volume = value;
+        return true;
+      }
+      if (prop === 'playbackRate') {
+        if (deckA) deckA.playbackRate = value;
+        if (deckB) deckB.playbackRate = value;
+        return true;
+      }
+      if (prop === 'muted') {
+        if (deckA) deckA.muted = value;
+        if (deckB) deckB.muted = value;
+        return true;
+      }
+      const current = activeDeck || deckA;
+      current[prop] = value;
+      return true;
+    }
+  }) : deckA;
+
   const QueueClass = (typeof QueueEngine !== 'undefined' && (QueueEngine.QueueEngine || QueueEngine)) || null;
   const queue = QueueClass ? new QueueClass({
     stats: state.stats,
@@ -689,20 +756,32 @@
     }
   }
 
-  // --- WEB AUDIO API EQUALIZER ---
+  // --- WEB AUDIO API EQUALIZER & DUAL-DECK ROUTING ---
   function initAudioNodes() {
     if (audioCtx) return;
     try {
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AudioCtxClass();
-      sourceNode = audioCtx.createMediaElementSource(audio);
-      transitionGainNode = audioCtx.createGain();
-      transitionGainNode.gain.value = 1;
-      preampNode = audioCtx.createGain();
 
-      let lastNode = sourceNode;
-      lastNode.connect(preampNode);
-      lastNode = preampNode;
+      if (deckA) {
+        sourceNodeA = audioCtx.createMediaElementSource(deckA);
+        gainNodeA = audioCtx.createGain();
+        gainNodeA.gain.value = 1.0;
+        sourceNodeA.connect(gainNodeA);
+      }
+      if (deckB) {
+        sourceNodeB = audioCtx.createMediaElementSource(deckB);
+        gainNodeB = audioCtx.createGain();
+        gainNodeB.gain.value = 0.0;
+        sourceNodeB.connect(gainNodeB);
+      }
+
+      sourceNode = sourceNodeA || sourceNodeB;
+      preampNode = audioCtx.createGain();
+      if (gainNodeA) gainNodeA.connect(preampNode);
+      if (gainNodeB) gainNodeB.connect(preampNode);
+
+      let lastNode = preampNode;
 
       filterNodes = EQ_FREQUENCIES.map((freq, index) => {
         const filter = audioCtx.createBiquadFilter();
@@ -722,6 +801,9 @@
         return filter;
       });
 
+      transitionGainNode = audioCtx.createGain();
+      transitionGainNode.gain.value = 1;
+
       try {
         smartVolumeNode = SmartVolume.create(audioCtx, audio);
         lastNode.connect(smartVolumeNode.input);
@@ -733,14 +815,15 @@
       transitionGainNode.connect(audioCtx.destination);
       applyEqualizerAudioGains();
       try { autoEqHeadroom = AutoEqualizer.createHeadroom(audioCtx, EQ_FREQUENCIES); } catch (_) {}
-      try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>playingTrackSnapshot,
-        (track,profile)=>{
-          queue?.setAudioProfile(track.id,profile);
-          if(state.eq.auto&&String(track.id)===String(state.currentTrackId))applyAutoEqualizer(track,profile);
-          try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}
-          if(audioSyncTimer===null)audioSyncTimer=setTimeout(()=>{audioSyncTimer=null;syncSharedAudio();},1500);
-        },audioProfiles);
-      }catch(_){/* Playback remains available if measurement is unsupported. */}
+      try {
+        AudioProfile.observe(audioCtx, preampNode, audio, () => playingTrackSnapshot,
+          (track, profile) => {
+            queue?.setAudioProfile(track.id, profile);
+            if (state.eq.auto && String(track.id) === String(state.currentTrackId)) applyAutoEqualizer(track, profile);
+            try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+            if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 1500);
+          }, audioProfiles);
+      } catch (_) {}
     } catch (err) {
       console.warn('Web Audio API Equalizer initialization deferred or unsupported:', err);
     }
@@ -2101,13 +2184,83 @@
     return profileCanvasCache;
   }
 
-  // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
+  // --- EQUAL-POWER DUAL-DECK CROSSFADE ENGINE ---
+  function createEqualPowerCurves(numPoints = 64) {
+    const fadeOut = new Float32Array(numPoints);
+    const fadeIn = new Float32Array(numPoints);
+    for (let i = 0; i < numPoints; i++) {
+      const x = i / (numPoints - 1);
+      // Cosine / Sine equal-power crossfade curve
+      fadeOut[i] = Math.max(0.0001, Math.cos(x * 0.5 * Math.PI));
+      fadeIn[i] = Math.max(0.0001, Math.sin(x * 0.5 * Math.PI));
+    }
+    return { fadeOut, fadeIn };
+  }
+
+  function crossfadeDecks(outgoingDeck, incomingDeck, durationSec = 1.5) {
+    const curTimer = ++crossfadeTimerId;
+    isCrossfading = true;
+
+    if (!audioCtx || !gainNodeA || !gainNodeB) {
+      if (outgoingDeck && outgoingDeck !== incomingDeck) {
+        try { outgoingDeck.pause(); outgoingDeck.src = ''; } catch (_) {}
+      }
+      isCrossfading = false;
+      return;
+    }
+
+    try {
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      if (transitionGainNode) setTrackTransitionGain(1);
+      const now = audioCtx.currentTime;
+      const remainingOut = (outgoingDeck && outgoingDeck.duration > 0 && outgoingDeck.currentTime > 0)
+        ? Math.max(0.25, outgoingDeck.duration - outgoingDeck.currentTime)
+        : durationSec;
+      const dur = Math.max(0.25, Math.min(4.0, Math.min(durationSec, remainingOut)));
+      const outGain = (outgoingDeck === deckA) ? gainNodeA.gain : gainNodeB.gain;
+      const inGain = (incomingDeck === deckA) ? gainNodeA.gain : gainNodeB.gain;
+
+      const { fadeOut, fadeIn } = createEqualPowerCurves(64);
+
+      if (typeof outGain.cancelAndHoldAtTime === 'function') outGain.cancelAndHoldAtTime(now);
+      else { outGain.cancelScheduledValues(now); outGain.setValueAtTime(outGain.value || 1, now); }
+
+      if (typeof inGain.cancelAndHoldAtTime === 'function') inGain.cancelAndHoldAtTime(now);
+      else { inGain.cancelScheduledValues(now); inGain.setValueAtTime(0.0001, now); }
+
+      outGain.setValueCurveAtTime(fadeOut, now, dur);
+      inGain.setValueCurveAtTime(fadeIn, now, dur);
+
+      setTimeout(() => {
+        if (curTimer === crossfadeTimerId) {
+          isCrossfading = false;
+          if (outgoingDeck && outgoingDeck !== activeDeck) {
+            try { outgoingDeck.pause(); outgoingDeck.src = ''; } catch (_) {}
+            try {
+              outGain.cancelScheduledValues(audioCtx.currentTime);
+              outGain.setValueAtTime(0.0001, audioCtx.currentTime);
+            } catch (_) {}
+          }
+          if (inGain) {
+            try {
+              inGain.cancelScheduledValues(audioCtx.currentTime);
+              inGain.setValueAtTime(1.0, audioCtx.currentTime);
+            } catch (_) {}
+          }
+        }
+      }, Math.round(dur * 1000) + 60);
+    } catch (e) {
+      console.warn('Crossfade execution error:', e);
+      isCrossfading = false;
+    }
+  }
+
   function setTrackTransitionGain(value, seconds = 0) {
     if (!audioCtx || !transitionGainNode) return;
     try {
       const now = audioCtx.currentTime;
       const gain = transitionGainNode.gain;
-      const held = Math.max(0.0001, gain.value);
+      const held = Math.max(0.0001, Math.min(1, gain.value));
       if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
       else { gain.cancelScheduledValues(now); gain.setValueAtTime(held, now); }
       const target = Math.max(0.0001, Math.min(1, value));
@@ -2128,7 +2281,6 @@
     state.currentTrackId = track.id;
     state.currentTrackIndex = state.tracks.findIndex(t => t.id === track.id);
     state.hasPrefetchedNext = false;
-    isTrackFadingOut = false;
     beginListening(track);
     state.isPlaying = false;
     const durSec = Math.max(0, Number(track.duration) || 0) / 1000;
@@ -2140,55 +2292,119 @@
 
     playingTrackSnapshot = {...track};
     if (state.eq.auto) applyAutoEqualizer(track);
-    pendingSeekTime = startPosition > 0 ? startPosition : null;
+
     const isReelActive = typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active;
-    const shouldFadeIn = (state.trackTransition > 0 && startPosition <= 0) || isReelActive;
-    if (shouldFadeIn && transitionGainNode) setTrackTransitionGain(0.0001);
-    else setTrackTransitionGain(1);
-    audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
-    savePlaybackPosition(true);
-    audio.play().then(() => {
-      if (request === playbackRequest) {
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-        if (pendingSeekTime !== null) {
-          try { audio.currentTime = pendingSeekTime; } catch (_) {}
-          pendingSeekTime = null;
-        }
-        if (shouldFadeIn) {
-          const fadeInSec = isReelActive ? 0.35 : Math.min(state.trackTransition, 0.8);
-          setTrackTransitionGain(1, fadeInSec);
-        } else {
-          setTrackTransitionGain(1);
-        }
-        syncPlaybackState();
-      }
-    }).catch(async err => {
-      // A superseded play or explicit pause must never restore an older source.
-      if (request !== playbackRequest || err.name === 'AbortError') return;
-      if (state.phoneUrl) {
-        audio.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+    const hasActivePlaying = activeDeck && !activeDeck.paused && activeDeck.currentTime > 0 && activeDeck.src;
+    const shouldCrossfade = hasActivePlaying && (state.trackTransition > 0 || isReelActive || isTrackFadingOut);
+    const crossfadeDuration = isReelActive ? 1.5 : (state.trackTransition > 0 ? state.trackTransition : 0.35);
+
+    isTrackFadingOut = false;
+
+    if (shouldCrossfade && deckB) {
+      // DUAL-DECK SEAMLESS OVERLAPPING CROSSFADE
+      const outgoingDeck = activeDeck;
+      const incomingDeck = (activeDeck === deckA) ? deckB : deckA;
+      const incomingGain = (incomingDeck === deckA) ? gainNodeA : gainNodeB;
+      if (incomingGain && audioCtx) {
         try {
-          await audio.play();
-          if (request === playbackRequest) {
-            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-            if (pendingSeekTime !== null) {
-              try { audio.currentTime = pendingSeekTime; } catch (_) {}
-              pendingSeekTime = null;
-            }
-            if (shouldFadeIn) {
-              const fadeInSec = isReelActive ? 0.35 : Math.min(state.trackTransition, 0.8);
-              setTrackTransitionGain(1, fadeInSec);
-            } else {
-              setTrackTransitionGain(1);
-            }
-            syncPlaybackState();
-          }
-        } catch (e) {
-          if (request === playbackRequest) console.warn('Audio unavailable:', e);
-        }
+          incomingGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          incomingGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        } catch (_) {}
       }
-      if (request === playbackRequest) syncPlaybackState();
-    });
+
+      if (transitionGainNode) setTrackTransitionGain(1);
+      incomingDeck.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+      if (startPosition > 0) {
+        const onLoaded = () => {
+          try { incomingDeck.currentTime = startPosition; } catch (_) {}
+          incomingDeck.removeEventListener('loadedmetadata', onLoaded);
+        };
+        incomingDeck.addEventListener('loadedmetadata', onLoaded);
+        try { incomingDeck.currentTime = startPosition; } catch (_) {}
+      }
+
+      activeDeck = incomingDeck;
+      standbyDeck = outgoingDeck;
+      savePlaybackPosition(true);
+
+      incomingDeck.play().then(() => {
+        if (request === playbackRequest) {
+          if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+          if (startPosition > 0) {
+            try { incomingDeck.currentTime = startPosition; } catch (_) {}
+          }
+          crossfadeDecks(outgoingDeck, incomingDeck, crossfadeDuration);
+          syncPlaybackState();
+        }
+      }).catch(async err => {
+        if (request !== playbackRequest || err.name === 'AbortError') return;
+        if (state.phoneUrl) {
+          incomingDeck.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          try {
+            await incomingDeck.play();
+            if (request === playbackRequest) {
+              if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+              if (startPosition > 0) {
+                try { incomingDeck.currentTime = startPosition; } catch (_) {}
+              }
+              crossfadeDecks(outgoingDeck, incomingDeck, crossfadeDuration);
+              syncPlaybackState();
+            }
+          } catch (e) {
+            if (request === playbackRequest) console.warn('Audio unavailable:', e);
+          }
+        }
+        if (request === playbackRequest) syncPlaybackState();
+      });
+    } else {
+      // INITIAL START OR SINGLE DECK PLAYBACK
+      pendingSeekTime = startPosition > 0 ? startPosition : null;
+      if (gainNodeA && audioCtx) {
+        try {
+          gainNodeA.gain.cancelScheduledValues(audioCtx.currentTime);
+          gainNodeA.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        } catch (_) {}
+      }
+      if (gainNodeB && audioCtx) {
+        try {
+          gainNodeB.gain.cancelScheduledValues(audioCtx.currentTime);
+          gainNodeB.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        } catch (_) {}
+      }
+      activeDeck = deckA;
+      standbyDeck = deckB;
+      deckA.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+      savePlaybackPosition(true);
+      deckA.play().then(() => {
+        if (request === playbackRequest) {
+          if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+          if (pendingSeekTime !== null) {
+            try { deckA.currentTime = pendingSeekTime; } catch (_) {}
+            pendingSeekTime = null;
+          }
+          syncPlaybackState();
+        }
+      }).catch(async err => {
+        if (request !== playbackRequest || err.name === 'AbortError') return;
+        if (state.phoneUrl) {
+          deckA.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          try {
+            await deckA.play();
+            if (request === playbackRequest) {
+              if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+              if (pendingSeekTime !== null) {
+                try { deckA.currentTime = pendingSeekTime; } catch (_) {}
+                pendingSeekTime = null;
+              }
+              syncPlaybackState();
+            }
+          } catch (e) {
+            if (request === playbackRequest) console.warn('Audio unavailable:', e);
+          }
+        }
+        if (request === playbackRequest) syncPlaybackState();
+      });
+    }
 
     updatePlayerBarUI(track, false);
     updatePlayBtnUI();
@@ -2348,7 +2564,27 @@
     }
 
     isTrackFadingOut = false;
+    isCrossfading = false;
     if (transitionGainNode) setTrackTransitionGain(1);
+    if (audioCtx) {
+      const activeGain = (activeDeck === deckA) ? gainNodeA : gainNodeB;
+      const standbyGain = (activeDeck === deckA) ? gainNodeB : gainNodeA;
+      if (activeGain) {
+        try {
+          activeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          activeGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        } catch (_) {}
+      }
+      if (standbyGain) {
+        try {
+          standbyGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          standbyGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        } catch (_) {}
+      }
+      if (standbyDeck && standbyDeck !== activeDeck) {
+        try { standbyDeck.pause(); standbyDeck.src = ''; } catch (_) {}
+      }
+    }
 
     if (audio.readyState >= 1) {
       try {
@@ -2783,8 +3019,10 @@
           playTrackInContext(item.track, list.map(x => x.track), { type: 'moments', title: state.lang === 'ru' ? 'Микс лучших моментов' : 'Moments Reel' }, item.momentSec);
         },
         onFade: (remaining) => {
-          const fadeSec = Math.min(1.8, Math.max(0.4, (remaining || 1.5) / Math.max(0.1, audio.playbackRate)));
-          setTrackTransitionGain(0.0001, fadeSec);
+          if (!deckB) {
+            const fadeSec = Math.min(1.8, Math.max(0.4, (remaining || 1.5) / Math.max(0.1, audio.playbackRate)));
+            setTrackTransitionGain(0.0001, fadeSec);
+          }
         },
         onStateChange: () => {
           if (state.currentView === 'home') renderHome();
@@ -2987,9 +3225,10 @@
     return state.tracks[nextIdx];
   }
 
-  function playNextTrack() {
+  function playNextTrack(isAutoAdvance = false) {
     sampleListening();
-    if(state.currentTrackId)recordTrackFinished(state.currentTrackId,!audio.ended);
+    const explicitSkip = isAutoAdvance ? false : !audio.ended;
+    if (state.currentTrackId) recordTrackFinished(state.currentTrackId, explicitSkip);
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.next();
       return;
@@ -2999,6 +3238,7 @@
       if (nextTrack) {
         playTrackObject(nextTrack);
       } else {
+        isCrossfading = false;
         state.isPlaying = false;
         updatePlayBtnUI();
         DOM.vinylBigDisc.classList.remove('spinning');
@@ -4414,13 +4654,26 @@
       if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
         const isAudioPlaying = !audio.paused && !audio.seeking && audio.readyState >= 2;
         const check = momentsReel.checkTime(cur, dur, isAudioPlaying, state.currentTrackId);
-        if (check.shouldAdvance) {
+        const nowMs = Date.now();
+        if (check.shouldAdvance && (nowMs - lastReelAdvanceTime > 1500)) {
+          lastReelAdvanceTime = nowMs;
           momentsReel.next();
           return;
         }
       }
 
-      if (state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended) {
+      if (deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended && !isCrossfading) {
+        const remaining = dur - cur;
+        const isRepeatOne = state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one');
+        if (remaining > 0 && remaining <= state.trackTransition && !isRepeatOne) {
+          const upcoming = getNextTrack();
+          if (upcoming) {
+            isCrossfading = true;
+            playNextTrack(true);
+            return;
+          }
+        }
+      } else if (!deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended) {
         const remaining = dur - cur;
         if (remaining > 0 && remaining <= state.trackTransition) {
           if (!isTrackFadingOut) {
@@ -4455,7 +4708,11 @@
       }
 
       if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
-        momentsReel.next();
+        const nowMs = Date.now();
+        if (nowMs - lastReelAdvanceTime > 1500) {
+          lastReelAdvanceTime = nowMs;
+          momentsReel.next();
+        }
         return;
       }
 
@@ -4463,7 +4720,9 @@
         audio.currentTime = 0;
         audio.play().catch(() => {});
       } else {
-        playNextTrack();
+        if (!isCrossfading) {
+          playNextTrack();
+        }
       }
     });
 

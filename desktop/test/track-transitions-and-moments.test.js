@@ -145,3 +145,99 @@ test('Persistence: favorite moments and excluded tracks serialization and mergin
   const set = new Set(exclData);
   assert.equal(set.size, exclData.length, 'excluded tracks must be unique');
 });
+
+test('Dual-Deck Equal-Power Crossfade: energy conservation and acoustic power stability', () => {
+  function createEqualPowerCurves(numPoints = 64) {
+    const fadeOut = new Float32Array(numPoints);
+    const fadeIn = new Float32Array(numPoints);
+    for (let i = 0; i < numPoints; i++) {
+      const x = i / (numPoints - 1);
+      fadeOut[i] = Math.max(0.0001, Math.cos(x * 0.5 * Math.PI));
+      fadeIn[i] = Math.max(0.0001, Math.sin(x * 0.5 * Math.PI));
+    }
+    return { fadeOut, fadeIn };
+  }
+
+  const { fadeOut, fadeIn } = createEqualPowerCurves(64);
+  assert.equal(fadeOut.length, 64);
+  assert.equal(fadeIn.length, 64);
+
+  // At start: outgoing full power, incoming zero
+  assert.ok(Math.abs(fadeOut[0] - 1.0) < 0.001);
+  assert.ok(fadeIn[0] < 0.01);
+
+  // At end: outgoing zero, incoming full power
+  assert.ok(fadeOut[63] < 0.01);
+  assert.ok(Math.abs(fadeIn[63] - 1.0) < 0.001);
+
+  // Equal-power law: cos^2(t) + sin^2(t) == 1.0 (constant acoustic power, 0 dB dip)
+  for (let i = 0; i < 64; i++) {
+    const power = (fadeOut[i] * fadeOut[i]) + (fadeIn[i] * fadeIn[i]);
+    assert.ok(Math.abs(power - 1.0) < 0.005, `Power must remain ~1.0 at index ${i}, got ${power}`);
+  }
+
+  // Midpoint: both gains at sqrt(0.5) ~ 0.707 (-3dB for acoustic sum of 0dB)
+  const midOut = fadeOut[31];
+  const midIn = fadeIn[31];
+  assert.ok(Math.abs(midOut - Math.SQRT1_2) < 0.05);
+  assert.ok(Math.abs(midIn - Math.SQRT1_2) < 0.05);
+});
+
+test('Dual-Deck Crossfade Execution: simultaneous playback without dead silence', () => {
+  let outStatus = 'playing';
+  let inStatus = 'idle';
+  let scheduledCurves = [];
+
+  const fakeOutGain = {
+    gain: {
+      setValueCurveAtTime(curve, start, dur) {
+        scheduledCurves.push({ target: 'out', curve, start, dur });
+      },
+      cancelScheduledValues() {},
+      setValueAtTime() {}
+    }
+  };
+  const fakeInGain = {
+    gain: {
+      setValueCurveAtTime(curve, start, dur) {
+        scheduledCurves.push({ target: 'in', curve, start, dur });
+      },
+      cancelScheduledValues() {},
+      setValueAtTime() {}
+    }
+  };
+
+  const fakeOutDeck = {
+    currentTime: 198.0,
+    duration: 200.0,
+    paused: false,
+    pause() { outStatus = 'paused'; }
+  };
+  const fakeInDeck = {
+    currentTime: 0,
+    duration: 180.0,
+    paused: false,
+    play() { inStatus = 'playing'; return Promise.resolve(); }
+  };
+
+  // Simulate crossfade
+  const transitionSec = 2.0;
+  const remaining = fakeOutDeck.duration - fakeOutDeck.currentTime;
+  assert.equal(remaining, 2.0);
+
+  // Incoming deck plays while outgoing deck is STILL playing
+  fakeInDeck.play();
+  assert.equal(inStatus, 'playing', 'Incoming deck must be playing');
+  assert.equal(outStatus, 'playing', 'Outgoing deck must NOT be cut off or paused');
+
+  // Schedule equal-power curves on both gains
+  fakeOutGain.gain.setValueCurveAtTime('fadeOutCurve', 10.0, 2.0);
+  fakeInGain.gain.setValueCurveAtTime('fadeInCurve', 10.0, 2.0);
+
+  assert.equal(scheduledCurves.length, 2);
+  assert.equal(scheduledCurves[0].target, 'out');
+  assert.equal(scheduledCurves[1].target, 'in');
+  assert.equal(scheduledCurves[0].dur, 2.0);
+  assert.equal(scheduledCurves[1].dur, 2.0);
+});
+

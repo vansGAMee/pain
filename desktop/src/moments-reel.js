@@ -141,7 +141,8 @@
       // (Protects against 0s seek delay / buffering where cur is 0 before seeking to e.g. 52s)
       if (!hasReachedMoment) {
         const startWindow = Math.max(0, targetMomentSec - 0.75);
-        const endWindow = targetMomentSec + Math.max(4.0, snippetSec);
+        const maxOffset = Math.min(Math.max(4.0, snippetSec * 0.5), Math.max(2.0, snippetSec - 2.0));
+        const endWindow = targetMomentSec + maxOffset;
         if (cur >= startWindow && cur <= endWindow) {
           hasReachedMoment = true;
         } else {
@@ -150,8 +151,8 @@
         }
       }
 
-      // If user manually scrubbed backwards before the target moment, re-anchor
-      if (cur < targetMomentSec - 1.0) {
+      // If user manually scrubbed backwards after reaching the moment, re-anchor
+      if (hasReachedMoment && cur < targetMomentSec - 1.0) {
         targetMomentSec = cur;
       }
 
