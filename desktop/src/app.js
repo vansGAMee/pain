@@ -525,7 +525,12 @@
     dataGuardStatusHint: document.getElementById('dataGuardStatusHint'),
     exportBackupBtn: document.getElementById('exportBackupBtn'),
     importBackupBtn: document.getElementById('importBackupBtn'),
-    importBackupFileInput: document.getElementById('importBackupFileInput')
+    importBackupFileInput: document.getElementById('importBackupFileInput'),
+    audioAnalysisCountLabel: document.getElementById('audioAnalysisCountLabel'),
+    audioAnalysisCurrentTrack: document.getElementById('audioAnalysisCurrentTrack'),
+    startAudioAnalysisBtn: document.getElementById('startAudioAnalysisBtn'),
+    pauseAudioAnalysisBtn: document.getElementById('pauseAudioAnalysisBtn'),
+    audioAnalysisProgressBar: document.getElementById('audioAnalysisProgressBar')
   };
 
 
@@ -1114,6 +1119,7 @@
         if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
         updatePlayingRowUI();
       }
+      updateAudioAnalysisSettingsUI();
     } catch (e) {
       console.warn('Error loading local data:', e);
     }
@@ -2893,6 +2899,132 @@
     });
   }
 
+  // --- LIBRARY AUDIO ANALYSIS (BATCH ANALYZER) ---
+  let batchAudioAnalyzer = null;
+
+  function updateAudioAnalysisSettingsUI() {
+    if (!DOM.audioAnalysisCountLabel) return;
+    const ru = state.lang === 'ru';
+    const tracks = state.tracks || [];
+    const total = tracks.length;
+    let analyzed = 0;
+    for (const t of tracks) {
+      const p = audioProfiles[t.id];
+      if (p && AudioProfile.valid(p) && AudioProfile.texture(p)) analyzed++;
+    }
+    const percent = total > 0 ? Math.round((analyzed / total) * 100) : 0;
+    DOM.audioAnalysisCountLabel.textContent = ru
+      ? `Анализировано: ${analyzed} / ${total} (${percent}%)`
+      : `Analyzed: ${analyzed} / ${total} (${percent}%)`;
+
+    if (DOM.audioAnalysisProgressBar) {
+      DOM.audioAnalysisProgressBar.style.width = `${percent}%`;
+    }
+
+    if (batchAudioAnalyzer && batchAudioAnalyzer.status === 'running') {
+      const cur = batchAudioAnalyzer.currentTrack;
+      const title = cur ? `${cur.artist || '—'} - ${cur.title || '—'}` : '…';
+      if (DOM.audioAnalysisCurrentTrack) {
+        DOM.audioAnalysisCurrentTrack.textContent = ru
+          ? `Анализируется: ${title}`
+          : `Analyzing: ${title}`;
+      }
+      if (DOM.startAudioAnalysisBtn) DOM.startAudioAnalysisBtn.style.display = 'none';
+      if (DOM.pauseAudioAnalysisBtn) {
+        DOM.pauseAudioAnalysisBtn.style.display = 'inline-flex';
+        DOM.pauseAudioAnalysisBtn.textContent = ru ? 'Пауза' : 'Pause';
+      }
+    } else if (batchAudioAnalyzer && batchAudioAnalyzer.status === 'paused') {
+      if (DOM.audioAnalysisCurrentTrack) {
+        DOM.audioAnalysisCurrentTrack.textContent = ru ? 'Анализ приостановлен' : 'Analysis paused';
+      }
+      if (DOM.startAudioAnalysisBtn) {
+        DOM.startAudioAnalysisBtn.style.display = 'inline-flex';
+        DOM.startAudioAnalysisBtn.textContent = ru ? 'Продолжить' : 'Resume';
+      }
+      if (DOM.pauseAudioAnalysisBtn) DOM.pauseAudioAnalysisBtn.style.display = 'none';
+    } else {
+      if (DOM.audioAnalysisCurrentTrack) {
+        if (total > 0 && analyzed >= total) {
+          DOM.audioAnalysisCurrentTrack.textContent = ru
+            ? 'Все треки успешно проанализированы'
+            : 'All tracks successfully analyzed';
+        } else {
+          const remaining = total - analyzed;
+          DOM.audioAnalysisCurrentTrack.textContent = ru
+            ? `Осталось проанализировать: ${remaining}`
+            : `Remaining to analyze: ${remaining}`;
+        }
+      }
+      if (DOM.startAudioAnalysisBtn) {
+        DOM.startAudioAnalysisBtn.style.display = 'inline-flex';
+        DOM.startAudioAnalysisBtn.textContent = total > 0 && analyzed >= total
+          ? (ru ? 'Переанализировать всё' : 'Re-analyze all')
+          : (ru ? 'Анализировать всё' : 'Analyze all tracks');
+      }
+      if (DOM.pauseAudioAnalysisBtn) DOM.pauseAudioAnalysisBtn.style.display = 'none';
+    }
+  }
+
+  function initAudioAnalysisSettings() {
+    if (!DOM.startAudioAnalysisBtn) return;
+    if (!batchAudioAnalyzer && typeof AudioAnalyzer !== 'undefined' && AudioAnalyzer.BatchAnalyzer) {
+      batchAudioAnalyzer = new AudioAnalyzer.BatchAnalyzer({ phoneUrl: state.phoneUrl });
+    }
+
+    DOM.startAudioAnalysisBtn.addEventListener('click', () => {
+      if (!batchAudioAnalyzer) return;
+      if (batchAudioAnalyzer.status === 'paused') {
+        batchAudioAnalyzer.resume();
+        updateAudioAnalysisSettingsUI();
+        return;
+      }
+      const tracks = state.tracks || [];
+      const total = tracks.length;
+      let analyzed = 0;
+      for (const t of tracks) {
+        const p = audioProfiles[t.id];
+        if (p && AudioProfile.valid(p) && AudioProfile.texture(p)) analyzed++;
+      }
+      const overwrite = total > 0 && analyzed >= total;
+      batchAudioAnalyzer.phoneUrl = state.phoneUrl;
+      batchAudioAnalyzer.start(tracks, audioProfiles, {
+        overwriteExisting: overwrite,
+        onProgress: () => updateAudioAnalysisSettingsUI(),
+        onTrackComplete: (track, profile, bpm) => {
+          audioProfiles[track.id] = profile;
+          queue?.setAudioProfile(track.id, profile);
+          if (bpm) {
+            queue?.setTrackBpm(track.id, bpm);
+            try { localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache)); } catch (_) {}
+          }
+          try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+          if (audioSyncTimer === null) {
+            audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 2500);
+          }
+        },
+        onComplete: () => {
+          syncSharedAudio();
+          updateAudioAnalysisSettingsUI();
+          showToast(state.lang === 'ru' ? 'Анализ фонотеки завершён' : 'Library analysis complete', '✓');
+        }
+      });
+      updateAudioAnalysisSettingsUI();
+    });
+
+    if (DOM.pauseAudioAnalysisBtn) {
+      DOM.pauseAudioAnalysisBtn.addEventListener('click', () => {
+        if (!batchAudioAnalyzer) return;
+        if (batchAudioAnalyzer.status === 'running') {
+          batchAudioAnalyzer.pause();
+        } else if (batchAudioAnalyzer.status === 'paused') {
+          batchAudioAnalyzer.resume();
+        }
+        updateAudioAnalysisSettingsUI();
+      });
+    }
+  }
+
   // --- FAVORITE MOMENTS (PER-TRACK BOOKMARK) ---
   function saveFavoriteMoments() {
     try {
@@ -3362,6 +3494,7 @@
     updateFluidBpmTempo();
     updateAutoEqualizerUI();
     updateTrackTransitionUI();
+    updateAudioAnalysisSettingsUI();
     renderUpdateStatus();
     if (DOM.shareProfileModalBackdrop && DOM.shareProfileModalBackdrop.classList.contains('open')) {
       openProfileModal();
@@ -3379,6 +3512,7 @@
       updateFluidBpmTempo();
       updateAutoEqualizerUI();
       updateSettingsExcludedSection();
+      updateAudioAnalysisSettingsUI();
     }
   }
 
@@ -5055,6 +5189,8 @@
         }
       });
     }
+
+    initAudioAnalysisSettings();
 
     // New Playlist Modal
     DOM.newPlaylistBtn.addEventListener('click', () => {

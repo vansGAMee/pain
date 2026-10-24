@@ -27,11 +27,6 @@
   return result;
  };
  const skipIdentity=track=>trustedArtist(track.artist)||'track:'+track.id;
- const PHONK_TOKENS=/\b(phonk|funk|soca|montagem|mtg|trepa|automotivo|mandelao|nightcore|drift phonk|brazilian phonk)\b/i;
- const isPhonkTrack=track=>{
-  if(!track)return false;
-  return PHONK_TOKENS.test(`${track.title||''} ${track.artist||''} ${track.album||''} ${track.genre||''}`);
- };
  // Recognise explicitly labelled speed edits, not arbitrary subtitles, live
  // performances or remixes. Source tags cannot establish a shared recording.
  const recordingIdentity=track=>{
@@ -321,10 +316,7 @@
    // Break the cache feedback loop: at most one in eight turns explores unmeasured
    // sound. Keep explicit rejections and provisional acoustic penalties in force.
    // A saved vibe should not force an unmeasured detour when measured fits exist.
-   const sessionRoot=context.sessionRootTrack||current;
-   const sessionIsPhonk=isPhonkTrack(sessionRoot);
    const unmeasured=acoustic&&discovery&&!Sound.texture(context.vibeProfile)&&(context.step??0)%8===7?pool.filter(item=>{
-    if(!sessionIsPhonk&&isPhonkTrack(item.track))return false;
     const e=this.evidence.get(item.track.id);
     // No independent comparison (e.g. the reference itself) is not missing audio.
     return item.soundSimilarity===null&&!this.sound(item.track)&&item.skipPenalty===0&&
@@ -334,7 +326,6 @@
    if(unmeasured.length){pool=unmeasured;discovering=true;}
    else if(discovery||guidedDiscovery){
     const fresh=pool.filter(item=>{
-     if(!sessionIsPhonk&&isPhonkTrack(item.track))return false;
      if(acoustic&&item.score<bestScore-12)return false;
      if(guidedDiscovery&&!(item.soundSimilarity>=.65&&item.skipPenalty===0&&item.rejectionPenalty===0))return false;
      const e=this.evidence.get(item.track.id);
@@ -467,17 +458,11 @@
    else if(artist&&recent.slice(-3).includes(artist))spacingPenalty+=4;
    const sessionRootCandidate=context.sessionRootTrack||reference;
    const sessionRoot=sessionRootCandidate&&this.canReference(sessionRootCandidate,context.currentStartedAt)&&(this.lastQuality.get(String(sessionRootCandidate.id))??1)>=.75?sessionRootCandidate:null;
-   const sessionIsPhonk=isPhonkTrack(context.sessionRootTrack||reference||current);
-   const candidateIsPhonk=isPhonkTrack(candidate);
-   if(!sessionIsPhonk&&candidateIsPhonk){
-    score-=85;
-   }else if(sessionIsPhonk&&!candidateIsPhonk){
-    score-=40;
-   }
-   if(evidence&&n>=8){
+
+   if(evidence&&n>=2){
     const hoursSince=Math.max(0,this.now-evidence.last)/3600000;
     if(hoursSince<48){
-     const fatigue=Math.min(18,Math.log(n)*3.5*Math.exp(-hoursSince/20));
+     const fatigue=Math.min(20,Math.log(1+n)*4.0*Math.exp(-hoursSince/18));
      score-=fatigue;
     }
    }
@@ -553,9 +538,11 @@
    score-=Math.max(skipPenalty,rejectionPenalty);
    const isFavorite=candidate.favorite===true||candidate.favorite===1;
    if(isFavorite){
-    const effectiveBonus=skipPenalty>0?Math.max(0,24-skipPenalty*.5):24;
+    const baseBonus=7;
+    const repeatDiscount=evidence&&n>0?Math.min(baseBonus,n*1.5):0;
+    const effectiveBonus=Math.max(0,baseBonus-repeatDiscount-(skipPenalty*.35));
     score+=effectiveBonus;
-    if(skipPenalty<20)reasons.unshift('Любимый трек');
+    if(effectiveBonus>2&&skipPenalty<20)reasons.unshift('Любимый трек');
    }
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
    return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty,

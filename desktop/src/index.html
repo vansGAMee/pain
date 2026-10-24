@@ -1005,6 +1005,27 @@
             <div class="comfort-range"><input type="range" id="trackTransitionSlider" min="0" max="4" step="0.5" value="1"><output id="trackTransitionValue" for="trackTransitionSlider">1,0 с</output></div>
           </div>
         </div>
+        <div class="settings-section audio-analysis-settings-section" id="audioAnalysisSettingsSection">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Library Audio Analysis" data-ru="Анализ звука фонотеки">Анализ звука фонотеки</div>
+            <div class="settings-section-desc" data-en="Deep acoustic analysis of all tracks for Smart DJ: instruments, timbre texture, frequency balance and dynamic contrast." data-ru="Глубокий акустический анализ всех треков для Smart DJ: инструменты, текстура тембра, частотный баланс и динамический контраст.">Глубокий акустический анализ всех треков для Smart DJ: инструменты, текстура тембра, частотный баланс и динамический контраст.</div>
+          </div>
+          <div class="fluid-setting-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div class="fluid-row-label">
+                <span id="audioAnalysisCountLabel" data-en="Analyzed: 0 / 0 (0%)" data-ru="Анализировано: 0 / 0 (0%)" style="font-weight: 500;">Анализировано: 0 / 0 (0%)</span>
+                <span class="fluid-row-hint" id="audioAnalysisCurrentTrack" data-en="Ready to scan library" data-ru="Готово к сканированию фонотеки">Готово к сканированию фонотеки</span>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn-minimal primary" id="startAudioAnalysisBtn" data-en="Analyze all tracks" data-ru="Анализировать всё">Анализировать всё</button>
+                <button type="button" class="btn-minimal" id="pauseAudioAnalysisBtn" data-en="Pause" data-ru="Пауза" style="display: none;">Пауза</button>
+              </div>
+            </div>
+            <div id="audioAnalysisProgressTrack" style="width: 100%; height: 6px; background: var(--border, rgba(0,0,0,0.08)); border-radius: 3px; overflow: hidden; margin-top: 2px;">
+              <div id="audioAnalysisProgressBar" style="width: 0%; height: 100%; background: var(--accent, #7c4dff); transition: width 0.2s ease;"></div>
+            </div>
+          </div>
+        </div>
         <div class="settings-section">
           <div class="settings-section-head">
             <div class="settings-section-title" data-en="Everyday comfort" data-ru="Для себя">Для себя</div>
@@ -1284,6 +1305,7 @@
   <script src="session-graph.js"></script>
   <script src="audio-timbre.js"></script>
   <script src="audio-profile.js"></script>
+  <script src="audio-analyzer.js"></script>
   <script src="dj-state.js"></script>
   <script src="auto-eq.js"></script>
   <script src="smart-volume.js"></script>

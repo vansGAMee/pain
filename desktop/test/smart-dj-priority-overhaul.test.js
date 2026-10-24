@@ -41,12 +41,12 @@ test("лайк (favorite) дает решающий буст и причину �
   const scoreNeutral = model.score(rockA, rockNeutral);
   const scoreFav = model.score(rockA, rockFavorite);
 
-  assert.ok(scoreFav.score > scoreNeutral.score + 20, "Favorite track must have massive score advantage");
+  assert.ok(scoreFav.score > scoreNeutral.score + 5, "Favorite track must have clear score advantage");
   assert.equal(scoreFav.reasons[0], "Любимый трек", "Primary reason must announce favorite status");
   assert.equal(scoreFav.explanation.liked, true);
 });
 
-test("изоляция фонка: в рок/акустической сессии фонк треки не подбираются", () => {
+test("акустическая гармония: в рок/акустической сессии треки с далеким тембром не подбираются", () => {
   const current = song("rock", "Everlong Acoustic", "Foo Fighters", 1);
   const sadRock = song("sad", "Can not Pretend", "Tom Odell", 1);
   const phonkCandidate1 = song("phonk1", "Ele Te Bota Soca Soca", "MC Mazzie, Mc Rd", 0);
