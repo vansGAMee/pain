@@ -306,10 +306,20 @@
    // Seeded sampling makes peek and next agree, while each queue visit draws anew.
    let seed=(context.seed??1)>>>0;
    const random=()=>{seed=(seed+0x6d2b79f5)>>>0;let z=seed;z=Math.imul(z^(z>>>15),z|1);z^=z+Math.imul(z^(z>>>7),z|61);return ((z^(z>>>14))>>>0)/4294967296;};
-   let pool=candidates.filter(track=>!excluded.has(String(track.id))).map(track=>({track,...this.score(current,track,cache,context)}));
+   const currentId=candidates.length>1&&current?String(current.id):null;
+   let pool=candidates.filter(track=>!excluded.has(String(track.id))&&(!currentId||String(track.id)!==currentId)).map(track=>({track,...this.score(current,track,cache,context)}));
    if(!pool.length)return null;
    const acoustic=pool.some(item=>item.soundSimilarity!==null);
    let bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
+   if(context.vibeProfile&&pool.length>1){
+    const nonVibeAnchor=pool.filter(item=>{
+     const p=this.sound(item.track);
+     return !(p&&context.vibeProfile.signature&&p.signature===context.vibeProfile.signature);
+    });
+    if(nonVibeAnchor.length>0&&nonVibeAnchor.some(item=>item.score>=bestScore-25)){
+     pool=nonVibeAnchor;bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
+    }
+   }
    const recentRecordings=new Set([current,...(context.recentTrackIds||[]).slice(0,2).map(id=>this.tracksById.get(String(id)))].map(recordingIdentity).filter(Boolean));
    if(recentRecordings.size){
     const alternatives=pool.filter(item=>!recentRecordings.has(recordingIdentity(item.track)));
@@ -399,7 +409,7 @@
        const entry=remaining[i];
        if(entry.profile&&Sound.texture(last))entry.nearest=Math.max(entry.nearest,this.similarity(last,entry.profile));
        const redundancy=entry.profile?Math.max(0,(entry.nearest-.94)/.06):1;
-       const value=entry.item.rank-6*Math.min(1,redundancy);
+       const value=entry.item.rank-8*Math.min(1,redundancy);
        if(value>priority){priority=value;best=i;}
       }
       selected.push(remaining.splice(best,1)[0].item);
@@ -469,10 +479,10 @@
    const sessionRoot=sessionRootCandidate&&this.canReference(sessionRootCandidate,context.currentStartedAt)&&(this.lastQuality.get(String(sessionRootCandidate.id))??1)>=.75?sessionRootCandidate:null;
 
    score+=5/Math.sqrt(1+n);
-   if(evidence&&n>=2){
+   if(evidence&&n>=5){
     const hoursSince=Math.max(0,this.now-evidence.last)/3600000;
-    if(hoursSince<48){
-     const fatigue=Math.min(20,Math.log(1+n)*4.0*Math.exp(-hoursSince/18));
+    if(hoursSince<24){
+     const fatigue=Math.min(12,Math.log(n)*3.2*Math.exp(-hoursSince/14));
      score-=fatigue;
     }
    }
@@ -547,12 +557,18 @@
    const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
    score-=Math.max(skipPenalty,rejectionPenalty);
    const isFavorite=candidate.favorite===true||candidate.favorite===1;
-   if(isFavorite&&p>.5&&skipPenalty===0&&rejectionPenalty===0)reasons.unshift('Любимый трек');
+   if(isFavorite){
+    const baseBonus=16;
+    const effectiveBonus=skipPenalty>0?Math.max(0,baseBonus-skipPenalty*0.5):baseBonus;
+    score+=effectiveBonus;
+    if(skipPenalty<20)reasons.unshift('Любимый трек');
+   }
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
    return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty,
     explanation:{referenceTitle:vibeSound||selfReference?null:reference?.title||null,referenceBpm:a,liked:candidate.favorite===true||candidate.favorite===1}};
   }
  }
  TasteModel.artistIdentity=track=>trustedArtist(track?.artist);
+ TasteModel.recordingIdentity=recordingIdentity;
  TasteModel.knownBpm=knownBpm;return TasteModel;
 });

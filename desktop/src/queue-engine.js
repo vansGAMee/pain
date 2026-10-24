@@ -528,9 +528,11 @@
      */
     smartCandidates() {
       const allowed = this.tracks.map((_, i) => i).filter(i => !this.excludedTracks.has(String(this.tracks[i].id)));
-      const remaining = allowed.filter(i => i !== this.currentIndex && this.unplayedIndices.has(i));
+      const currentTrack = this.getCurrentTrack();
+      const currentRec = currentTrack ? Taste.recordingIdentity(currentTrack) : null;
+      const remaining = allowed.filter(i => i !== this.currentIndex && (!currentRec || Taste.recordingIdentity(this.tracks[i]) !== currentRec) && this.unplayedIndices.has(i));
       if (remaining.length || this.loopMode === 'off') return remaining;
-      const others = allowed.filter(i => i !== this.currentIndex);
+      const others = allowed.filter(i => i !== this.currentIndex && (!currentRec || Taste.recordingIdentity(this.tracks[i]) !== currentRec));
       return others.length ? others : allowed;
     }
 
@@ -578,8 +580,6 @@
 
         if (candidates.length === 0) {
           return null;
-        } else if (!current) {
-          nextIndex = candidates[0];
         } else {
           const chosen = this.smartChoose(current, candidates);
           nextIndex = chosen ? chosen.index : candidates[0];
@@ -638,7 +638,6 @@
         const candidates = this.smartCandidates();
         if (candidates.length === 0) return null;
         const current = this.getCurrentTrack();
-        if (!current) return this.tracks[candidates[0]];
         const chosen = this.smartChoose(current, candidates);
         return chosen ? this.tracks[chosen.index] : this.tracks[candidates[0]];
       }
