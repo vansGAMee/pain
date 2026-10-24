@@ -2141,7 +2141,8 @@
     playingTrackSnapshot = {...track};
     if (state.eq.auto) applyAutoEqualizer(track);
     pendingSeekTime = startPosition > 0 ? startPosition : null;
-    const shouldFadeIn = state.trackTransition > 0 && startPosition <= 0;
+    const isReelActive = typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active;
+    const shouldFadeIn = (state.trackTransition > 0 && startPosition <= 0) || isReelActive;
     if (shouldFadeIn && transitionGainNode) setTrackTransitionGain(0.0001);
     else setTrackTransitionGain(1);
     audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
@@ -2154,7 +2155,8 @@
           pendingSeekTime = null;
         }
         if (shouldFadeIn) {
-          setTrackTransitionGain(1, Math.min(state.trackTransition, 1.0));
+          const fadeInSec = isReelActive ? 0.35 : Math.min(state.trackTransition, 0.8);
+          setTrackTransitionGain(1, fadeInSec);
         } else {
           setTrackTransitionGain(1);
         }
@@ -2174,7 +2176,8 @@
               pendingSeekTime = null;
             }
             if (shouldFadeIn) {
-              setTrackTransitionGain(1, Math.min(state.trackTransition, 1.0));
+              const fadeInSec = isReelActive ? 0.35 : Math.min(state.trackTransition, 0.8);
+              setTrackTransitionGain(1, fadeInSec);
             } else {
               setTrackTransitionGain(1);
             }
@@ -2780,9 +2783,8 @@
           playTrackInContext(item.track, list.map(x => x.track), { type: 'moments', title: state.lang === 'ru' ? 'Микс лучших моментов' : 'Moments Reel' }, item.momentSec);
         },
         onFade: (remaining) => {
-          if (state.trackTransition > 0) {
-            setTrackTransitionGain(0.0001, remaining / Math.max(0.1, audio.playbackRate));
-          }
+          const fadeSec = Math.min(1.8, Math.max(0.4, (remaining || 1.5) / Math.max(0.1, audio.playbackRate)));
+          setTrackTransitionGain(0.0001, fadeSec);
         },
         onStateChange: () => {
           if (state.currentView === 'home') renderHome();
@@ -4349,18 +4351,27 @@
       syncPlaybackState();
     });
     audio.addEventListener('waiting',()=>{
-      isTrackFadingOut = false;
-      setTrackTransitionGain(1);
+      if (!isTrackFadingOut) {
+        setTrackTransitionGain(1);
+      }
       sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);
     });
     audio.addEventListener('seeking',()=>{
-      isTrackFadingOut = false;
-      if (transitionGainNode) setTrackTransitionGain(1);
+      const dur = getCurrentTrackDuration();
+      const remaining = dur > 0 ? dur - audio.currentTime : 0;
+      if (remaining > state.trackTransition + 0.5) {
+        isTrackFadingOut = false;
+        if (transitionGainNode) setTrackTransitionGain(1);
+      }
       listening?.anchor(performance.now(),audio.currentTime,false);
     });
     audio.addEventListener('seeked',()=>{
-      isTrackFadingOut = false;
-      if (transitionGainNode) setTrackTransitionGain(1);
+      const dur = getCurrentTrackDuration();
+      const remaining = dur > 0 ? dur - audio.currentTime : 0;
+      if (remaining > state.trackTransition + 0.5) {
+        isTrackFadingOut = false;
+        if (transitionGainNode) setTrackTransitionGain(1);
+      }
       savePlaybackPosition(true);
     });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
@@ -4401,7 +4412,8 @@
       const cur = audio.currentTime;
 
       if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
-        const check = momentsReel.checkTime(cur, dur);
+        const isAudioPlaying = !audio.paused && !audio.seeking && audio.readyState >= 2;
+        const check = momentsReel.checkTime(cur, dur, isAudioPlaying, state.currentTrackId);
         if (check.shouldAdvance) {
           momentsReel.next();
           return;
@@ -4415,9 +4427,9 @@
             isTrackFadingOut = true;
             setTrackTransitionGain(0.0001, remaining / Math.max(0.1, audio.playbackRate));
           }
-        } else if (isTrackFadingOut) {
+        } else if (isTrackFadingOut && remaining > state.trackTransition + 0.5) {
           isTrackFadingOut = false;
-          setTrackTransitionGain(1);
+          setTrackTransitionGain(1, 0.2);
         }
       }
 

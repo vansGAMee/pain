@@ -1,7 +1,7 @@
 /**
  * MomentsReel: Manages sequential highlight snippet playback of favorite moments.
- * Solves the single-timestamp problem by creating an engaging highlight reel / snippet radio
- * with customizable window lengths (15s, 25s, 45s, or full track) and seamless transitions.
+ * Accurately tracks audible playback time to eliminate skipping, respects track loading,
+ * and coordinates smooth crossfading transitions between moments.
  */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -9,17 +9,18 @@
 })(globalThis, () => {
   'use strict';
 
-  function clamp(val, min, max) {
-    return Math.max(min, Math.min(max, val));
-  }
-
   function createController(options = {}) {
     let active = false;
     let snippetSec = Number(options.initialSnippetSec ?? 25);
     let playlist = [];
     let currentIndex = -1;
-    let currentMomentSec = 0;
     let isFading = false;
+
+    // Playback tracking state for active snippet
+    let activeTrackId = null;
+    let targetMomentSec = 0;
+    let hasReachedMoment = false;
+
     const onAdvance = typeof options.onAdvance === 'function' ? options.onAdvance : () => {};
     const onFade = typeof options.onFade === 'function' ? options.onFade : () => {};
     const onStateChange = typeof options.onStateChange === 'function' ? options.onStateChange : () => {};
@@ -54,6 +55,19 @@
       return list;
     }
 
+    function activateTrack(index) {
+      if (!playlist.length || index < 0 || index >= playlist.length) return null;
+      currentIndex = index;
+      const current = playlist[currentIndex];
+      activeTrackId = String(current.track.id);
+      targetMomentSec = current.momentSec;
+      hasReachedMoment = false;
+      isFading = false;
+      onAdvance(current, currentIndex, playlist);
+      onStateChange(getState());
+      return current;
+    }
+
     function start(tracks = [], momentsStore = {}, startTrackId = null, customSnippetSec = null) {
       if (customSnippetSec !== null && customSnippetSec !== undefined) {
         setSnippetSec(customSnippetSec);
@@ -70,42 +84,27 @@
         if (found >= 0) idx = found;
       }
 
-      currentIndex = idx;
       active = true;
-      isFading = false;
-      const current = playlist[currentIndex];
-      currentMomentSec = current.momentSec;
-      onAdvance(current, currentIndex, playlist);
-      onStateChange(getState());
-      return current;
+      return activateTrack(idx);
     }
 
     function next() {
       if (!active || !playlist.length) return null;
-      currentIndex = (currentIndex + 1) % playlist.length;
-      isFading = false;
-      const current = playlist[currentIndex];
-      currentMomentSec = current.momentSec;
-      onAdvance(current, currentIndex, playlist);
-      onStateChange(getState());
-      return current;
+      const nextIdx = (currentIndex + 1) % playlist.length;
+      return activateTrack(nextIdx);
     }
 
     function prev() {
       if (!active || !playlist.length) return null;
-      currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-      isFading = false;
-      const current = playlist[currentIndex];
-      currentMomentSec = current.momentSec;
-      onAdvance(current, currentIndex, playlist);
-      onStateChange(getState());
-      return current;
+      const prevIdx = (currentIndex - 1 + playlist.length) % playlist.length;
+      return activateTrack(prevIdx);
     }
 
     function stop() {
       if (!active) return;
       active = false;
       isFading = false;
+      hasReachedMoment = false;
       onStateChange(getState());
     }
 
@@ -113,38 +112,64 @@
       if (!active) return;
       active = false;
       isFading = false;
+      hasReachedMoment = false;
       onStateChange(getState());
     }
 
-    function checkTime(currentTime, durationSec = 0) {
-      if (!active) return { shouldAdvance: false, shouldFade: false, elapsed: 0, remaining: 0 };
-      
+    function checkTime(currentTime, durationSec = 0, isPlaying = true, currentTrackId = null) {
+      if (!active || !playlist.length) {
+        return { shouldAdvance: false, shouldFade: false, elapsed: 0, remaining: 0 };
+      }
+
+      // If playback is not on the target track yet, wait
+      if (currentTrackId && activeTrackId && String(currentTrackId) !== activeTrackId) {
+        return { shouldAdvance: false, shouldFade: false, elapsed: 0, remaining: snippetSec };
+      }
+
+      if (isPlaying === false) {
+        return { shouldAdvance: false, shouldFade: false, elapsed: 0, remaining: snippetSec };
+      }
+
       const cur = Number(currentTime) || 0;
+
       // If snippetSec is 0, user chose "full song from moment"
       if (snippetSec <= 0) {
-        return { shouldAdvance: false, shouldFade: false, elapsed: Math.max(0, cur - currentMomentSec), remaining: 0 };
+        return { shouldAdvance: false, shouldFade: false, elapsed: Math.max(0, cur - targetMomentSec), remaining: 0 };
       }
 
-      // If playback position jumped backwards (user sought), re-anchor
-      if (cur < currentMomentSec) {
-        currentMomentSec = cur;
+      // Check if audio has arrived at or near the target moment snippet window
+      // (Protects against 0s seek delay / buffering where cur is 0 before seeking to e.g. 52s)
+      if (!hasReachedMoment) {
+        const startWindow = Math.max(0, targetMomentSec - 0.75);
+        const endWindow = targetMomentSec + Math.max(4.0, snippetSec);
+        if (cur >= startWindow && cur <= endWindow) {
+          hasReachedMoment = true;
+        } else {
+          // Still seeking or loading
+          return { shouldAdvance: false, shouldFade: false, elapsed: 0, remaining: snippetSec };
+        }
       }
 
-      const elapsed = Math.max(0, cur - currentMomentSec);
+      // If user manually scrubbed backwards before the target moment, re-anchor
+      if (cur < targetMomentSec - 1.0) {
+        targetMomentSec = cur;
+      }
+
+      const elapsed = Math.max(0, cur - targetMomentSec);
       const remaining = Math.max(0, snippetSec - elapsed);
 
-      if (remaining <= 0) {
+      if (remaining <= 0 && elapsed >= Math.min(snippetSec, 1.0)) {
         return { shouldAdvance: true, shouldFade: false, elapsed, remaining: 0 };
       }
 
-      const fadeWindow = Math.min(2.5, snippetSec / 4);
-      if (remaining <= fadeWindow && !isFading) {
+      const fadeWindow = Math.min(2.0, Math.max(1.0, snippetSec / 5));
+      if (remaining <= fadeWindow && !isFading && elapsed >= 1.0) {
         isFading = true;
         onFade(remaining);
         return { shouldAdvance: false, shouldFade: true, elapsed, remaining };
       }
 
-      return { shouldAdvance: false, shouldFade: false, elapsed, remaining };
+      return { shouldAdvance: false, shouldFade: isFading, elapsed, remaining };
     }
 
     function getState() {
@@ -157,8 +182,9 @@
         playlistLength: playlist.length,
         currentIndex,
         currentTrack: current ? current.track : null,
-        currentTrackId: current?.track?.id || null,
-        momentSec: currentMomentSec,
+        currentTrackId: activeTrackId,
+        momentSec: targetMomentSec,
+        hasReachedMoment,
         isFading
       };
     }

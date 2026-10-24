@@ -98,3 +98,73 @@ test('MomentsReel: keepFullTrack disables active state without stopping playback
   ctrl.keepFullTrack();
   assert.equal(ctrl.getState().active, false);
 });
+
+test('MomentsReel: regression - 15s snippet does NOT skip prematurely during initial 0s seek delay', () => {
+  let advanced = false;
+  let faded = false;
+  const ctrl = createController({
+    initialSnippetSec: 15,
+    onAdvance: () => { advanced = true; },
+    onFade: () => { faded = true; }
+  });
+
+  const tracks = [
+    { id: 'trackA', duration: 180000 },
+    { id: 'trackB', duration: 200000 }
+  ];
+  const moments = { 'trackA': 52.5, 'trackB': 30.0 };
+
+  ctrl.start(tracks, moments, 'trackA', 15);
+  assert.equal(ctrl.getState().active, true);
+  assert.equal(ctrl.getState().currentTrackId, 'trackA');
+  assert.equal(ctrl.getState().momentSec, 52.5);
+
+  // 1. Initial audio load: audio.currentTime is 0 while buffer is loading
+  let check = ctrl.checkTime(0, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, false, 'Must not advance at 0s');
+  assert.equal(check.shouldFade, false, 'Must not fade at 0s');
+  assert.equal(check.remaining, 15);
+
+  // 2. Additional timeupdate events fired near 0 before seek completes
+  check = ctrl.checkTime(0.2, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, false, 'Must not advance during buffering');
+  assert.equal(check.remaining, 15);
+
+  // 3. Audio seeks to 52.5s and starts playing
+  check = ctrl.checkTime(52.5, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, false, 'Must not advance at start of moment');
+  assert.equal(check.remaining, 15);
+
+  // 4. Playing at 60s (7.5s played, 7.5s remaining)
+  check = ctrl.checkTime(60.0, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, false);
+  assert.equal(check.shouldFade, false);
+  assert.equal(Math.round(check.remaining), 8);
+
+  // 5. Playing at 65.5s (13s played, 2s remaining -> fade window)
+  check = ctrl.checkTime(65.5, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, false);
+  assert.equal(check.shouldFade, true);
+  assert.equal(faded, true);
+
+  // 6. Playing at 67.5s (15s elapsed -> should advance)
+  check = ctrl.checkTime(67.5, 180, true, 'trackA');
+  assert.equal(check.shouldAdvance, true);
+});
+
+test('MomentsReel: paused audio or track mismatch does not advance', () => {
+  const ctrl = createController({ initialSnippetSec: 15 });
+  const tracks = [{ id: 't1', duration: 100000 }];
+  const moments = { 't1': 10 };
+
+  ctrl.start(tracks, moments);
+
+  // Paused audio
+  const checkPaused = ctrl.checkTime(10, 100, false, 't1');
+  assert.equal(checkPaused.shouldAdvance, false);
+
+  // Wrong track playing during async transition
+  const checkWrongTrack = ctrl.checkTime(10, 100, true, 'otherTrack');
+  assert.equal(checkWrongTrack.shouldAdvance, false);
+});
+
