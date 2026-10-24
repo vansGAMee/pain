@@ -32,12 +32,12 @@
  function stored(p){return shape(p)&&validVariance(p.variance)&&p.version===VERSION&&(p.timbre===null&&p.timbreVariance===null||validTimbre(p.timbre)&&validVariance(p.timbreVariance,12))&&typeof p.signature==='string'&&p.signature.length<=4096&&Array.isArray(p.positions)&&p.positions.length===p.frames&&p.positions.every(n=>Number.isSafeInteger(n)&&n>=0)&&new Set(p.positions).size===p.positions.length;}
  function similarity(a,b,partial=false){
   if(!ready(a,partial)||!ready(b,partial))return null;
-  const weights=[.5,1,1,1,1,.5];let distance=0;
+  const weights=[.5,1.2,1,1.4,1.2,1.2];let distance=0;
   for(let i=0;i<6;i++)distance+=weights[i]*(a.vector[i]-b.vector[i])**2;
   const av=variation(a),bv=variation(b);
   if(av&&bv)for(let i=0;i<6;i++)distance+=.2*(av[i]-bv[i])**2;
   const ad=detail(a),bd=detail(b);
-  const detailMatch=ad&&bd?Math.exp(-1.5*ad.reduce((sum,v,i)=>sum+(v-bd[i])**2,0)/7):1;
+  const detailMatch=ad&&bd?Math.exp(-4.5*ad.reduce((sum,v,i)=>sum+(v-bd[i])**2,0)/7):1;
   if(validTimbre(a.timbre)&&validTimbre(b.timbre)&&validVariance(a.timbreVariance,12)&&validVariance(b.timbreVariance,12)){
    // Diagonal Gaussian Bhattacharyya distance: compare timbre distributions,
    // not just bass/treble averages. A variance floor regularizes short excerpts.
@@ -47,9 +47,9 @@
     const va=a.timbreVariance[i]+.0025,vb=b.timbreVariance[i]+.0025;
     timbreDistance+=(a.timbre[i]-b.timbre[i])**2/(4*(va+vb))+.25*Math.log(.25*(va/vb+vb/va+2));
    }
-   return detailMatch*Math.exp(-3*(.75*timbreDistance/12+.25*distance));
+   return detailMatch*Math.exp(-(2.5*timbreDistance/12+3.5*distance));
   }
-  return detailMatch*Math.exp(-3*distance);
+  return detailMatch*Math.exp(-3.5*distance);
  }
  // Local scaling makes a match relative to the surrounding audio, rather than
  // declaring almost every bass-heavy recording similar. No decoding or training.

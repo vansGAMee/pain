@@ -1,4 +1,4 @@
-/* Personal logistic ranker. Fits only local listening evidence; no remote model. */
+/* Personal logistic ranker. Fits local listening and explicit favourites; no remote model. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.TasteModel=factory();})(globalThis,()=>{
  const SessionGraph=typeof module==='object'&&module.exports?require('./session-graph'):globalThis.SessionGraph;
  const Sound=typeof module==='object'&&module.exports?require('./audio-profile'):globalThis.AudioProfile;
@@ -48,12 +48,12 @@
   const rows=new Map();
   for(const p of Array.isArray(plays)?plays:[]){
    if(!p||typeof p!=='object')continue;
-   const track=tracks.get(p.track),stamp=Number(p.started||p.timestamp||0);
+   const track=tracks.get(String(p.track)),stamp=Number(p.started||p.timestamp||0);
    if(!track||!Number.isFinite(stamp)||stamp<=0||stamp>now)continue;
    const heard=Number(p.media_heard??p.heard),duration=Number(p.duration||track.duration);
    if(!completed(p)&&(!Number.isFinite(heard)||heard<0||!Number.isFinite(duration)||duration<=0))continue;
-   const key=JSON.stringify([p.track,stamp]),old=rows.get(key);
-   const merged={...p,started:stamp};
+   const key=JSON.stringify([String(p.track),stamp]),old=rows.get(key);
+   const merged={...p,track:track.id,started:stamp};
    if(old){
     const positive=n=>Number.isFinite(Number(n))&&Number(n)>=0?Number(n):0;
     merged.heard=Math.max(positive(old.heard),positive(p.heard));
@@ -77,20 +77,20 @@
    this.similarity=Sound.calibratedSimilarity(tracks.filter(t=>!this.excludedTracks.has(String(t.id))).map(t=>this.sound(t)));
    this.weights=new Map();this.counts=new Map();this.artistCounts=new Map();this.now=now;this.evidence=new Map();this.recentSkips=[];
    this.recentWeights=new Map();this.recentCounts=new Map();this.recentArtistCounts=new Map();
-   const byId=new Map(tracks.map(t=>[t.id,t])),seen=new Set();
-   this.tracksById=new Map(tracks.map(t=>[String(t.id),t]));
+   const byId=new Map(tracks.map(t=>[String(t.id),t])),seen=new Set();
+   this.tracksById=byId;
    const soundSkips=new Map(),soundFeedback=new Map();
    const samples=[],sessionEvents=[];this.lastQuality=new Map();this.lastFeedback=new Map();this.searching=false;this.lastAcceptedTrack=null;this.sessionSoundTracks=new Map();let previous=null;
    const rows=history(byId,plays,now),browsing=new Set();let priorSkip=null;
    // Consecutive short previews of different songs suggest browsing, not a style
    // rejection. Mark both sides so the first preview is reconsidered as well.
    for(const p of rows){
-    if(this.excludedTracks.has(String(p.track))||!quickSkip(p,byId.get(p.track))){priorSkip=null;continue;}
+    if(this.excludedTracks.has(String(p.track))||!quickSkip(p,byId.get(String(p.track)))){priorSkip=null;continue;}
     if(priorSkip&&priorSkip.track!==p.track&&p.started>priorSkip.started&&p.started-priorSkip.started<=45000){browsing.add(priorSkip);browsing.add(p);}
     priorSkip=p;
    }
    for(const p of rows){
-    const track=byId.get(p.track),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
+    const track=byId.get(String(p.track)),stamp=Number(p.started||p.timestamp||0),id=p.track+'|'+stamp;
     if(!track||!stamp||seen.has(id))continue;seen.add(id);
     if(this.excludedTracks.has(String(track.id))||this.excludedTracks.has(String(p.track)))continue;
     const heard=Number(p.media_heard??p.heard),duration=Number(p.duration||track.duration);
@@ -157,6 +157,17 @@
     previous={track,stamp};
    }
    this.samples=samples.length;
+   // A heart is one explicit positive observation, not an arbitrary score bonus.
+   // Fit it once, before listening evidence, without fabricating a play, date,
+   // time-of-day preference or global completion bias. Subsequent refusals can
+   // outweigh it, and removing a heart removes its training observation.
+   const favorites=[...byId.values()].filter(track=>
+    (track.favorite===1||track.favorite===true)&&!this.excludedTracks.has(String(track.id)));
+   this.favoriteSamples=favorites.length;
+   samples.unshift(...favorites.map(track=>({
+    features:this.features(track,0,null).filter(([key])=>key!=='bias'&&!key.startsWith('hour:')),
+    target:1,weight:1,recentWeight:0,id:track.id
+   })));
    this.soundSkips=[];
    // Missing, stale or too-short profiles must not evict usable acoustic feedback.
    const skippedSounds=[...soundSkips.values()];
@@ -264,7 +275,7 @@
     texture.mean.forEach((value,i)=>f.push(['timbre:'+i,(value-.5)*.45]));
     texture.variation.forEach((value,i)=>f.push(['timbre-variation:'+i,(value-.5)*.3]));
    }
-   // Hearts do not become a shortcut: learn from actual listening instead.
+   // Explicit hearts are training observations, never an input-feature shortcut.
    if(entry)entry.features=f.slice(offset);
    return f;
   }
@@ -308,26 +319,22 @@
      pool=alternatives;bestScore=pool.reduce((best,item)=>Math.max(best,item.score),-Infinity);
     }
    }
-   // Browsing may explore verified neighbours, but never forces an unheard,
-   // unmeasured detour or amplifies uncertainty after skips.
+   // Diversity operates inside the existing relevance band. A queue position is
+   // not preference evidence: every fourth/eighth song used to replace the best
+   // candidates with unheard/unmeasured tracks regardless of listener intent.
+   pool=pool.filter(item=>item.score>=bestScore-18);
+   const unrejected=pool.filter(item=>{
+    const feedback=this.lastFeedback.get(String(item.track.id));
+    return !(feedback?.rejected&&(this.searching||this.trackRejections.has(String(item.track.id))));
+   });
+   if(unrejected.length)pool=unrejected;
    const pivot=this.recentSkips.length>=2;
-   const discovery=!this.searching&&!this.recentSkips.length&&(context.step??0)%4===3;let discovering=false;
-   const guidedDiscovery=acoustic&&this.searching&&(context.step??0)%4===3;
-   // Break the cache feedback loop: at most one in eight turns explores unmeasured
-   // sound. Keep explicit rejections and provisional acoustic penalties in force.
-   // A saved vibe should not force an unmeasured detour when measured fits exist.
-   const unmeasured=acoustic&&discovery&&!Sound.texture(context.vibeProfile)&&(context.step??0)%8===7?pool.filter(item=>{
-    const e=this.evidence.get(item.track.id);
-    // No independent comparison (e.g. the reference itself) is not missing audio.
-    return item.soundSimilarity===null&&!this.sound(item.track)&&item.skipPenalty===0&&
-     (this.lastQuality.get(String(item.track.id))??1)>=.75&&
-     (!e||e.count<1.5||e.reward/e.count>=.5);
-   }):[];
-   if(unmeasured.length){pool=unmeasured;discovering=true;}
-   else if(discovery||guidedDiscovery){
+   const guidedDiscovery=acoustic&&this.searching;
+   let discovering=false;
+   if(guidedDiscovery){
     const fresh=pool.filter(item=>{
-     if(acoustic&&item.score<bestScore-12)return false;
-     if(guidedDiscovery&&!(item.soundSimilarity>=.65&&item.skipPenalty===0&&item.rejectionPenalty===0))return false;
+     if(acoustic&&item.score<bestScore-18)return false;
+     if(!(item.soundSimilarity>=.65&&item.skipPenalty===0&&item.rejectionPenalty===0))return false;
      const e=this.evidence.get(item.track.id);
      if(e&&e.count>=1.5&&e.reward/e.count<.25)return false;
      return !e||e.count<1.5||this.now-e.last>21*86400000;
@@ -349,17 +356,14 @@
    // Shortlist before drawing: random variation among good acoustic fits, not all songs.
    const noiseScale=acoustic?2.8:4.0;
    for(const item of pool){
-    const n=this.counts.get(item.track.id)||0;
-    const artistEvidence=trustedArtist(item.track.artist)?this.artistCounts.get(trustedArtist(item.track.artist))||0:0;
-    const uncertainty=discovery?10/Math.sqrt(1+n+Math.min(8,artistEvidence)*.25):0;
     const catalogSize=poolCounts.get(artistKey(item.track));
     const catalogCorrection=acoustic?Math.min(8,3*Math.log(catalogSize)):noiseScale*Math.log(catalogSize);
-    item.rank=item.score+uncertainty-catalogCorrection;
+    item.rank=item.score-catalogCorrection;
    }
    // Similarity alone can repeat the same texture across different artists.
    // After two accepted examples, gently favour a different texture *within*
    // the good-fit band. No penalty when the only alternatives are poor/unknown.
-   if(acoustic&&!discovering){
+   if(acoustic){
     const recentSounds=[...new Set((context.recentTrackIds||[]).map(String))]
      .filter(id=>this.sessionSoundTracks.has(id)&&!excluded.has(id)&&(this.lastQuality.get(id)??0)>=.75)
      .slice(0,3).map(id=>this.sound(this.tracksById.get(id))).filter(p=>Sound.texture(p));
@@ -383,8 +387,8 @@
     // A top-six list of acoustic copies hides other good fits before sampling.
     // Keep the best fit, then spread the remaining slots within the existing
     // quality band. Only verified, unrejected sound earns diversity credit.
-    // Bound work to 24 candidates and five rounds; discovery stays unchanged.
-    if(!discovering&&pool.length>6&&pool[0].soundSimilarity>=.75&&Sound.texture(this.sound(pool[0].track))){
+    // Bound work to 24 candidates and five rounds.
+    if(pool.length>6&&pool[0].soundSimilarity>=.75&&Sound.texture(this.sound(pool[0].track))){
      const selected=[pool[0]],remaining=pool.slice(1,24).map(item=>{
       const profile=this.sound(item.track);
       return {item,profile:item.soundSimilarity>=.75&&item.skipPenalty===0&&item.rejectionPenalty===0&&Sound.texture(profile)?profile:null,nearest:0};
@@ -403,13 +407,18 @@
      pool=selected;
     }else pool=pool.slice(0,6);
    }
-   // Controlled calibrated sampling keeps preview and playback consistent without wild noise jumps.
+   // Seeded sampling keeps preview and playback consistent. These ranking scores
+   // are utilities, not calibrated probabilities of enjoying a recording.
    let winner=null,best=-Infinity;
    for(const item of pool){
     const value=item.rank-noiseScale*Math.log(-Math.log(Math.max(1e-9,random())));
     if(value>best){winner=item;best=value;}
    }
    if(discovering){const e=this.evidence.get(winner.track.id);winner.reasons=[e&&this.now-e.last>21*86400000?'Давно не звучало':'Открываем новое',...winner.reasons].slice(0,2);}
+   else{
+    const evidence=this.evidence.get(winner.track.id);
+    if(evidence&&this.now-evidence.last>21*86400000)winner.reasons=['Давно не звучало',...winner.reasons].slice(0,2);
+   }
    if(pivot)winner.reasons=['Смена направления после пропусков',...winner.reasons].slice(0,2);
    return winner;
   }
@@ -449,8 +458,8 @@
    if(affinity>.12)reasons.push('Сочетается с вашей сессией');
    if(this.samples&&p>.58)reasons.push('По вашим прослушиваниям');
    if(!n&&(this.artistCounts.get(trustedArtist(candidate.artist))||0)>2&&p>.55)reasons.push('Новое у знакомого исполнителя');
-   // Modest exploration and spacing keep a learned preference from becoming a repeat trap.
-   score+=5/Math.sqrt(1+n);
+   // Spacing keeps a learned preference from becoming a repeat trap. Being
+   // unheard supplies no positive evidence and therefore earns no score bonus.
    const evidence=this.evidence.get(candidate.id);
    let spacingPenalty=evidence?12*Math.exp(-Math.max(0,this.now-evidence.last)/(18*3600000)):0;
    const artist=trustedArtist(candidate.artist),recent=context.recentArtists||[];
@@ -459,6 +468,7 @@
    const sessionRootCandidate=context.sessionRootTrack||reference;
    const sessionRoot=sessionRootCandidate&&this.canReference(sessionRootCandidate,context.currentStartedAt)&&(this.lastQuality.get(String(sessionRootCandidate.id))??1)>=.75?sessionRootCandidate:null;
 
+   score+=5/Math.sqrt(1+n);
    if(evidence&&n>=2){
     const hoursSince=Math.max(0,this.now-evidence.last)/3600000;
     if(hoursSince<48){
@@ -537,13 +547,7 @@
    const rejectionPenalty=30*(this.trackRejections.get(String(candidate.id))||0);
    score-=Math.max(skipPenalty,rejectionPenalty);
    const isFavorite=candidate.favorite===true||candidate.favorite===1;
-   if(isFavorite){
-    const baseBonus=7;
-    const repeatDiscount=evidence&&n>0?Math.min(baseBonus,n*1.5):0;
-    const effectiveBonus=Math.max(0,baseBonus-repeatDiscount-(skipPenalty*.35));
-    score+=effectiveBonus;
-    if(effectiveBonus>2&&skipPenalty<20)reasons.unshift('Любимый трек');
-   }
+   if(isFavorite&&p>.5&&skipPenalty===0&&rejectionPenalty===0)reasons.unshift('Любимый трек');
    if(!reasons.length)reasons.push(this.samples?'Расширяем подбор':'Знакомимся с вашим вкусом');
    return {score,bpm:b,dist,reasons:reasons.slice(0,2),probability:p,affinity,soundSimilarity,soundPreference,skipPenalty,rejectionPenalty,
     explanation:{referenceTitle:vibeSound||selfReference?null:reference?.title||null,referenceBpm:a,liked:candidate.favorite===true||candidate.favorite===1}};
