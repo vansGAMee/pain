@@ -4,11 +4,14 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
+const cp = require('child_process');
 
 const lyricsRoute = require('./lyrics-store');
 const parseRange = require('./range');
 const PhoneSync = require('./phone-sync');
+const AudioProfile = require('./audio-profile');
+const AudioAnalyzer = require('./audio-analyzer');
 const { Updater } = require('./updater');
 const { version: APP_VERSION } = require('../package.json');
 const PORT = 3000;
@@ -357,6 +360,36 @@ function getResolvedAudioFilePath(trackId) {
   return null;
 }
 
+function decodePcmServer(audioFilePath) {
+  return new Promise((resolve, reject) => {
+    const ff = cp.spawn('ffmpeg', [
+      '-i', audioFilePath,
+      '-t', '90',
+      '-f', 'f32le',
+      '-ac', '2',
+      '-ar', '44100',
+      '-loglevel', 'quiet',
+      'pipe:1'
+    ]);
+    const chunks = [];
+    ff.stdout.on('data', chunk => chunks.push(chunk));
+    ff.on('error', reject);
+    ff.on('close', code => {
+      if (code !== 0) return reject(new Error('ffmpeg exited with code ' + code));
+      const total = Buffer.concat(chunks);
+      const floatArr = new Float32Array(total.buffer, total.byteOffset, Math.floor(total.byteLength / 4));
+      const len = Math.floor(floatArr.length / 2);
+      const left = new Float32Array(len);
+      const right = new Float32Array(len);
+      for (let i = 0; i < len; i++) {
+        left[i] = floatArr[i * 2];
+        right[i] = floatArr[i * 2 + 1];
+      }
+      resolve({ left, right, sampleRate: 44100 });
+    });
+  });
+}
+
 function getTrackMimeType(trackId) {
   if (trackMimeCache.has(trackId)) {
     return trackMimeCache.get(trackId);
@@ -486,6 +519,65 @@ const server = http.createServer((req, res) => {
       req.on('data',chunk=>{size+=Buffer.byteLength(chunk);if(size>8*1024*1024)req.destroy();else body+=chunk;});
       req.on('end',()=>{try{const state=phoneSync.saveDjState(JSON.parse(body));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(state));}catch(_){res.writeHead(400);res.end('{}');}});return;
     }
+  }
+
+  if (pathname.startsWith('/api/analyze-track/')) {
+    if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+    const trackId = decodeURIComponent(pathname.substring('/api/analyze-track/'.length));
+    if (!trackId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing trackId' })); return; }
+
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => { if (body.length < 65536) body += chunk; });
+    req.on('end', async () => {
+      try {
+        let reqTrack = null;
+        if (body.trim()) {
+          try {
+            const parsed = JSON.parse(body);
+            reqTrack = parsed.track || (parsed.id ? parsed : null);
+          } catch (_) {}
+        }
+        if (!reqTrack) {
+          const library = getLibraryTracks();
+          reqTrack = library.find(t => String(t.id) === String(trackId)) || { id: trackId };
+        }
+
+        const force = url.searchParams.get('force') === '1';
+        if (!force) {
+          const existingDj = phoneSync.read('dj-state.json', {});
+          const existing = existingDj.profiles?.[trackId];
+          if (existing && AudioProfile.valid(existing) && AudioProfile.texture(existing) && (existing.detail?.frames || 0) >= 20) {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: true, profile: existing, bpm: null, cached: true }));
+            return;
+          }
+        }
+
+        const audioFilePath = getResolvedAudioFilePath(trackId);
+        if (!audioFilePath) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Audio file not found on disk for track ' + trackId }));
+          return;
+        }
+
+        const pcm = await decodePcmServer(audioFilePath);
+        const result = AudioAnalyzer.analyzePcm(pcm.left, pcm.right, pcm.sampleRate, reqTrack);
+        if (!result || !result.profile || !AudioProfile.valid(result.profile)) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to extract acoustic profile' }));
+          return;
+        }
+
+        phoneSync.saveDjState({ profiles: { [trackId]: result.profile } });
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: true, profile: result.profile, bpm: result.bpm }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
   }
 
   if (pathname === '/api/favorite-moments') {

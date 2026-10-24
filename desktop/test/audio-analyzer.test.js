@@ -83,15 +83,74 @@ test("AudioAnalyzer.analyzePcm: формирует полноценный аку
   assert.ok(restored[track.id], "Must survive AudioProfile serialization and restore");
 });
 
-test("AudioAnalyzer.BatchAnalyzer: очередь, пауза, прогресс и завершение", async () => {
+test("AudioAnalyzer.BatchAnalyzer: очередь, фильтрация уже проанализированных треков и server fallback", async () => {
   const analyzer = new AudioAnalyzer.BatchAnalyzer();
-  const tracks = [
-    { id: "t1", duration: 60000, bytes: 1000 },
-    { id: "t2", duration: 60000, bytes: 1000 }
-  ];
-  const existingProfiles = {};
+  const validProfile = {
+    version: 4,
+    signature: "test",
+    vector: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    variance: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
+    timbre: Array(12).fill(0.5),
+    timbreVariance: Array(12).fill(0.01),
+    frames: 24,
+    seconds: 12,
+    positions: Array.from({ length: 24 }, (_, i) => i),
+    detail: { version: 1, mean: Array(7).fill(0.5), frames: 20, seconds: 10, positions: Array.from({ length: 20 }, (_, i) => i) },
+    updatedAt: Date.now()
+  };
 
-  const statusInit = analyzer.getStatus();
-  assert.equal(statusInit.status, "idle");
-  assert.equal(statusInit.isRunning, false);
+  const tracks = [
+    { id: "already_analyzed", duration: 60000 },
+    { id: "needs_analysis", duration: 60000 }
+  ];
+  const existing = {
+    already_analyzed: validProfile
+  };
+
+  let completedTrack = null;
+  let batchDone = false;
+
+  // Mock global fetch for server fallback
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/api/cached-track/")) {
+      return { ok: false, status: 404 };
+    }
+    if (url.includes("/api/analyze-track/")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          profile: validProfile,
+          bpm: 128
+        })
+      };
+    }
+    return { ok: false, status: 500 };
+  };
+
+  try {
+    await new Promise((resolve) => {
+      analyzer.start(tracks, existing, {
+        onTrackComplete: (track, profile, bpm) => {
+          completedTrack = { track, profile, bpm };
+        },
+        onComplete: () => {
+          batchDone = true;
+          resolve();
+        }
+      });
+    });
+
+    assert.equal(analyzer.total, 1, "Only 1 unanalyzed track should enter queue");
+    assert.equal(analyzer.completed, 1);
+    assert.equal(batchDone, true);
+    assert.ok(completedTrack);
+    assert.equal(completedTrack.track.id, "needs_analysis");
+    assert.equal(completedTrack.bpm, 128);
+    assert.equal(AudioProfile.valid(completedTrack.profile), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

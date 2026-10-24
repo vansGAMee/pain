@@ -311,24 +311,50 @@
       this._notifyProgress();
 
       try {
+        let profile = null;
+        let bpm = null;
+        const OfflineCtx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
         const srcUrl = "/api/cached-track/" + encodeURIComponent(track.id) + "?phoneUrl=" + encodeURIComponent(this.phoneUrl || "");
-        const resp = await fetch(srcUrl);
-        if (resp.ok || resp.status === 206) {
-          const arrayBuffer = await resp.arrayBuffer();
-          const OfflineCtx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
-          if (OfflineCtx) {
-            const maxSeconds = 90;
-            const offlineCtx = new OfflineCtx(2, 44100 * maxSeconds, 44100);
-            const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-            const left = audioBuffer.getChannelData(0);
-            const right = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : null;
-            const result = analyzePcm(left, right, audioBuffer.sampleRate, track);
-            if (result && result.profile) {
-              if (this.callbacks.onTrackComplete) {
-                try { this.callbacks.onTrackComplete(track, result.profile, result.bpm); } catch (_) {}
+
+        if (OfflineCtx) {
+          try {
+            const resp = await fetch(srcUrl);
+            if (resp.ok || resp.status === 206) {
+              const arrayBuffer = await resp.arrayBuffer();
+              const maxSeconds = 90;
+              const offlineCtx = new OfflineCtx(2, 44100 * maxSeconds, 44100);
+              const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+              const left = audioBuffer.getChannelData(0);
+              const right = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : null;
+              const result = analyzePcm(left, right, audioBuffer.sampleRate, track);
+              if (result && result.profile) {
+                profile = result.profile;
+                bpm = result.bpm;
               }
             }
-          }
+          } catch (_) {}
+        }
+
+        // Server fallback: if browser decode was unavailable or failed
+        if (!profile && typeof fetch === "function") {
+          try {
+            const fallbackResp = await fetch("/api/analyze-track/" + encodeURIComponent(track.id), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ track })
+            });
+            if (fallbackResp.ok) {
+              const data = await fallbackResp.json();
+              if (data && data.profile) {
+                profile = data.profile;
+                bpm = data.bpm;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (profile && this.callbacks.onTrackComplete) {
+          try { this.callbacks.onTrackComplete(track, profile, bpm); } catch (_) {}
         }
       } catch (err) {
         // Individual decode errors do not abort the entire batch

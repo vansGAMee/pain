@@ -2,7 +2,7 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.AudioProfile=factory();})(globalThis,()=>{
  const Timbre=typeof module==='object'&&module.exports?require('./audio-timbre'):globalThis.AudioTimbre;
  const clamp=n=>Math.max(0,Math.min(1,n));
- const VERSION=4,MAX_FRAMES=360,ANALYSIS_FRAMES=48,BODY_FRAMES=24,MAX_CACHE=750;
+ const VERSION=4,MAX_FRAMES=360,ANALYSIS_FRAMES=48,BODY_FRAMES=24,MAX_CACHE=50000;
  function frame(wave,spectrumDb,sampleRate){
   if(!wave?.length||wave.length>32768||!spectrumDb?.length||spectrumDb.length>16384||!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>384000)return null;
   let mean=0;for(const x of wave){if(!Number.isFinite(x))return null;mean+=x;}mean/=wave.length;
@@ -108,18 +108,18 @@
   const keys=Object.keys(store).sort((a,b)=>(store[b]?.updatedAt||0)-(store[a]?.updatedAt||0));
   for(const id of keys.slice(limit))delete store[id];
  }
- function restore(raw){
+ function restore(raw,limit=MAX_CACHE){
   const result=Object.create(null);
   try{const data=JSON.parse(raw||'{}');if(data&&typeof data==='object'&&!Array.isArray(data))for(const [id,p] of Object.entries(data))if(id.length<=1024&&stored(p))Object.defineProperty(result,id,{value:p,enumerable:true,writable:true,configurable:true});}catch(_){}
-  prune(result);return result;
+  prune(result,limit);return result;
  }
- function persist(store,storage,key='pain_audio_profiles_v4'){
-  prune(store);
+ function persist(store,storage,key='pain_audio_profiles_v4',limit=MAX_CACHE){
+  prune(store,limit);
   try{storage.setItem(key,JSON.stringify(store));return true;}catch(_){}
   // Keep recent evidence usable if the browser quota is shared with other application data.
   const snapshot=Object.assign(Object.create(null),store),half=Math.floor(Object.keys(snapshot).length/2);
-  for(const limit of [half,Math.min(64,Math.floor(half/2))]){
-   if(limit<1)break;prune(snapshot,limit);try{storage.setItem(key,JSON.stringify(snapshot));return true;}catch(_){}
+  for(const stepLimit of [half,Math.min(64,Math.floor(half/2))]){
+   if(stepLimit<1)break;prune(snapshot,stepLimit);try{storage.setItem(key,JSON.stringify(snapshot));return true;}catch(_){}
   }
   return false;
  }
@@ -227,5 +227,5 @@
   if(!audio.paused)start();
   return ()=>{if(disposed)return;disposed=true;stop();for(const remove of listeners)remove();try{source.disconnect(splitter||nodes[0]);splitter?.disconnect();for(const node of nodes)node.disconnect();}catch(_){};};
  }
- return {frame,valid,similarity,calibratedSimilarity,variation,texture,detail,signature,get,observe,restore,persist};
+ return {frame,valid,similarity,calibratedSimilarity,variation,texture,detail,signature,get,observe,restore,persist,prune,MAX_CACHE};
 });

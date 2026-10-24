@@ -46,7 +46,8 @@ test('DC offset is not sound evidence and does not change centered dynamics',()=
 test('cache restore rejects corrupt data and obsolete formats and caps its size',()=>{
  for(const raw of ['broken','null','[]',JSON.stringify({a:{...saved(),version:1}}),JSON.stringify({a:{...saved(),positions:[0]}})])assert.equal(Object.keys(Audio.restore(raw)).length,0);
  const many=Object.fromEntries(Array.from({length:800},(_,i)=>[String(i),{...saved(),updatedAt:i}]));
- const restored=Audio.restore(JSON.stringify(many));assert.equal(Object.keys(restored).length,750);assert.equal(restored['0'],undefined);assert.ok(restored['799']);
+ const restored=Audio.restore(JSON.stringify(many),750);assert.equal(Object.keys(restored).length,750);assert.equal(restored['0'],undefined);assert.ok(restored['799']);
+ const defaultRestored=Audio.restore(JSON.stringify(many));assert.equal(Object.keys(defaultRestored).length,800);
  const special=Audio.restore('{"__proto__":'+JSON.stringify(saved())+'}');assert.equal(Object.getPrototypeOf(special),null);assert.ok(Object.hasOwn(special,'__proto__'));assert.equal({}.version,undefined);
 });
 test('storage quota pressure evicts old evidence; denied storage does not throw',()=>{
