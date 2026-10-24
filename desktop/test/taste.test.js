@@ -14,11 +14,15 @@ test('prefetch agrees with smart next; queue remains isolated and does not repea
  const q=new Queue({shuffleMode:'smart'});q.setContext('library',[{id:'a'},{id:'b'},{id:'c'}],0);
  const peek=q.peekNext().id;assert.equal(q.next().id,peek);const second=q.next().id;assert.notEqual(second,peek);assert.notEqual(second,'a');
 });
-test('discovery breaks a favourites bubble without promoting repeatedly skipped music',()=>{
+test('discovery never forces an unknown song or promotes repeatedly skipped music',()=>{
  const now=Date.now(),liked={id:'liked',artist:'Familiar',favorite:1},fresh={id:'fresh',artist:'New'},skip={id:'skip',artist:'Avoided'};
  const plays=[];for(let i=0;i<30;i++)for(const track of ['liked','skip'])plays.push({track,started:now-(i*2+(track==='liked'?1:2))*60000,heard:track==='liked'?180000:3000,duration:180000,finished:track==='liked'?1:0});
  const model=new Taste([liked,fresh,skip],plays,now);
- for(let seed=1;seed<=30;seed++)assert.equal(model.choose(null,[liked,fresh,skip],{},{step:3,seed}).track.id,'fresh');
+ for(let seed=1;seed<=30;seed++){
+  const chosen=model.choose(null,[liked,fresh,skip],{},{step:3,seed});
+  assert.notEqual(chosen.track.id,'skip');
+  assert.equal(chosen.track.id,model.choose(null,[liked,fresh,skip],{},{step:0,seed}).track.id,'queue position is not preference evidence');
+ }
  assert.equal(model.score(null,liked).probability,model.score(null,{...liked,favorite:0}).probability);
 });
 test('shuffle varies between seeds and preview stays stable for the same decision',()=>{

@@ -60,6 +60,10 @@
             <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
             <span class="nav-label" data-en="Devices & Sync" data-ru="Устройства">Devices & Sync</span>
           </li>
+          <li class="nav-item" data-view="taste-graph">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="8" x2="10" y2="16"/><line x1="16" y1="8" x2="14" y2="16"/><line x1="9" y1="6" x2="15" y2="6"/></svg>
+            <span class="nav-label" data-en="Taste Map" data-ru="Карта вкуса">Taste Map</span>
+          </li>
           <li class="nav-item" data-view="joint-ai">
             <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V17a1 1 0 0 1-2 0v-.07A7.003 7.003 0 0 1 5.07 11H5a1 1 0 0 1 0-2h.07A7.003 7.003 0 0 1 11 5.07V5a1 1 0 0 1 2 0v.07A7.003 7.003 0 0 1 18.93 11H19a1 1 0 0 1 0 2h-.07A7.003 7.003 0 0 1 13 16.93z"/><circle cx="12" cy="11" r="2.5"/></svg>
             <span class="nav-label" data-en="Joint AI" data-ru="Joint AI">Joint AI</span>
@@ -581,16 +585,40 @@
           </div>
         </section>
 
+        <!-- VIEW: TASTE MAP -->
+        <section class="view-pane" id="view-taste-graph">
+          <div class="view-hero-header">
+            <div>
+              <h1 class="view-heading" data-en="Taste Map" data-ru="Карта вкуса">Taste Map</h1>
+              <div class="view-subheading" data-en="Tracks that play together form clusters. Size = plays. Gold = liked. Red = skipped more than played." data-ru="Треки, которые играют вместе, образуют кластеры. Размер = прослушивания. Золото = лайк. Красный = скипал чаще, чем слушал.">Tracks that play together form clusters.</div>
+            </div>
+            <div class="view-hero-actions">
+              <button class="btn-minimal primary" id="tasteGraphRebuildBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                <span data-en="Rebuild" data-ru="Перестроить">Rebuild</span>
+              </button>
+            </div>
+          </div>
+          <div class="chart-card" style="position: relative; min-height: 600px; overflow: hidden;">
+            <div id="tasteGraphContainer" style="width: 100%; min-height: 600px;"></div>
+            <div id="tasteGraphLegend" style="position: absolute; top: 12px; right: 12px; background: var(--bg-surface, #fff); padding: 10px 14px; border-radius: 8px; font-size: 11px; border: 1px solid var(--border, rgba(0,0,0,0.1)); line-height: 1.6;">
+              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #d4a017; margin-right: 6px;"></span><span data-en="Liked" data-ru="Лайк">Liked</span></div>
+              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #7c4dff; margin-right: 6px;"></span><span data-en="Played" data-ru="Слушал">Played</span></div>
+              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #c75c5c; margin-right: 6px;"></span><span data-en="More skips" data-ru="Больше скипов">More skips</span></div>
+            </div>
+          </div>
+        </section>
+
         <!-- VIEW 7: JOINT AUDIO AI LAB -->
         <section class="view-pane" id="view-joint-ai">
           <div class="view-hero-header">
             <div>
               <div class="joint-model-badge">
                 <span class="joint-badge-dot"></span>
-                <span id="jointModelBadgeText">CLAP Sound + ListenBrainz Graph · 56 875 треков</span>
+                <span id="jointModelBadgeText">Подбор по опорным трекам</span>
               </div>
               <h1 class="view-heading" data-en="Joint Audio AI" data-ru="Joint Audio AI">Joint Audio AI</h1>
-              <div class="view-subheading" data-en="50-track neural playlist synthesis powered by real acoustic spectra & co-listening graph." data-ru="Генерация плейлиста из 50 треков нейросетью CLAP (спектры звука) и графом со-прослушиваний.">50-track neural playlist synthesis powered by real acoustic spectra & co-listening graph.</div>
+              <div class="view-subheading" data-en="Find up to 50 tracks from your library or the available catalog." data-ru="Подбор до 50 треков из вашей библиотеки или доступного каталога.">Find up to 50 tracks from your library or the available catalog.</div>
             </div>
           </div>
 
@@ -653,19 +681,19 @@
                 <div class="joint-filters-title" data-en="Recommendation Filters" data-ru="Настройки и фильтры подбора">Настройки и фильтры подбора</div>
 
                 <div class="joint-filter-row">
-                  <label class="joint-filter-label" data-en="Popularity" data-ru="Популярность">Популярность:</label>
+                  <label class="joint-filter-label" data-en="Catalog popularity" data-ru="Популярность в каталоге">Популярность в каталоге:</label>
                   <select class="joint-select" id="jointFilterPopularity">
                     <option value="all" data-en="Balanced (All Tiers)" data-ru="Сбалансированно (все треки)">Сбалансированно (все треки)</option>
-                    <option value="underground" data-en="💎 Underground (Rare Gems)" data-ru="💎 Underground (Редкие находки)">💎 Underground (Редкие находки)</option>
-                    <option value="mid" data-en="🌿 Moderate Popularity" data-ru="🌿 Умеренная популярность">🌿 Умеренная популярность</option>
-                    <option value="hits" data-en="🔥 Mainstream Hits Only" data-ru="🔥 Популярные хиты">🔥 Популярные хиты</option>
+                    <option value="underground" data-en="Lower third of catalog" data-ru="Нижняя треть каталога">Нижняя треть каталога</option>
+                    <option value="mid" data-en="Middle third of catalog" data-ru="Средняя треть каталога">Средняя треть каталога</option>
+                    <option value="hits" data-en="Upper third of catalog" data-ru="Верхняя треть каталога">Верхняя треть каталога</option>
                   </select>
                 </div>
 
                 <div class="joint-filter-row">
                   <label class="joint-filter-label" data-en="Artist Variety" data-ru="Артисты">Разнообразие:</label>
                   <select class="joint-select" id="jointFilterArtistLimit">
-                    <option value="1" data-en="Max 1 track per artist (50 artists)" data-ru="1 трек на артиста (50 разных)">1 трек на артиста (50 разных)</option>
+                    <option value="1" data-en="Up to 1 track per artist" data-ru="До 1 трека на артиста">До 1 трека на артиста</option>
                     <option value="2" selected data-en="Standard (Up to 2 per artist)" data-ru="Стандарт (до 2 на артиста)">Стандарт (до 2 на артиста)</option>
                     <option value="3" data-en="Deeper Discography (Up to 3)" data-ru="Глубже (до 3 на артиста)">Глубже (до 3 на артиста)</option>
                   </select>
@@ -675,14 +703,14 @@
                   <label class="joint-filter-label" data-en="Audio Spectra" data-ru="Звуковые спектры">Спектр звука:</label>
                   <select class="joint-select" id="jointFilterAudioOnly">
                     <option value="all" data-en="All Candidates (Sound + Graph)" data-ru="Все треки (Звук + Граф)">Все треки (Звук + Граф)</option>
-                    <option value="audio_only" data-en="CLAP 512D Audio Only" data-ru="Только реальный звук (CLAP 512D)">Только реальный звук (CLAP 512D)</option>
+                    <option value="audio_only" data-en="With measured audio features" data-ru="С измеренными аудиопризнаками">С измеренными аудиопризнаками</option>
                   </select>
                 </div>
 
                 <div class="joint-filter-row">
                   <label class="joint-filter-label" data-en="Local Library" data-ru="Локальная фонотека">Библиотека:</label>
                   <select class="joint-select" id="jointFilterLocalOnly">
-                    <option value="all" data-en="56k Catalog + Library" data-ru="Каталог 56k + Библиотека">Каталог 56k + Библиотека</option>
+                    <option value="all" data-en="Available catalog and library" data-ru="Доступный каталог и библиотека">Доступный каталог и библиотека</option>
                     <option value="local_only" data-en="Only Tracks in Library" data-ru="Только из моей библиотеки">Только из моей библиотеки</option>
                   </select>
                 </div>
@@ -691,7 +719,7 @@
               <div class="joint-generate-box">
                 <button class="joint-btn-primary" id="jointGenerateBtn">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                  <span id="jointGenerateBtnText" data-en="Synthesize 50-Track Playlist" data-ru="Сгенерировать 50 треков (Joint AI)">Сгенерировать 50 треков (Joint AI)</span>
+                  <span id="jointGenerateBtnText" data-en="Find up to 50 tracks" data-ru="Подобрать до 50 треков">Подобрать до 50 треков</span>
                 </button>
               </div>
             </div>
@@ -701,7 +729,7 @@
             <div class="joint-card">
               <div class="joint-card-header-row">
                 <div>
-                  <div class="joint-card-title" data-en="Generated 50-Track Slate" data-ru="Сгенерированный плейлист (50 треков)">Сгенерированный плейлист</div>
+                  <div class="joint-card-title" data-en="Recommendations" data-ru="Подобранные треки">Сгенерированный плейлист</div>
                   <div class="joint-card-sub" id="jointResultsMeta">Ожидание запуска генерации...</div>
                 </div>
                 <button class="btn-minimal primary" id="jointSavePlaylistBtn" style="display: none;">
@@ -713,8 +741,8 @@
               <div class="joint-results-list" id="jointResultsList">
                 <div class="joint-empty-state">
                   <div class="joint-empty-icon">🎧</div>
-                  <div class="joint-empty-title">Нейросеть готова к работе</div>
-                  <div class="joint-empty-sub">Выберите 1–5 сид-треков слева и нажмите «Сгенерировать 50 треков».</div>
+                  <div class="joint-empty-title">Добавьте опорные треки</div>
+                  <div class="joint-empty-sub">Выберите 1–5 сид-треков слева и нажмите «Подобрать до 50 треков».</div>
                 </div>
               </div>
             </div>
@@ -1310,6 +1338,7 @@
   <script src="auto-eq.js"></script>
   <script src="smart-volume.js"></script>
   <script src="comfort-utils.js"></script>
+  <script src="taste-graph.js"></script>
   <script src="taste-model.js"></script>
   <script src="queue-engine.js"></script>
   <script src="joint-ai.js"></script>

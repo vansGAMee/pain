@@ -5,10 +5,15 @@
    this.neighbors=new Map();
    const counts=new Map(),edges=new Map(),records=new Set();
    let recent=[],sessionTracks=new Set(),sessionPairs=new Set(),start=0,last=0;
-   const rows=events.filter(e=>e&&e.id!=null&&Number.isFinite(e.started)&&e.started>0&&e.started<=now).sort((a,b)=>a.started-b.started).slice(-6000);
+   // Bound distinct events, not sync copies: repeated imports must not evict
+   // earlier independent sessions and silently destroy learned associations.
+   const rows=events.filter(e=>{
+    if(!e||e.id==null||!Number.isFinite(e.started)||e.started<=0||e.started>now)return false;
+    const record=JSON.stringify([String(e.id),e.started]);
+    if(records.has(record))return false;records.add(record);return true;
+   }).sort((a,b)=>a.started-b.started).slice(-6000);
    for(const row of rows){
-    const id=String(row.id),record=JSON.stringify([id,row.started]);
-    if(records.has(record))continue;records.add(record);
+    const id=String(row.id);
     if(!start||row.started-last>30*60000||row.started-start>2*3600000){recent=[];sessionTracks=new Set();sessionPairs=new Set();start=row.started;}
     last=row.started;
     if(row.skipped||!Number.isFinite(row.quality)||row.quality<.75){recent=[];continue;}

@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
 const { exec, spawn } = require('child_process');
-const cp = require('child_process');
+const { decodePcmServer } = require('./audio-decode');
+const activeAudioAnalyses = new Set();
+const MAX_CONCURRENT_AUDIO_ANALYSES = 2;
 
 const lyricsRoute = require('./lyrics-store');
 const parseRange = require('./range');
@@ -320,7 +322,7 @@ function getLibraryTracks() {
   }
 }
 
-function getResolvedAudioFilePath(trackId) {
+function getResolvedAudioFilePath(trackId, readOnly = false) {
   const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
   const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
 
@@ -330,7 +332,7 @@ function getResolvedAudioFilePath(trackId) {
       if (sz >= 4096) {
         return cachedFile;
       }
-      try { fs.unlinkSync(cachedFile); } catch (_) {}
+      if (!readOnly) { try { fs.unlinkSync(cachedFile); } catch (_) {} }
     }
   } catch (_) {}
 
@@ -344,7 +346,7 @@ function getResolvedAudioFilePath(trackId) {
       const dlPath = path.join(DOWNLOADS_DIR, safeFilename);
       if (fs.existsSync(dlPath) && fs.statSync(dlPath).size >= 4096) {
         try {
-          if (!fs.existsSync(cachedFile)) {
+          if (!readOnly && !fs.existsSync(cachedFile)) {
             try {
               fs.linkSync(dlPath, cachedFile);
             } catch (_) {
@@ -360,35 +362,6 @@ function getResolvedAudioFilePath(trackId) {
   return null;
 }
 
-function decodePcmServer(audioFilePath) {
-  return new Promise((resolve, reject) => {
-    const ff = cp.spawn('ffmpeg', [
-      '-i', audioFilePath,
-      '-t', '90',
-      '-f', 'f32le',
-      '-ac', '2',
-      '-ar', '44100',
-      '-loglevel', 'quiet',
-      'pipe:1'
-    ]);
-    const chunks = [];
-    ff.stdout.on('data', chunk => chunks.push(chunk));
-    ff.on('error', reject);
-    ff.on('close', code => {
-      if (code !== 0) return reject(new Error('ffmpeg exited with code ' + code));
-      const total = Buffer.concat(chunks);
-      const floatArr = new Float32Array(total.buffer, total.byteOffset, Math.floor(total.byteLength / 4));
-      const len = Math.floor(floatArr.length / 2);
-      const left = new Float32Array(len);
-      const right = new Float32Array(len);
-      for (let i = 0; i < len; i++) {
-        left[i] = floatArr[i * 2];
-        right[i] = floatArr[i * 2 + 1];
-      }
-      resolve({ left, right, sampleRate: 44100 });
-    });
-  });
-}
 
 function getTrackMimeType(trackId) {
   if (trackMimeCache.has(trackId)) {
@@ -523,58 +496,57 @@ const server = http.createServer((req, res) => {
 
   if (pathname.startsWith('/api/analyze-track/')) {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
-    const trackId = decodeURIComponent(pathname.substring('/api/analyze-track/'.length));
-    if (!trackId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing trackId' })); return; }
-
-    let body = '';
+    let trackId;
+    try { trackId = decodeURIComponent(pathname.substring('/api/analyze-track/'.length)); }
+    catch (_) { res.writeHead(400); res.end(); return; }
+    const reply = (status, value) => { if (!res.destroyed) { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); } };
+    if (!trackId) { reply(400, { error: 'Missing trackId' }); return; }
+    let body = '', bodyBytes = 0;
     req.setEncoding('utf8');
-    req.on('data', chunk => { if (body.length < 65536) body += chunk; });
+    req.on('data', chunk => { bodyBytes += Buffer.byteLength(chunk); if (bodyBytes <= 65536) body += chunk; });
     req.on('end', async () => {
+      if (bodyBytes > 65536) { reply(413, { error: 'Analysis request is too large' }); return; }
+      let requestedTrack;
+      try { const parsed = body.trim() ? JSON.parse(body) : {}; requestedTrack = parsed.track || (parsed.id ? parsed : null); }
+      catch (_) { reply(400, { error: 'Invalid JSON' }); return; }
+      if (requestedTrack && String(requestedTrack.id) !== trackId) { reply(400, { error: 'Track ID mismatch' }); return; }
+      // Metadata is authoritative only when it comes from the saved library.
+      // The request may not label an arbitrary cached file as another song.
+      const track = getLibraryTracks().find(t => String(t.id) === trackId);
+      if (!track) { reply(404, { error: 'Track not found in the saved library' }); return; }
+      const file = getResolvedAudioFilePath(trackId, true);
+      if (!file) { reply(404, { error: 'Audio file not found on disk' }); return; }
+      let stat;
+      try { stat = fs.statSync(file); } catch (_) { reply(404, { error: 'Audio file is unavailable' }); return; }
+      if (url.searchParams.get('force') !== '1') {
+        const existing = phoneSync.read('dj-state.json', {}).profiles?.[trackId];
+        if (AudioAnalyzer.complete(existing, track) && existing.analysis.source?.bytes === stat.size && existing.analysis.source?.modified === stat.mtimeMs) {
+          reply(200, { success: true, profile: existing, bpm: null, cached: true }); return;
+        }
+      }
+      if (activeAudioAnalyses.has(trackId) || activeAudioAnalyses.size >= MAX_CONCURRENT_AUDIO_ANALYSES) {
+        reply(429, { error: 'Audio analysis is busy; retry after the current track' }); return;
+      }
+      const abort = new AbortController(), cancel = () => abort.abort();
+      res.on('close', cancel);
+      activeAudioAnalyses.add(trackId);
       try {
-        let reqTrack = null;
-        if (body.trim()) {
-          try {
-            const parsed = JSON.parse(body);
-            reqTrack = parsed.track || (parsed.id ? parsed : null);
-          } catch (_) {}
+        const pcm = await decodePcmServer(file, { signal: abort.signal });
+        if (abort.signal.aborted) return;
+        const result = AudioAnalyzer.analyzePcm(pcm.left, pcm.right, pcm.sampleRate, track, pcm.sampling);
+        if (!result || !AudioAnalyzer.complete(result.profile, track)) {
+          reply(422, { error: 'Insufficient measurable audio for a complete profile' }); return;
         }
-        if (!reqTrack) {
-          const library = getLibraryTracks();
-          reqTrack = library.find(t => String(t.id) === String(trackId)) || { id: trackId };
-        }
-
-        const force = url.searchParams.get('force') === '1';
-        if (!force) {
-          const existingDj = phoneSync.read('dj-state.json', {});
-          const existing = existingDj.profiles?.[trackId];
-          if (existing && AudioProfile.valid(existing) && AudioProfile.texture(existing) && (existing.detail?.frames || 0) >= 20) {
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ success: true, profile: existing, bpm: null, cached: true }));
-            return;
-          }
-        }
-
-        const audioFilePath = getResolvedAudioFilePath(trackId);
-        if (!audioFilePath) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Audio file not found on disk for track ' + trackId }));
-          return;
-        }
-
-        const pcm = await decodePcmServer(audioFilePath);
-        const result = AudioAnalyzer.analyzePcm(pcm.left, pcm.right, pcm.sampleRate, reqTrack);
-        if (!result || !result.profile || !AudioProfile.valid(result.profile)) {
-          res.writeHead(422, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Failed to extract acoustic profile' }));
-          return;
-        }
-
+        const after = fs.statSync(file);
+        if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) { reply(409, { error: 'Audio file changed during analysis' }); return; }
+        result.profile.analysis.source = { bytes: stat.size, modified: stat.mtimeMs };
         phoneSync.saveDjState({ profiles: { [trackId]: result.profile } });
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ success: true, profile: result.profile, bpm: result.bpm }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err.message }));
+        reply(200, { success: true, profile: result.profile, bpm: result.bpm });
+      } catch (error) {
+        if (!abort.signal.aborted) reply(500, { error: error.message });
+      } finally {
+        res.removeListener('close', cancel);
+        activeAudioAnalyses.delete(trackId);
       }
     });
     return;

@@ -14,7 +14,15 @@
   const result=Audio.restore(JSON.stringify(a.profiles||{}));
   for(const [id,p] of Object.entries(Audio.restore(JSON.stringify(b.profiles||{})))){
    const old=result[id];
-   if(!old||old.signature!==p.signature&&p.updatedAt>old.updatedAt||old.signature===p.signature&&(p.frames>old.frames||p.frames===old.frames&&(p.detail?.frames||0)>(old.detail?.frames||0)))
+   const full=x=>x?.analysis?.method==='stratified-pcm-v1'&&!!Audio.texture(x)&&!!Audio.detail(x);
+   const incomingFull=full(p),oldFull=full(old);
+   // A complete-file measurement supersedes an intro snapshot even when the
+   // snapshot contains more frames. Re-analysis must also replace stale PCM
+   // evidence with the same frame count; frame count is not a freshness clock.
+   const sameFile=old&&old.signature===p.signature;
+   const newerFull=sameFile&&incomingFull&&(!oldFull||p.updatedAt>old.updatedAt);
+   const morePartial=sameFile&&!incomingFull&&!oldFull&&(p.frames>old.frames||p.frames===old.frames&&(p.detail?.frames||0)>(old.detail?.frames||0));
+   if(!old||old.signature!==p.signature&&p.updatedAt>old.updatedAt||newerFull||morePartial)
     Object.defineProperty(result,id,{value:p,enumerable:true,writable:true,configurable:true});
   }
   const av=vibes(a.vibes),bv=vibes(b.vibes),chosen=bv&&(!av||bv.updatedAt>av.updatedAt)?bv:av;

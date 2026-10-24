@@ -31,7 +31,7 @@ test("AudioAnalyzer: computeSpectrumDb вычисляет точный спек�
   assert.ok(Math.abs(peakHz - freq) < 25, "Peak bin must accurately identify 1000 Hz tone");
 });
 
-test("AudioAnalyzer.analyzePcm: формирует полноценный акустический профиль (6D + 12D MFCC + 7D инструменты)", () => {
+test("AudioAnalyzer.analyzePcm: формирует полноценный акустический профиль (6D + 12D MFCC + 7D spectral contrast)", () => {
   const sampleRate = 44100;
   const durationSec = 120;
   const numSamples = sampleRate * durationSec;
@@ -87,7 +87,8 @@ test("AudioAnalyzer.BatchAnalyzer: очередь, фильтрация уже �
   const analyzer = new AudioAnalyzer.BatchAnalyzer();
   const validProfile = {
     version: 4,
-    signature: "test",
+    signature: AudioProfile.signature({ id: "already_analyzed", duration: 60000 }),
+    analysis: { method: "stratified-pcm-v1" },
     vector: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
     variance: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
     timbre: Array(12).fill(0.5),
@@ -153,4 +154,91 @@ test("AudioAnalyzer.BatchAnalyzer: очередь, фильтрация уже �
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('PCM windows cover the tail, record actual measured time, and never charge silent positions', () => {
+  const rate = 22050, duration = 30;
+  const pcm = Float32Array.from({ length: rate * duration }, (_, i) => {
+    const time = i / rate;
+    if (time < 5) return 0;
+    return .25 * Math.sin(2 * Math.PI * (time < 15 ? 100 : 5000) * time);
+  });
+  const { profile } = AudioAnalyzer.analyzePcm(pcm, null, rate, { id: 'sections', duration: duration * 1000 });
+  assert.ok(profile.positions.every(p => p * .5 >= 5), 'silence must not consume positions');
+  assert.ok(profile.analysis.lastSecond > duration - 1, 'tail must be measured');
+  assert.ok(profile.vector[3] > .5, 'the high-frequency second half must affect the whole-track profile');
+  assert.equal(profile.seconds, profile.analysis.fftFrames * AudioAnalyzer.N / rate);
+  assert.ok(profile.seconds < profile.frames * .5, 'unused samples between FFT windows are not measured seconds');
+  assert.equal(new Set(profile.positions).size, profile.frames);
+});
+
+test('FFT rejects corrupt samples instead of replacing them with silence, and removes DC', () => {
+  const wave = Float32Array.from({ length: AudioAnalyzer.N }, (_, i) => .2 * Math.sin(i * .3));
+  const baseline = AudioAnalyzer.computeSpectrumDb(wave);
+  const offset = AudioAnalyzer.computeSpectrumDb(wave.map(x => x + .5));
+  const peak = baseline.indexOf(Math.max(...baseline));
+  assert.ok(Math.abs(baseline[peak] - offset[peak]) < 1e-4);
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    const input = wave.slice(); input[20] = bad;
+    assert.equal(AudioAnalyzer.computeSpectrumDb(input), null);
+  }
+});
+
+function fullProfile(track) {
+  return { version: 4, signature: AudioProfile.signature(track), vector: Array(6).fill(.5), variance: Array(6).fill(0),
+    timbre: Array(12).fill(.5), timbreVariance: Array(12).fill(0), frames: 24, seconds: 12,
+    positions: Array.from({ length: 24 }, (_, i) => i), analysis: { method: 'stratified-pcm-v1' },
+    detail: { version: 1, frames: 24, seconds: 12, positions: Array.from({ length: 24 }, (_, i) => i), mean: Array(7).fill(.5) } };
+}
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('batch reports failures separately and rejects stale cached file identities', async t => {
+  const tracks = [{ id: 'valid', bytes: 2 }, { id: 'failed' }], calls = [];
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async url => {
+    calls.push(url);
+    return url.includes('valid') ? { ok: true, json: async () => ({ profile: fullProfile(tracks[0]) }) } : { ok: false, status: 422 };
+  };
+  const analyzer = new AudioAnalyzer.BatchAnalyzer(), errors = [];
+  const summary = await new Promise(resolve => analyzer.start(tracks, { valid: fullProfile({ ...tracks[0], bytes: 1 }) }, {
+    onTrackError: track => errors.push(track.id), onComplete: resolve
+  }));
+  assert.equal(calls.length, 2);
+  assert.equal(summary.completed, 2);
+  assert.equal(summary.succeeded, 1);
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(errors, ['failed']);
+});
+
+test('pause/resume never starts a second in-flight decode, and stop discards late results', async t => {
+  const original = globalThis.fetch, requests = [], completed = [];
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = (url, options) => new Promise(resolve => requests.push({ url, options, resolve }));
+  const analyzer = new AudioAnalyzer.BatchAnalyzer();
+  t.after(() => analyzer.stop());
+  analyzer.start([{ id: 'a' }, { id: 'b' }], {}, { onTrackComplete: track => completed.push(track.id) });
+  analyzer.pause(); analyzer.resume();
+  assert.equal(requests.length, 1);
+  analyzer.stop();
+  assert.equal(requests[0].options.signal.aborted, true);
+  const done = new Promise(resolve => analyzer.start([{ id: 'c' }], {}, { onTrackComplete: track => completed.push(track.id), onComplete: resolve }));
+  requests[0].resolve({ ok: true, json: async () => ({ profile: fullProfile({ id: 'a' }) }) });
+  await tick();
+  assert.deepEqual(completed, []);
+  assert.equal(analyzer.completed, 0);
+  requests[1].resolve({ ok: true, json: async () => ({ profile: fullProfile({ id: 'c' }) }) });
+  const summary = await done;
+  assert.deepEqual(completed, ['c']);
+  assert.equal(summary.succeeded, 1);
+});
+
+test('explicit reanalysis reaches the server with force=1', async t => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  const track = { id: 'same' }, profile = fullProfile(track);
+  globalThis.fetch = async url => { assert.ok(url.endsWith('?force=1')); return { ok: true, json: async () => ({ profile }) }; };
+  const analyzer = new AudioAnalyzer.BatchAnalyzer();
+  await new Promise(resolve => analyzer.start([track], { same: profile }, { overwriteExisting: true, onComplete: resolve }));
+  assert.equal(analyzer.succeeded, 1);
 });

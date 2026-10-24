@@ -158,23 +158,7 @@
     NEUTRAL: 'neutral'
   };
 
-  /**
-   * Detects track mood / atmosphere based on tags, title, and metadata.
-   */
-  function detectTrackVibe(track) {
-    if (!track) return VIBE_MOODS.NEUTRAL;
-    const str = `${track.title || ''} ${track.album || ''} ${track.artist || ''}`.toLowerCase();
-    if (/\b(acoustic|unplugged|piano|lo-?fi|chill|ambient|slow|slowed|sleep|quiet|calm|ballad)\b/i.test(str)) {
-      return VIBE_MOODS.CHILL;
-    }
-    if (/\b(phonk|remix|club|speed|fast|hard|bass|drop|dance|rave|drill|electro|house|techno|trap)\b/i.test(str)) {
-      return VIBE_MOODS.ENERGETIC;
-    }
-    if (/\b(live|concert|tour|acoustic version)\b/i.test(str)) {
-      return VIBE_MOODS.LIVE;
-    }
-    return VIBE_MOODS.NEUTRAL;
-  }
+  // detectTrackVibe removed: vibe profiling no longer uses title/metadata heuristics
 
   /**
    * Circadian rhythm profiling: adjusts flow based on time of day.
@@ -529,10 +513,11 @@
     smartCandidates() {
       const allowed = this.tracks.map((_, i) => i).filter(i => !this.excludedTracks.has(String(this.tracks[i].id)));
       const currentTrack = this.getCurrentTrack();
-      const currentRec = currentTrack ? Taste.recordingIdentity(currentTrack) : null;
-      const remaining = allowed.filter(i => i !== this.currentIndex && (!currentRec || Taste.recordingIdentity(this.tracks[i]) !== currentRec) && this.unplayedIndices.has(i));
+      const recId = t => (typeof Taste !== 'undefined' && Taste?.recordingIdentity) ? Taste.recordingIdentity(t) : null;
+      const currentRec = currentTrack ? recId(currentTrack) : null;
+      const remaining = allowed.filter(i => i !== this.currentIndex && (!currentRec || recId(this.tracks[i]) !== currentRec) && this.unplayedIndices.has(i));
       if (remaining.length || this.loopMode === 'off') return remaining;
-      const others = allowed.filter(i => i !== this.currentIndex && (!currentRec || Taste.recordingIdentity(this.tracks[i]) !== currentRec));
+      const others = allowed.filter(i => i !== this.currentIndex && (!currentRec || recId(this.tracks[i]) !== currentRec));
       return others.length ? others : allowed;
     }
 
@@ -717,7 +702,6 @@
   QueueEngine.detectBpmFromPcm = detectBpmFromPcm;
   QueueEngine.harmonicBpmDistance = harmonicBpmDistance;
   QueueEngine.scoreSmartTransition = scoreSmartTransition;
-  QueueEngine.detectTrackVibe = detectTrackVibe;
   QueueEngine.getCircadianVibe = getCircadianVibe;
 
   return QueueEngine;

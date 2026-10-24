@@ -61,13 +61,14 @@ test('no suitable variation leaves the existing ranking untouched, including exc
  assert.equal(pick.rank,pick.score,'a recently rejected variation cannot make good songs less desirable');
 });
 
-test('saved vibes, discovery cadence and peek/next remain stable',()=>{
+test('saved vibes, relevance across queue positions and peek/next remain stable',()=>{
  const f=fixture(),m=new Taste(f.tracks,f.plays,NOW,f.profiles);
  for(let seed=1;seed<=20;seed++){
   const frozen=m.choose(f.current,f.candidates,{}, {...f.context,seed,vibeProfile:f.profiles.current});
   assert.ok(frozen.soundSimilarity>.85);assert.notEqual(frozen.track,f.far);
   const discover=m.choose(f.current,f.candidates,{}, {...f.context,seed,step:7});
-  assert.equal(discover.track,f.unknown,'existing bounded discovery is unchanged');
+  assert.ok(discover.soundSimilarity>.85,'queue position never forces an unmeasured detour');
+  assert.equal(discover.track,m.choose(f.current,f.candidates,{}, {...f.context,seed,step:0}).track);
  }
  const q=new Queue({shuffleMode:'smart',loopMode:'off',now:()=>NOW,audioProfiles:f.profiles,stats:{plays:f.plays}});
  q.setContext('library',f.tracks);q.smartSeed=42;const seen=new Set([q.getCurrentTrack().id]);
@@ -75,13 +76,13 @@ test('saved vibes, discovery cadence and peek/next remain stable',()=>{
  assert.equal(q.next(),null);
 });
 
-test('saved vibes keep good measured fits on discovery turns without blocking an unmeasured-only queue',()=>{
+test('saved vibes and ordinary sessions keep measured fits without blocking an unmeasured-only queue',()=>{
  const f=fixture(),m=new Taste(f.tracks,f.plays,NOW,f.profiles);
  for(const step of [7,15,23])for(let seed=1;seed<=12;seed++){
   const context={...f.context,step,seed,vibeProfile:f.profiles.current};
   const chosen=m.choose(f.current,f.candidates,{},context);
   assert.ok(chosen.soundSimilarity>.85,'discovery should keep the saved sound when good measured choices exist');
   assert.equal(m.choose(f.current,[f.unknown],{},context).track,f.unknown,'a restricted queue must still play');
-  assert.equal(m.choose(f.current,f.candidates,{}, {...context,vibeProfile:null}).track,f.unknown,'ordinary discovery is unchanged');
+  assert.ok(m.choose(f.current,f.candidates,{}, {...context,vibeProfile:null}).soundSimilarity>.85,'ordinary sessions also respect measured relevance');
  }
 });

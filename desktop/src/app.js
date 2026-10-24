@@ -1169,6 +1169,8 @@
       renderVinylPlayerView();
     } else if (state.currentView === 'insights') {
       renderInsights();
+    } else if (state.currentView === 'taste-graph') {
+      renderTasteGraph();
     } else if (state.currentView === 'joint-ai') {
       renderJointAIView();
     }
@@ -2910,7 +2912,7 @@
     let analyzed = 0;
     for (const t of tracks) {
       const p = audioProfiles[t.id];
-      if (p && AudioProfile.valid(p) && AudioProfile.texture(p)) analyzed++;
+      if (typeof AudioAnalyzer !== 'undefined' && AudioAnalyzer.complete(p, t)) analyzed++;
     }
     const percent = total > 0 ? Math.round((analyzed / total) * 100) : 0;
     DOM.audioAnalysisCountLabel.textContent = ru
@@ -2984,7 +2986,7 @@
       let analyzed = 0;
       for (const t of tracks) {
         const p = audioProfiles[t.id];
-        if (p && AudioProfile.valid(p) && AudioProfile.texture(p)) analyzed++;
+        if (typeof AudioAnalyzer !== 'undefined' && AudioAnalyzer.complete(p, t)) analyzed++;
       }
       const overwrite = total > 0 && analyzed >= total;
       batchAudioAnalyzer.phoneUrl = state.phoneUrl;
@@ -3006,7 +3008,10 @@
         onComplete: () => {
           syncSharedAudio();
           updateAudioAnalysisSettingsUI();
-          showToast(state.lang === 'ru' ? 'Анализ фонотеки завершён' : 'Library analysis complete', '✓');
+          const failed = batchAudioAnalyzer.failed || 0;
+          showToast(failed
+            ? (state.lang === 'ru' ? `Не удалось проанализировать: ${failed}. Можно повторить.` : `Analysis failed for ${failed} tracks. You can retry.`)
+            : (state.lang === 'ru' ? 'Анализ фонотеки завершён' : 'Library analysis complete'), failed ? '⚠️' : '✓');
         }
       });
       updateAudioAnalysisSettingsUI();
@@ -4042,6 +4047,29 @@
     }, 1500);
   }
 
+  let tasteGraphData = null;
+  function buildTasteGraphData() {
+    if (typeof TasteGraph === 'undefined') return null;
+    const plays = [...(state.stats?.plays || []), ...readTasteSkips()];
+    return TasteGraph.buildGraph(state.tracks, plays, {
+      excludedTracks: state.excludedRecommendations,
+      now: Date.now()
+    });
+  }
+  function renderTasteGraph() {
+    const container = document.getElementById('tasteGraphContainer');
+    if (!container || typeof TasteGraph === 'undefined') return;
+    if (!tasteGraphData) tasteGraphData = buildTasteGraphData();
+    if (!tasteGraphData || !tasteGraphData.nodes.length) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--ink-secondary);font-size:13px;">' +
+        (state.lang === 'ru' ? 'Нет данных для графа. Послушайте несколько треков.' : 'No data yet. Listen to some tracks.') + '</div>';
+      return;
+    }
+    const width = container.clientWidth || 800;
+    TasteGraph.layout(tasteGraphData, { width, height: 600, iterations: 200 });
+    TasteGraph.render(container, tasteGraphData, { width, height: 600 });
+  }
+
   // --- JOINT AUDIO AI VIEW & CONTROLLER ---
   function renderJointAIView() {
     renderJointSeeds();
@@ -4051,8 +4079,8 @@
     if (typeof JointAI !== 'undefined' && JointAI.isLoaded && JointAI.isLoaded()) {
       if (DOM.jointModelBadgeText) {
         DOM.jointModelBadgeText.textContent = state.lang === 'ru'
-          ? 'CLAP Sound + ListenBrainz Graph · Модель готова (56 875 треков)'
-          : 'CLAP Sound + ListenBrainz Graph · Ready (56k tracks)';
+          ? (response.source === 'local' ? 'Подбор по вашей библиотеке' : `Каталог: ${response.catalogSize} треков`)
+          : (response.source === 'local' ? 'Recommendations from your library' : `Catalog: ${response.catalogSize} tracks`);
       }
     }
   }
@@ -4177,10 +4205,10 @@
     state.jointState.isGenerating = true;
     if (DOM.jointGenerateBtn) DOM.jointGenerateBtn.disabled = true;
     if (DOM.jointGenerateBtnText) {
-      DOM.jointGenerateBtnText.textContent = state.lang === 'ru' ? 'Анализ аудиовекторов CLAP...' : 'Analyzing CLAP vectors...';
+      DOM.jointGenerateBtnText.textContent = state.lang === 'ru' ? 'Подбираем треки…' : 'Finding tracks…';
     }
     if (DOM.jointResultsMeta) {
-      DOM.jointResultsMeta.textContent = state.lang === 'ru' ? 'Загрузка векторов и графа 56k треков...' : 'Loading neural vectors & graph...';
+      DOM.jointResultsMeta.textContent = state.lang === 'ru' ? 'Проверяем опорные треки и доступные данные…' : 'Checking seed tracks and available evidence…';
     }
     if (DOM.jointSavePlaylistBtn) {
       DOM.jointSavePlaylistBtn.style.display = 'none';
@@ -4190,8 +4218,8 @@
       DOM.jointResultsList.innerHTML = `
         <div class="joint-empty-state" style="padding: 40px 20px;">
           <div class="joint-empty-icon" style="font-size: 28px; animation: pulse 1s infinite;">🧠</div>
-          <div class="joint-empty-title" style="margin-top: 10px;">${state.lang === 'ru' ? 'Нейросеть вычисляет сходство звука...' : 'Neural network computing acoustic similarity...'}</div>
-          <div class="joint-empty-sub">${state.lang === 'ru' ? 'Поиск в 32D латентном пространстве CLAP + граф ListenBrainz' : 'Querying 32D CLAP latent space + ListenBrainz graph'}</div>
+          <div class="joint-empty-title" style="margin-top: 10px;">${state.lang === 'ru' ? 'Сравниваем подходящие треки…' : 'Comparing eligible tracks…'}</div>
+          <div class="joint-empty-sub">${state.lang === 'ru' ? 'Учитываем выбранные треки и фильтры' : 'Using your seed tracks and filters'}</div>
         </div>
       `;
     }
@@ -4199,10 +4227,10 @@
     try {
       await new Promise(r => setTimeout(r, 60));
 
-      const popFilter = DOM.jointFilterPopularity ? DOM.jointFilterPopularity.value : 'balanced';
+      const popFilter = DOM.jointFilterPopularity ? DOM.jointFilterPopularity.value : 'all';
       const artistLimit = DOM.jointFilterArtistLimit ? parseInt(DOM.jointFilterArtistLimit.value, 10) : 2;
-      const audioOnly = DOM.jointFilterAudioOnly ? DOM.jointFilterAudioOnly.checked : false;
-      const localOnly = DOM.jointFilterLocalOnly ? DOM.jointFilterLocalOnly.checked : false;
+      const audioOnly = DOM.jointFilterAudioOnly ? DOM.jointFilterAudioOnly.value === 'audio_only' : false;
+      const localOnly = DOM.jointFilterLocalOnly ? DOM.jointFilterLocalOnly.value === 'local_only' : false;
 
       const response = await JointAI.generateJointPlaylist(
         state.jointState.seeds,
@@ -4214,7 +4242,10 @@
           maxPerArtist: isNaN(artistLimit) ? 2 : artistLimit,
           requireAudio: audioOnly,
           localOnly: localOnly,
-          excludedTracks: state.excludedRecommendations
+          excludedTracks: state.excludedRecommendations,
+          audioProfiles,
+          plays: queue?.stats?.plays || state.stats.plays,
+          bpmCache: queue?.bpmCache || {}
         }
       );
 
@@ -4223,8 +4254,8 @@
       if (response.seedsMatched === 0) {
         if (DOM.jointResultsMeta) {
           DOM.jointResultsMeta.textContent = state.lang === 'ru'
-            ? 'Сиды не найдены в каталоге 56k'
-            : 'Seeds not found in 56k catalog';
+            ? 'Опорные треки не найдены'
+            : 'Seed tracks not found';
         }
         if (DOM.jointResultsList) {
           DOM.jointResultsList.innerHTML = `
@@ -4246,10 +4277,15 @@
 
       if (DOM.jointModelBadgeText) {
         DOM.jointModelBadgeText.textContent = state.lang === 'ru'
-          ? 'CLAP Sound + ListenBrainz Graph · Модель готова (56 875 треков)'
-          : 'CLAP Sound + ListenBrainz Graph · Ready (56k tracks)';
+          ? (response.source === 'local' ? 'Подбор по вашей библиотеке' : `Каталог: ${response.catalogSize} треков`)
+          : (response.source === 'local' ? 'Recommendations from your library' : `Catalog: ${response.catalogSize} tracks`);
       }
 
+      if (response.notice && DOM.jointResultsMeta) {
+        DOM.jointResultsMeta.textContent += state.lang === 'ru'
+          ? ' · Использована локальная библиотека: каталог или опорные треки в нём недоступны'
+          : ' · Using local library: catalog or catalog seed matches unavailable';
+      }
       renderJointResults(response.tracks);
 
       if (response.localAvailableCount > 0 && DOM.jointSavePlaylistBtn) {
@@ -4276,7 +4312,7 @@
       state.jointState.isGenerating = false;
       if (DOM.jointGenerateBtn) DOM.jointGenerateBtn.disabled = false;
       if (DOM.jointGenerateBtnText) {
-        DOM.jointGenerateBtnText.textContent = state.lang === 'ru' ? 'Сгенерировать 50 треков (Joint AI)' : 'Synthesize 50-Track Playlist';
+        DOM.jointGenerateBtnText.textContent = state.lang === 'ru' ? 'Подобрать до 50 треков' : 'Find up to 50 tracks';
       }
     }
   }
@@ -4289,8 +4325,8 @@
       DOM.jointResultsList.innerHTML = `
         <div class="joint-empty-state">
           <div class="joint-empty-icon">🎧</div>
-          <div class="joint-empty-title">${state.lang === 'ru' ? 'Нейросеть готова к работе' : 'AI ready'}</div>
-          <div class="joint-empty-sub">${state.lang === 'ru' ? 'Добавьте сид-треки слева и нажмите «Сгенерировать 50 треков».' : 'Add seed tracks on the left and hit generate.'}</div>
+          <div class="joint-empty-title">${state.lang === 'ru' ? 'Нет подходящих результатов' : 'No eligible results'}</div>
+          <div class="joint-empty-sub">${state.lang === 'ru' ? 'Попробуйте другие опорные треки или измените фильтры.' : 'Try different seed tracks or adjust the filters.'}</div>
         </div>
       `;
       return;
@@ -4332,28 +4368,18 @@
       if (track.hasAudioFeatures) {
         const clapBadge = document.createElement('span');
         clapBadge.className = 'joint-badge-clap';
-        clapBadge.textContent = 'CLAP 512D';
-        clapBadge.title = state.lang === 'ru' ? 'Акустический звуковой вектор' : 'CLAP acoustic sound vector';
+        clapBadge.textContent = state.lang === 'ru' ? 'Есть аудиопризнаки' : 'Audio features';
+        clapBadge.title = state.lang === 'ru' ? 'Для трека доступны измеренные аудиопризнаки' : 'Measured audio features are available for this track';
         badgesEl.appendChild(clapBadge);
       }
 
-      if (track.popularity !== undefined && track.popularity !== null) {
-        const popBadge = document.createElement('span');
-        popBadge.className = 'joint-badge-pop';
-        popBadge.textContent = `🔥 ${track.popularity}% pop`;
-        popBadge.title = state.lang === 'ru' ? `Популярность в ListenBrainz: ${track.popularity}%` : `Popularity percentile: ${track.popularity}%`;
-        badgesEl.appendChild(popBadge);
-      }
-
-      const matchPercent = track.matchPercent !== undefined
-        ? track.matchPercent
-        : (track.score !== undefined ? Math.min(99, Math.max(70, Math.round(track.score * 50))) : 85);
-
-      const scoreBadge = document.createElement('span');
-      scoreBadge.className = 'joint-score';
-      scoreBadge.textContent = `${matchPercent}% match`;
-      scoreBadge.title = state.lang === 'ru' ? 'Нейронная оценка соответствия звука и графа' : 'Neural relevance match';
-      badgesEl.appendChild(scoreBadge);
+      const reasonBadge = document.createElement('span');
+      reasonBadge.className = 'joint-score';
+      reasonBadge.textContent = track.reasons?.[0] || (state.lang === 'ru' ? 'По опорным трекам' : 'From seed tracks');
+      reasonBadge.title = track.referenceTitle
+        ? (state.lang === 'ru' ? `Опорный трек: ${track.referenceTitle}` : `Seed track: ${track.referenceTitle}`)
+        : (state.lang === 'ru' ? 'Порядок подбора не является вероятностью понравиться' : 'Ranking is not a probability of liking a track');
+      badgesEl.appendChild(reasonBadge);
 
       if (track.isLocal && track.matchedLocalTrack) {
         const localBadge = document.createElement('span');
@@ -4921,6 +4947,12 @@
     const closeEqModal = () => {
       DOM.eqModalBackdrop.style.display = 'none';
     };
+
+    document.getElementById('tasteGraphRebuildBtn')?.addEventListener('click', () => {
+      tasteGraphData = null;
+      renderTasteGraph();
+      showToast(state.lang === 'ru' ? 'Граф перестроен' : 'Graph rebuilt', '✓');
+    });
 
     DOM.eqToggleBtn.addEventListener('click', openEqModal);
     DOM.bottomEqToggleBtn.addEventListener('click', openEqModal);

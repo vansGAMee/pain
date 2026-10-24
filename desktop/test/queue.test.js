@@ -6,7 +6,6 @@ const {
   detectBpmFromPcm,
   harmonicBpmDistance,
   scoreSmartTransition,
-  detectTrackVibe,
   getCircadianVibe
 } = require('../src/queue-engine.js');
 
@@ -196,12 +195,7 @@ test('context switching: transitioning from library to favorites and playlists s
   assert.equal(plLoop.id, '4');
 });
 
-test('vibe detection identifies chill, energy, and live tags', () => {
-  assert.equal(detectTrackVibe({ title: 'Morning Coffee Lofi Chill', artist: 'Producer' }), 'chill');
-  assert.equal(detectTrackVibe({ title: 'Tokyo Drift Workout Phonk', artist: 'DJ' }), 'energy');
-  assert.equal(detectTrackVibe({ title: 'Hotel California (Live in Tokyo 1994)', artist: 'Eagles' }), 'live');
-  assert.equal(detectTrackVibe({ title: 'Simple Song', artist: 'Artist' }), 'neutral');
-});
+
 
 test('circadian rhythm adapts preferred tempo ranges across 24h cycle', () => {
   const night = getCircadianVibe(2);

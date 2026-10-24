@@ -1,8 +1,8 @@
 /* Offline and batch audio analyzer for PAIN.
- * Computes complete, honest 72-frame acoustic profiles:
+ * Samples measured acoustic descriptors across the complete decoded track:
  * - 6D fundamental acoustic shape & variance
  * - 12D MFCC timbre & variance
- * - 7D octave-band instrument / spectral contrast detail
+ * - 7D spectral contrast and short-time envelope detail
  * - Peak-onset tempo (BPM) detection
  */
 (function(root, factory) {
@@ -45,9 +45,10 @@
     if (!samples || samples.length < N) return null;
     const real = new Float32Array(N);
     const imag = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      real[bitRev[i]] = (samples[i] || 0) * blackman[i];
-    }
+    let mean = 0;
+    for (let i = 0; i < N; i++) { if (!Number.isFinite(samples[i])) return null; mean += samples[i]; }
+    mean /= N;
+    for (let i = 0; i < N; i++) real[bitRev[i]] = (samples[i] - mean) * blackman[i];
     for (let len = 2; len <= N; len <<= 1) {
       const half = len >> 1;
       const step = N / len;
@@ -75,305 +76,293 @@
     return outDb;
   }
 
-  function analyzePcm(left, right, sampleRate, track) {
-    if (!left || left.length < N || !sampleRate) return null;
-    const duration = left.length / sampleRate;
-    const step = Number.isFinite(duration) && duration > 0 ? Math.max(0.5, Math.ceil(duration / 360 * 2) / 2) : 0.5;
-    const bodyPos = Number.isFinite(duration) && duration >= 40 ? Math.ceil(Math.max(20, duration * 0.35) / step) : Infinity;
+  // Resource budgets, not musical labels or relevance-score parameters.
+  const MAX_WINDOWS = 72;
+  const WINDOW_SECONDS = 0.5;
+  const MAX_DETAIL_WINDOWS = 24;
+  const MAX_POSITION_BINS = 360; // Same position grid as playback profile v4.
 
-    const positions = [];
-    for (let i = 0; i < 48; i++) {
-      if (i * step < duration) positions.push(i);
+  function planWindows(sampleCount, sampleRate) {
+    if (!Number.isSafeInteger(sampleCount) || sampleCount < N || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 384000) return null;
+    const duration = sampleCount / sampleRate;
+    const step = Math.max(WINDOW_SECONDS, Math.ceil(duration / MAX_POSITION_BINS / WINDOW_SECONDS) * WINDOW_SECONDS);
+    const windowSamples = Math.min(sampleCount, Math.floor(WINDOW_SECONDS * sampleRate));
+    const lastPosition = Math.floor((sampleCount - windowSamples) / (step * sampleRate));
+    const count = Math.min(MAX_WINDOWS, lastPosition + 1);
+    const windows = Array.from({ length: count }, (_, i) => {
+      const position = count === 1 ? 0 : Math.round(i * lastPosition / (count - 1));
+      return { position, sourceStart: Math.floor(position * step * sampleRate), sampleCount: windowSamples };
+    });
+    return { duration, step, windows };
+  }
+
+  function moments(size) {
+    return { count: 0, mean: Array(size).fill(0), variance: Array(size).fill(0) };
+  }
+  function addMoment(stats, values) {
+    const count = ++stats.count;
+    for (let i = 0; i < stats.mean.length; i++) {
+      const delta = values[i] - stats.mean[i];
+      stats.mean[i] += delta / count;
+      stats.variance[i] = Math.max(0, (stats.variance[i] * (count - 1) + delta * (values[i] - stats.mean[i])) / count);
     }
-    if (bodyPos !== Infinity) {
-      for (let i = 0; i < 24; i++) {
-        const p = bodyPos + i;
-        if (p * step < duration && !positions.includes(p)) positions.push(p);
+  }
+
+  // sampling is provided only by the streaming server decoder. Its input PCM
+  // contains the planned windows packed together, with original positions kept.
+  function analyzePcm(left, right, sampleRate, track, sampling = null) {
+    if (!left || left.length < N) return null;
+    const plan = sampling || planWindows(left.length, sampleRate);
+    if (!plan || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 384000) return null;
+    const acoustic = moments(6), tone = moments(12), accepted = [];
+    let analyzedSamples = 0, analyzedFftFrames = 0;
+
+    for (const window of plan.windows) {
+      const start = window.packedStart ?? window.sourceStart;
+      const end = Math.min(left.length, start + window.sampleCount);
+      let samples = 0;
+      const contrast = moments(7);
+      for (let offset = start; offset + N <= end; offset += N) {
+        const channels = [left.subarray(offset, offset + N)];
+        if (right && right.length >= offset + N) channels.push(right.subarray(offset, offset + N));
+        let vector = null, timbre = null, detail = null, power = 0, tonePower = 0, detailPower = 0;
+        for (const channel of channels) {
+          const db = computeSpectrumDb(channel);
+          const v = db && AudioProfile.frame(channel, db, sampleRate);
+          if (!v) continue;
+          let p = 0; for (const x of channel) p += x * x;
+          const t = AudioTimbre?.frame(db, sampleRate);
+          const d = AudioTimbre?.detail(channel, db, sampleRate);
+          vector = vector ? vector.map((x, i) => (x * power + v[i] * p) / (power + p)) : v;
+          power += p;
+          if (t) { timbre = timbre ? timbre.map((x, i) => (x * tonePower + t[i] * p) / (tonePower + p)) : t; tonePower += p; }
+          if (d) { detail = detail ? detail.map((x, i) => (x * detailPower + d[i] * p) / (detailPower + p)) : d; detailPower += p; }
+        }
+        if (!vector) continue;
+        addMoment(acoustic, vector);
+        if (timbre) addMoment(tone, timbre);
+        if (detail) addMoment(contrast, detail);
+        samples += N;
+        analyzedFftFrames++;
       }
+      if (!samples) continue;
+      analyzedSamples += samples;
+      accepted.push({ ...window, samples, contrast });
     }
+    if (accepted.length < 4) return null;
 
-    let vector = [0, 0, 0, 0, 0, 0];
-    let variance = [0, 0, 0, 0, 0, 0];
-    let timbre = null;
-    let timbreVariance = null;
-    let frames = 0;
-    let seconds = 0;
-
-    const detailPositions = [];
-    let detailMean = Array(7).fill(0);
-    let detailFrames = 0;
+    const availableDetails = accepted.filter(w => w.contrast.count);
+    const detailCount = Math.min(MAX_DETAIL_WINDOWS, availableDetails.length);
+    const details = moments(7), detailPositions = [];
     let detailSeconds = 0;
-
-    const leftSlice = new Float32Array(N);
-    const rightSlice = right && right.length >= left.length ? new Float32Array(N) : null;
-
-    for (const pos of positions) {
-      const sampleIdx = Math.floor(pos * step * sampleRate);
-      if (sampleIdx + N > left.length) break;
-      leftSlice.set(left.subarray(sampleIdx, sampleIdx + N));
-      if (rightSlice) rightSlice.set(right.subarray(sampleIdx, sampleIdx + N));
-
-      const channels = rightSlice ? [leftSlice, rightSlice] : [leftSlice];
-      let frameVec = null, frameTone = null, frameInst = null;
-      let totalP = 0, toneP = 0, instP = 0;
-
-      for (const ch of channels) {
-        let p = 0;
-        for (let i = 0; i < N; i++) p += ch[i] * ch[i];
-        if (p < 1e-7) continue;
-        const db = computeSpectrumDb(ch);
-        if (!db) continue;
-        const v = AudioProfile.frame(ch, db, sampleRate);
-        if (!v) continue;
-        const tone = AudioTimbre ? AudioTimbre.frame(db, sampleRate) : null;
-        const extra = detailFrames < 24 && AudioTimbre ? AudioTimbre.detail(ch, db, sampleRate) : null;
-
-        if (!frameVec) frameVec = v;
-        else frameVec = frameVec.map((x, j) => (x * totalP + v[j] * p) / (totalP + p));
-        totalP += p;
-
-        if (tone) {
-          if (!frameTone) frameTone = tone;
-          else frameTone = frameTone.map((x, j) => (x * toneP + tone[j] * p) / (toneP + p));
-          toneP += p;
-        }
-        if (extra) {
-          if (!frameInst) frameInst = extra;
-          else frameInst = frameInst.map((x, j) => (x * instP + extra[j] * p) / (instP + p));
-          instP += p;
-        }
-      }
-
-      if (!frameVec) continue;
-
-      const n = frames + 1;
-      const mean = vector.map((v, i) => v + (frameVec[i] - v) / n);
-      variance = variance.map((v, i) => Math.max(0, Math.min(0.25, (v * frames + (frameVec[i] - vector[i]) * (frameVec[i] - mean[i])) / n)));
-      vector = mean;
-
-      if (frameTone) {
-        if (!frames) {
-          timbre = frameTone;
-          timbreVariance = Array(12).fill(0);
-        } else if (timbre) {
-          const next = timbre.map((v, i) => v + (frameTone[i] - v) / n);
-          timbreVariance = timbreVariance.map((v, i) => Math.max(0, Math.min(0.25, (v * frames + (frameTone[i] - timbre[i]) * (frameTone[i] - next[i])) / n)));
-          timbre = next;
-        }
-      }
-
-      if (frameInst && detailFrames < 24) {
-        const dPos = Math.floor(pos * step * 2);
-        if (!detailPositions.includes(dPos)) {
-          detailPositions.push(dPos);
-          detailFrames++;
-          detailSeconds += 0.5;
-          detailMean = detailMean.map((v, i) => v + (frameInst[i] - v) / detailFrames);
-        }
-      }
-
-      frames++;
-      seconds += 0.5;
+    for (let i = 0; i < detailCount; i++) {
+      const index = detailCount === 1 ? 0 : Math.round(i * (availableDetails.length - 1) / (detailCount - 1));
+      const window = availableDetails[index];
+      addMoment(details, window.contrast.mean);
+      detailPositions.push(Math.floor(window.sourceStart / sampleRate / WINDOW_SECONDS));
+      detailSeconds += window.contrast.count * N / sampleRate;
     }
-
-    if (frames < 4) return null;
-
     const profile = {
       version: 4,
       signature: AudioProfile.signature(track),
-      vector: vector.map(n => Math.round(n * 100000) / 100000),
-      variance,
-      timbre: timbre || null,
-      timbreVariance: timbreVariance || null,
-      frames,
-      seconds,
-      positions: positions.slice(0, frames),
-      detail: {
-        version: 1,
-        mean: detailMean,
-        frames: detailFrames,
-        seconds: detailSeconds,
-        positions: detailPositions
+      vector: acoustic.mean,
+      variance: acoustic.variance,
+      timbre: tone.count ? tone.mean : null,
+      timbreVariance: tone.count ? tone.variance : null,
+      frames: accepted.length,
+      // Actual non-overlapping PCM measured, not time elapsed between snapshots.
+      seconds: analyzedSamples / sampleRate,
+      positions: accepted.map(w => w.position),
+      detail: { version: 1, mean: details.mean, frames: detailCount, seconds: detailSeconds, positions: detailPositions },
+      analysis: {
+        method: "stratified-pcm-v1", sampleRate, fftSize: N,
+        fftFrames: analyzedFftFrames, duration: plan.duration,
+        firstSecond: accepted[0].sourceStart / sampleRate,
+        lastSecond: (accepted.at(-1).sourceStart + accepted.at(-1).sampleCount) / sampleRate
       },
       updatedAt: Date.now()
     };
 
+    // Concatenated excerpts have artificial boundaries; never infer tempo from
+    // their joins. Server results leave BPM unknown instead of fabricating it.
     let bpm = null;
-    const detectBpm = Queue?.detectBpmFromPcm;
-    if (typeof detectBpm === "function") {
-      try {
-        const detected = detectBpm(left, sampleRate);
-        if (detected && detected >= 60 && detected <= 200) bpm = Math.round(detected);
-      } catch (_) {}
+    if (!sampling && typeof Queue?.detectBpmFromPcm === "function") {
+      try { const detected = Queue.detectBpmFromPcm(left, sampleRate); if (Number.isFinite(detected) && detected > 0) bpm = Math.round(detected); } catch (_) {}
     }
-
     return { profile, bpm };
+  }
+
+  function complete(profile, track) {
+    return !!AudioProfile.get({ [track.id]: profile }, track) &&
+      profile.analysis?.method === "stratified-pcm-v1" && !!AudioProfile.texture(profile) && !!AudioProfile.detail(profile);
   }
 
   class BatchAnalyzer {
     constructor(options = {}) {
       this.phoneUrl = options.phoneUrl || "";
-      this.status = "idle"; // idle, running, paused, done, error
+      this.status = "idle";
       this.currentTrack = null;
-      this.total = 0;
-      this.completed = 0;
+      this.total = this.completed = this.succeeded = this.failed = 0;
       this.queue = [];
       this.timer = null;
-      this._stopRequested = false;
+      this.callbacks = {};
+      this._generation = 0;
+      this._inFlight = null;
     }
-
     getStatus() {
       return {
-        status: this.status,
-        isRunning: this.status === "running",
-        isPaused: this.status === "paused",
-        currentTrack: this.currentTrack,
-        completed: this.completed,
-        total: this.total,
-        percent: this.total > 0 ? Math.round((this.completed / this.total) * 100) : 0
+        status: this.status, isRunning: this.status === "running", isPaused: this.status === "paused",
+        currentTrack: this.currentTrack, completed: this.completed, total: this.total,
+        succeeded: this.succeeded, failed: this.failed,
+        percent: this.total > 0 ? Math.round(this.completed / this.total * 100) : 0
       };
     }
-
     start(tracks, existingProfiles = {}, callbacks = {}) {
-      if (this.status === "running") return;
-      this._stopRequested = false;
+      if (this.status === "running" || this.status === "paused") return;
+      this._generation++;
       this.callbacks = callbacks;
-      const overwrite = !!callbacks.overwriteExisting;
-
-      // Filter tracks that need analysis
-      this.queue = (tracks || []).filter(t => {
-        if (!t || !t.id) return false;
-        if (overwrite) return true;
-        const p = existingProfiles[t.id];
-        return !p || !AudioProfile.valid(p) || !AudioProfile.texture(p) || (p.detail?.frames || 0) < 20;
-      });
-
+      this.queue = (tracks || []).filter(t => t && t.id != null && (callbacks.overwriteExisting || !complete(existingProfiles[t.id], t)));
       this.total = this.queue.length;
-      this.completed = 0;
-      this.status = this.total > 0 ? "running" : "done";
-
-      if (this.total === 0) {
-        if (this.callbacks.onComplete) this.callbacks.onComplete({ total: 0, completed: 0 });
-        return;
-      }
-
+      this.completed = this.succeeded = this.failed = 0;
+      this.status = "running";
       this._notifyProgress();
       this._processNext();
     }
-
     pause() {
-      if (this.status === "running") {
-        this.status = "paused";
-        clearTimeout(this.timer);
-        this.timer = null;
-        this._notifyProgress();
-      }
+      if (this.status !== "running") return;
+      this.status = "paused";
+      clearTimeout(this.timer); this.timer = null;
+      this._notifyProgress();
     }
-
     resume() {
-      if (this.status === "paused") {
-        this.status = "running";
-        this._notifyProgress();
-        this._processNext();
-      }
+      if (this.status !== "paused") return;
+      this.status = "running";
+      this._notifyProgress();
+      this._processNext();
     }
-
     stop() {
-      this._stopRequested = true;
+      this._generation++;
+      this._inFlight?.controller.abort();
+      this._inFlight = null;
       this.status = "idle";
-      clearTimeout(this.timer);
-      this.timer = null;
+      clearTimeout(this.timer); this.timer = null;
       this.currentTrack = null;
       this.queue = [];
       this._notifyProgress();
     }
-
     _notifyProgress() {
-      if (this.callbacks.onProgress) {
-        try { this.callbacks.onProgress(this.getStatus()); } catch (_) {}
-      }
+      try { this.callbacks.onProgress?.(this.getStatus()); } catch (_) {}
     }
-
+    _finish() {
+      this.status = this.failed && !this.succeeded ? "error" : "done";
+      this.currentTrack = null;
+      this._notifyProgress();
+      try { this.callbacks.onComplete?.(this.getStatus()); } catch (_) {}
+    }
     async _processNext() {
-      if (this.status !== "running" || this._stopRequested) return;
-      if (this.queue.length === 0) {
-        this.status = "done";
-        this.currentTrack = null;
-        this._notifyProgress();
-        if (this.callbacks.onComplete) {
-          try { this.callbacks.onComplete({ total: this.total, completed: this.completed }); } catch (_) {}
-        }
-        return;
-      }
-
+      if (this.status !== "running" || this._inFlight) return;
+      if (!this.queue.length) { this._finish(); return; }
       const track = this.queue.shift();
+      const run = { generation: this._generation, controller: new AbortController() };
+      const callbacks = this.callbacks;
+      this._inFlight = run;
       this.currentTrack = track;
       this._notifyProgress();
-
+      const active = () => this._generation === run.generation && this._inFlight === run;
+      let result = null, failure = null;
       try {
-        let profile = null;
-        let bpm = null;
-        const OfflineCtx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
-        const srcUrl = "/api/cached-track/" + encodeURIComponent(track.id) + "?phoneUrl=" + encodeURIComponent(this.phoneUrl || "");
+        const force = callbacks.overwriteExisting ? "?force=1" : "";
 
-        if (OfflineCtx) {
+        // 1. Prefer server-side analysis via ffmpeg.
+        // The server streams audio with bounded memory (<= 16MB) and extracts only
+        // the 72 necessary FFT windows, preventing OOM crashes on long tracks or large files.
+        try {
+          const response = await fetch("/api/analyze-track/" + encodeURIComponent(track.id) + force, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ track }), signal: run.controller.signal
+          });
+          if (response.ok && active()) {
+            const data = await response.json();
+            if (complete(data?.profile, track)) {
+              result = data;
+            }
+          } else if (response.status !== 404 && response.status !== 502) {
+            let errJson;
+            try { errJson = await response.json(); } catch (_) {}
+            failure = new Error(errJson?.error || "Audio analysis failed (HTTP " + response.status + ")");
+          }
+        } catch (error) {
+          if (error.name === "AbortError") throw error;
+          failure = error;
+        }
+
+        if (!active()) return;
+
+        // 2. If the track was not yet cached on the server disk (404), fetch it so the server
+        // writes it into cache, then re-try server analysis.
+        if (!result && (!failure || failure.message?.includes("404"))) {
           try {
-            const resp = await fetch(srcUrl);
-            if (resp.ok || resp.status === 206) {
-              const arrayBuffer = await resp.arrayBuffer();
-              const maxSeconds = 90;
-              const offlineCtx = new OfflineCtx(2, 44100 * maxSeconds, 44100);
-              const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-              const left = audioBuffer.getChannelData(0);
-              const right = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : null;
-              const result = analyzePcm(left, right, audioBuffer.sampleRate, track);
-              if (result && result.profile) {
-                profile = result.profile;
-                bpm = result.bpm;
+            const cacheResponse = await fetch("/api/cached-track/" + encodeURIComponent(track.id) + "?phoneUrl=" + encodeURIComponent(this.phoneUrl), { signal: run.controller.signal });
+            if (cacheResponse.ok && active()) {
+              // Now that the file is written to server cache, re-attempt server analysis
+              try {
+                const srvRetry = await fetch("/api/analyze-track/" + encodeURIComponent(track.id) + force, {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ track }), signal: run.controller.signal
+                });
+                if (srvRetry.ok && active()) {
+                  const srvData = await srvRetry.json();
+                  if (complete(srvData?.profile, track)) {
+                    result = srvData;
+                  }
+                }
+              } catch (_) {}
+
+              // 3. Fallback: in-browser OfflineAudioContext (only for serverless web environments)
+              if (!result && active()) {
+                const OfflineCtx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+                const isTooLarge = (track.duration && track.duration > 15 * 60 * 1000) ||
+                                   (track.bytes && track.bytes > 30 * 1024 * 1024);
+                if (OfflineCtx && !isTooLarge) {
+                  const bytes = await cacheResponse.arrayBuffer();
+                  if (active() && bytes && bytes.byteLength <= 30 * 1024 * 1024) {
+                    const context = new OfflineCtx(2, 1, 44100);
+                    const buffer = await context.decodeAudioData(bytes);
+                    if (active()) {
+                      result = analyzePcm(buffer.getChannelData(0), buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null, buffer.sampleRate, track);
+                    }
+                  }
+                }
               }
             }
-          } catch (_) {}
+          } catch (error) {
+            if (error.name === "AbortError") throw error;
+            failure = error;
+          }
         }
 
-        // Server fallback: if browser decode was unavailable or failed
-        if (!profile && typeof fetch === "function") {
-          try {
-            const fallbackResp = await fetch("/api/analyze-track/" + encodeURIComponent(track.id), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ track })
-            });
-            if (fallbackResp.ok) {
-              const data = await fallbackResp.json();
-              if (data && data.profile) {
-                profile = data.profile;
-                bpm = data.bpm;
-              }
-            }
-          } catch (_) {}
+        if (!active()) return;
+        if (!complete(result?.profile, track)) {
+          throw failure || new Error("Audio analysis returned insufficient or stale evidence");
         }
-
-        if (profile && this.callbacks.onTrackComplete) {
-          try { this.callbacks.onTrackComplete(track, profile, bpm); } catch (_) {}
+        this.succeeded++;
+        try { callbacks.onTrackComplete?.(track, result.profile, result.bpm ?? null); } catch (_) {}
+      } catch (error) {
+        if (!active()) return;
+        failure = error;
+        this.failed++;
+        try { callbacks.onTrackError?.(track, failure); } catch (_) {}
+      } finally {
+        if (active()) {
+          this._inFlight = null;
+          this.completed++;
+          this.currentTrack = null;
+          this._notifyProgress();
+          if (this.status === "running") {
+            if (!this.queue.length) this._finish();
+            else this.timer = setTimeout(() => { this.timer = null; this._processNext(); }, 0);
+          }
         }
-      } catch (err) {
-        // Individual decode errors do not abort the entire batch
-      }
-
-      this.completed++;
-      if (this.queue.length === 0) {
-        this.status = "done";
-        this.currentTrack = null;
-        this._notifyProgress();
-        if (this.callbacks.onComplete) {
-          try { this.callbacks.onComplete({ total: this.total, completed: this.completed }); } catch (_) {}
-        }
-        return;
-      }
-      this._notifyProgress();
-
-      if (this.status === "running" && !this._stopRequested) {
-        this.timer = setTimeout(() => this._processNext(), 20);
       }
     }
   }
@@ -381,6 +370,8 @@
   return {
     N,
     computeSpectrumDb,
+    planWindows,
+    complete,
     analyzePcm,
     BatchAnalyzer
   };

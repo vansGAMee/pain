@@ -1,6 +1,6 @@
 {
   "name": "pain-desktop",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "Pain — Minimalist Audio Player & Sync Companion for Windows & Linux",
   "main": "src/main.js",
   "bin": "src/server.js",
@@ -10,7 +10,7 @@
     "web": "node src/server.js",
     "build:win": "electron-builder --win nsis zip --publish never",
     "build:linux": "electron-builder --linux AppImage tar.gz --publish never",
-    "package:exe": "npm run build:win",
+    "package:exe": "npx pkg . --target node18-win-x64 --output dist/Pain.exe && python3 ../tools/patch_windows_exe.py dist/Pain.exe",
     "test": "node --test test/*.test.js"
   },
   "build": {
@@ -20,6 +20,7 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "joint-model/**/*",
       "package.json"
     ],
     "directories": {

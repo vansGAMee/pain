@@ -10,15 +10,15 @@
     'В настроении последних прослушанных треков':['По звуку сочетается сразу с несколькими недавними треками, которые вы приняли.','Its sound fits several recent tracks you listened to, rather than just one.','Fits your recent listening'],
     'Похоже на музыку, к которой вы возвращаетесь':['Аудиопрофиль похож на треки с положительными сигналами в вашей истории: лайками, дослушиваниями или возвращениями.','Its audio profile resembles tracks with positive signals in your history: likes, completed listens or returns.','Similar to your favourites'],
     'Похоже на первые удачные прослушивания':['По звуку похож на первые удачные прослушивания. Данных пока немного — это предварительный ориентир.','Its sound resembles your first successful listens. There is little history yet, so this is an early indication.','Fits your first listens'],
-    'Давно не звучало':['Этот трек выбран для разнообразия: последнее учтённое прослушивание было больше трёх недель назад.','Picked for variety: its last recorded listen was more than three weeks ago.','Not heard in a while'],
+    'Давно не звучало':['Последнее учтённое прослушивание этого трека было больше трёх недель назад.','Its last recorded listen was more than three weeks ago.','Not heard in a while'],
     'Открываем новое':['Выбран менее знакомый трек, чтобы добавить разнообразия в подбор.','A less familiar track was picked to add variety to the mix.','Exploring a track'],
     'Смена направления после пропусков':['После серии пропусков подбор пробует другое направление. Это не означает, что пропущенные треки вам не нравятся.','After a run of skips, the mix is trying a different direction. This does not mean you dislike the skipped tracks.','A change of direction'],
     'Расширяем подбор':['Добавляем разнообразия: для этого трека нет одной уверенной причины предпочтения.','Adding variety: there is no single strong preference signal for this track.','Adding variety'],
     'Знакомимся с вашим вкусом':['Истории пока недостаточно для уверенного выбора. Этот трек поможет уточнить ваши предпочтения.','There is not enough history for a confident choice yet. This track can help refine your preferences.','Getting to know your taste'],
-    'Любимый трек':['Вы добавили этот трек в любимые — для вас он имеет наивысший приоритет.','You marked this track as a favorite — it has top priority for you.','Favorite track']
+    'Любимый трек':['Вы добавили этот трек в любимые. Учитываем лайк вместе с дослушиваниями и пропусками.','You liked this track. The like is considered together with completed listens and skips.','Favorite track']
   };
   const reasons=d=>Array.isArray(d?.reasons)?[...new Set(d.reasons.filter(r=>typeof r==='string'))].slice(0,3):[];
-  function summary(d,lang='ru'){const r=reasons(d)[0];return copy[r]?(lang==='ru'?r:copy[r][2]):'';}
+  function summary(d,lang='ru'){const r=reasons(d)[0];if(!r)return '';return copy[r]?(lang==='ru'?r:copy[r][2]):r;}
   function describe(d,lang='ru'){
     const ru=lang==='ru',details=d?.explanation||{};
     const lines=reasons(d).map(r=>{
@@ -30,9 +30,9 @@
         const a=Math.round(details.referenceBpm),b=Math.round(d.bpm),half=Math.abs(a-b)>8;
         return ru?`Темп: ${b} BPM, у ориентира — ${a} BPM${half?' (с учётом удвоенного или половинного ритма)':''}.`:`Tempo: ${b} BPM; reference: ${a} BPM${half?' (allowing for half-time or double-time rhythm)':''}.`;
       }
-      return copy[r]?.[ru?0:1];
+      return copy[r]?.[ru?0:1] || r;
     }).filter(Boolean);
-    if(details.liked===true&&!reasons(d).includes('Любимый трек'))lines.push(ru?'Этот трек отмечен вашим лайком и имеет наивысший приоритет.':'You liked this track, giving it top priority.');
+    if(details.liked===true&&!reasons(d).includes('Любимый трек')&&!reasons(d).includes('Вы лайкнули этот трек'))lines.push(ru?'Этот трек отмечен вашим лайком; учитываем его вместе с историей прослушиваний.':'You liked this track; we consider this alongside your listening history.');
     return lines.join(' ')||(ru?'Подробная причина этого выбора не сохранена.':'The detailed reason for this selection was not saved.');
   }
   return {describe,summary};

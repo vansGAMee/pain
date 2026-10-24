@@ -1,7 +1,8 @@
 /**
  * Pain Audio — Joint AI Engine (CLAP Sound + ListenBrainz/KEXP Graph)
  * Ported from musicmylove/src/lib/joint runtime.
- * Pure in-browser neural inference: 56,875 tracks, 32D fused vectors, 24 neighbors, neural MLP.
+ * Catalog retrieval and a supplied trained ranker. Scores are ordering values,
+ * not calibrated probabilities that a listener will like a track.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
@@ -12,8 +13,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const DIM = 32;
-  const K = 24;
+  const modelDimensions = d => d.manifest.dimensions;
 
   const normalize = (s) => (s || '')
     .normalize('NFKC')
@@ -191,8 +191,8 @@
     return songs;
   }
 
-  let loadedJointData = null;
-  let loadingPromise = null;
+  const loadedModels = new Map();
+  const pendingModels = new Map();
 
   const catalogIndicesCache = new WeakMap();
 
@@ -240,22 +240,9 @@
     const ambiguous = new Set();
 
     for (const song of songs) {
-      const keysToTry = [
-        name(song),
-        mastering(name(song)),
-        name({ artist: song.artist, title: cleanTitle(song.title) }),
-        mastering(name({ artist: song.artist, title: cleanTitle(song.title) }))
-      ];
-
-      const rawArtists = (song.artist || '').split(/[,&/]|(?:\s+(?:feat\.?|ft\.?|vs\.?|with)\s+)/i).map(a => a.trim()).filter(Boolean);
-      if (rawArtists.length > 1) {
-        for (const a of rawArtists) {
-          keysToTry.push(name({ artist: a, title: song.title }));
-          keysToTry.push(mastering(name({ artist: a, title: song.title })));
-          keysToTry.push(name({ artist: a, title: cleanTitle(song.title) }));
-          keysToTry.push(mastering(name({ artist: a, title: cleanTitle(song.title) })));
-        }
-      }
+      // An unknown title by a known artist is still an unknown recording.
+      // Only exact identities, explicit aliases and remaster labels may resolve.
+      const keysToTry = [name(song), mastering(name(song))];
 
       let ids = new Set();
       for (const k of keysToTry) {
@@ -287,23 +274,6 @@
       }
     }
 
-    if (!seeds.size) {
-      for (const song of songs) {
-        if (ambiguous.has(song)) continue;
-        const rawArtists = [song.artist, ...(song.artist || '').split(/[,&/]|(?:\s+(?:feat\.?|ft\.?|vs\.?|with)\s+)/i).map(a => a.trim()).filter(Boolean)];
-        for (const a of rawArtists) {
-          const artistTrackIdxs = m.artistMap.get(normalize(a));
-          if (artistTrackIdxs && artistTrackIdxs.length > 0) {
-            const chosenIdx = artistTrackIdxs[0];
-            seeds.add(chosenIdx);
-            known.add(chosenIdx);
-            matches.push({ input: song, index: chosenIdx });
-            break;
-          }
-        }
-      }
-    }
-
     return {
       seeds: [...seeds].sort((a, b) => a - b),
       known: [...known].sort((a, b) => a - b),
@@ -312,381 +282,238 @@
     };
   }
 
+  // Bound inference work for imported libraries. Round-robin artists ensures
+  // an artist with many duplicates cannot occupy the entire seed budget.
+  const MAX_MODEL_SEEDS = 64;
   function selectSeeds(input, artists) {
-    const keyFn = (i) => Math.imul(i + 1, 2654435761) >>> 0;
     const groups = new Map();
-    const uniqueInputs = [...new Set(input)].sort((a, b) => keyFn(a) - keyFn(b));
-
-    for (const i of uniqueInputs) {
-      const art = artists[i];
-      let group = groups.get(art);
-      if (!group) { group = []; groups.set(art, group); }
-      group.push(i);
+    for (const i of [...new Set(input)].sort((a, b) => a - b)) {
+      const artist = artists[i];
+      if (!groups.has(artist)) groups.set(artist, []);
+      groups.get(artist).push(i);
     }
-
-    const queues = [...groups.values()].sort((a, b) => keyFn(a[0]) - keyFn(b[0]));
     const out = [];
-    const maxLen = Math.max(0, ...queues.map(q => q.length));
-
-    for (let p = 0; p < maxLen; p++) {
-      for (const q of queues) {
-        if (p < q.length) out.push(q[p]);
-        if (out.length === 64) return out;
+    for (let round = 0; out.length < Math.min(MAX_MODEL_SEEDS, input.length); round++) {
+      let added = false;
+      for (const group of groups.values()) {
+        if (round < group.length) { out.push(group[round]); added = true; }
+        if (out.length === MAX_MODEL_SEEDS) break;
       }
+      if (!added) break;
     }
     return out;
   }
 
-  function candidateIds(d, input) {
-    const blocked = new Set(input.map(i => d.catalog.families[i]));
-    const ids = new Set();
-    const selected = selectSeeds(input, d.catalog.artists);
-
-    // 1. Direct 1st-hop graph neighbors
-    for (const s of selected) {
-      for (let k = 0; k < K; k++) {
-        const i = d.neighbors[s * K + k];
-        if (i >= 0 && !blocked.has(d.catalog.families[i])) {
-          ids.add(i);
-        }
-      }
-    }
-
-    let distinctArtists = new Set([...ids].map(i => d.catalog.artists[i])).size;
-
-    // 2. 2nd-hop graph expansion if candidate pool lacks artist variety (< 60)
-    if (distinctArtists < 60 || ids.size < 150) {
-      const hop1 = [...ids];
-      for (const h of hop1) {
-        for (let k = 0; k < K; k++) {
-          const i = d.neighbors[h * K + k];
-          if (i >= 0 && !blocked.has(d.catalog.families[i])) {
-            ids.add(i);
-          }
-          if (ids.size >= 800) break;
-        }
-        if (ids.size >= 800) break;
-      }
-      distinctArtists = new Set([...ids].map(i => d.catalog.artists[i])).size;
-    }
-
-    // 3. Vector acoustic similarity KNN (CLAP 512D) across 56k catalog
-    // Ensures small seed sets (e.g. 1-3 indie tracks) ALWAYS find hundreds of acoustic matches!
-    if (distinctArtists < 75 || ids.size < 300) {
-      const n = d.catalog.tracks.length;
-      const scores = [];
-      for (let i = 0; i < n; i++) {
-        if (blocked.has(d.catalog.families[i]) || ids.has(i)) continue;
-        let maxDot = -Infinity;
-        for (const s of selected) {
-          let dot = 0;
-          for (let j = 0; j < DIM; j++) {
-            dot += d.vectors[i * DIM + j] * d.vectors[s * DIM + j];
-          }
-          if (dot > maxDot) maxDot = dot;
-        }
-        scores.push({ i, dot: maxDot });
-      }
-      scores.sort((a, b) => b.dot - a.dot);
-      const needed = Math.max(250, 450 - ids.size);
-      for (let k = 0; k < Math.min(needed, scores.length); k++) {
-        ids.add(scores[k].i);
-      }
-    }
-
-    return [...ids].sort((a, b) => a - b);
-  }
-
   function neuralScore(d, seeds, i) {
-    let maximum = -Infinity;
-    let total = 0;
-    let coverage = 0;
-    let familiar = 0;
-
+    let maximum = -Infinity, total = 0, coverage = 0, familiar = 0, reference = null;
+    const dim = modelDimensions(d);
     for (const s of seeds) {
       let dot = 0;
-      for (let j = 0; j < DIM; j++) {
-        dot += d.vectors[i * DIM + j] * d.vectors[s * DIM + j];
-      }
-      maximum = Math.max(maximum, dot);
+      for (let j = 0; j < dim; j++) dot += d.vectors[i * dim + j] * d.vectors[s * dim + j];
+      if (dot > maximum) { maximum = dot; reference = s; }
       total += dot;
       coverage += d.info[s * 2 + 1];
-      if (d.catalog.artists[s] === d.catalog.artists[i]) {
-        familiar = 1;
-      }
+      if (d.catalog.artists[s] === d.catalog.artists[i]) familiar = 1;
     }
-
-    const x = [
-      maximum,
-      total / seeds.length,
-      d.info[i * 2],
-      familiar,
-      d.info[i * 2 + 1],
-      coverage / seeds.length
-    ];
-
-    let value = d.weights.b2[0];
-    for (let h = 0; h < 16; h++) {
-      let v = d.weights.b1[h];
-      for (let j = 0; j < 6; j++) {
-        v += x[j] * d.weights.w1[h][j];
-      }
-      value += Math.max(0, v) * d.weights.w2[0][h];
+    // Input ordering is the trained model's schema, not hand-tuned boosts.
+    const x = [maximum, total / seeds.length, d.info[i * 2], familiar, d.info[i * 2 + 1], coverage / seeds.length];
+    let score = d.weights.b2[0];
+    for (let h = 0; h < d.weights.b1.length; h++) {
+      let value = d.weights.b1[h];
+      for (let j = 0; j < x.length; j++) value += x[j] * d.weights.w1[h][j];
+      score += Math.max(0, value) * d.weights.w2[0][h];
     }
-    return value;
+    return { score, reference, vectorSimilarity: Math.max(-1, Math.min(1, maximum)) };
   }
 
-  // --- SLATE GENERATION WITH GUARANTEED 50 TRACKS & FILTERS ---
+  const popularityBandsCache = new WeakMap();
+  function popularityBands(d) {
+    if (!popularityBandsCache.has(d)) {
+      const sorted = Array.from({ length: d.catalog.tracks.length }, (_, i) => d.info[i * 2]).sort((a, b) => a - b);
+      // The lower, middle and upper thirds of this catalog, not global hit rates.
+      popularityBandsCache.set(d, [sorted[Math.floor((sorted.length - 1) / 3)], sorted[Math.floor(2 * (sorted.length - 1) / 3)]]);
+    }
+    return popularityBandsCache.get(d);
+  }
+
   function recommend(d, input, known = [], options = {}) {
     const n = d.catalog.tracks.length;
-    if (!input.length || input.length > 2000) {
-      throw new Error('Нужен список из 1-2000 треков');
+    if (!Array.isArray(input) || !input.length || input.length > 2000 || input.some(i => !Number.isInteger(i) || i < 0 || i >= n)) {
+      throw new Error('Нужен список из 1–2000 распознанных треков');
     }
-
-    const maxPerArtist = options.maxPerArtist ? Math.max(1, Math.min(5, options.maxPerArtist)) : 2;
-    const targetCount = options.targetCount || 50;
-    const popFilter = options.popularityFilter || 'all'; // 'all' | 'underground' | 'mid' | 'hits'
-    const audioOnly = !!options.requireAudio;
-
+    const maxPerArtist = options.maxPerArtist ?? 2;
+    const targetCount = options.targetCount ?? 50;
+    if (!Number.isInteger(maxPerArtist) || maxPerArtist < 1 || !Number.isInteger(targetCount) || targetCount < 0 || targetCount > 2000) throw new Error('Некорректный размер плейлиста или лимит исполнителя');
+    const popFilter = options.popularityFilter || 'all';
+    if (!['all', 'underground', 'mid', 'hits'].includes(popFilter)) throw new Error('Неизвестный фильтр популярности');
     const seeds = selectSeeds(input, d.catalog.artists);
-    const blocked = new Set([...input, ...known].map(i => d.catalog.families[i]));
-
-    let candidateList = candidateIds(d, input).filter(i => !blocked.has(d.catalog.families[i]));
-
-    // Filter candidate list by audio / popularity, preserving fallback pool
-    let filteredCandidates = candidateList;
-    if (audioOnly) {
-      const withAudio = filteredCandidates.filter(i => d.info[i * 2 + 1] > 0);
-      if (withAudio.length >= targetCount) filteredCandidates = withAudio;
+    const blocked = new Set([...input, ...known].filter(i => Number.isInteger(i) && i >= 0 && i < n).map(i => d.catalog.families[i]));
+    const excluded = new Set(Array.from(options.excludedTracks || [], String));
+    // Block alternate versions of explicitly excluded recordings too.
+    for (let i = 0; i < n; i++) if (excluded.has(String(d.catalog.tracks[i].id))) blocked.add(d.catalog.families[i]);
+    const [lower, upper] = popularityBands(d);
+    const rows = [];
+    // Score the eligible catalog. Filtering after taking top 50 starved local
+    // playlists and silently refilled restrictive filters with unrelated tracks.
+    for (let i = 0; i < n; i++) {
+      if (blocked.has(d.catalog.families[i]) || options.allowedIndices && !options.allowedIndices.has(i)) continue;
+      if (options.requireAudio && !(d.info[i * 2 + 1] > 0)) continue;
+      const popularity = d.info[i * 2];
+      if (popFilter === 'underground' && popularity > lower || popFilter === 'mid' && (popularity <= lower || popularity > upper) || popFilter === 'hits' && popularity <= upper) continue;
+      const evidence = neuralScore(d, seeds, i);
+      if (Number.isFinite(evidence.score)) rows.push({ index: i, ...evidence });
     }
-
-    if (popFilter === 'underground') {
-      const ug = filteredCandidates.filter(i => (d.info[i * 2] || 0) <= 0.45);
-      if (ug.length >= targetCount) filteredCandidates = ug;
-    } else if (popFilter === 'mid') {
-      const mid = filteredCandidates.filter(i => (d.info[i * 2] || 0) <= 0.75);
-      if (mid.length >= targetCount) filteredCandidates = mid;
-    } else if (popFilter === 'hits') {
-      const hits = filteredCandidates.filter(i => (d.info[i * 2] || 0) >= 0.45);
-      if (hits.length >= targetCount) filteredCandidates = hits;
+    rows.sort((a, b) => b.score - a.score || String(d.catalog.tracks[a.index].id).localeCompare(String(d.catalog.tracks[b.index].id)));
+    const used = new Set(), counts = new Map(), out = [];
+    let previous;
+    while (rows.length && out.length < targetCount) {
+      const eligible = r => !used.has(d.catalog.families[r.index]) && (counts.get(d.catalog.artists[r.index]) || 0) < maxPerArtist;
+      let position = rows.findIndex(r => eligible(r) && d.catalog.artists[r.index] !== previous);
+      if (position < 0) position = rows.findIndex(eligible);
+      if (position < 0) break;
+      const row = rows.splice(position, 1)[0], artist = d.catalog.artists[row.index];
+      out.push(row); used.add(d.catalog.families[row.index]);
+      counts.set(artist, (counts.get(artist) || 0) + 1); previous = artist;
     }
-
-    // Score candidates with MLP + boost for selected popularity profile
-    let rows = filteredCandidates.map(index => {
-      let score = neuralScore(d, seeds, index);
-      const pop = d.info[index * 2] || 0;
-      if (popFilter === 'underground') {
-        score += (1.0 - pop) * 0.75; // reward obscure gems
-      } else if (popFilter === 'hits') {
-        score += pop * 0.5; // reward recognizable hits
-      }
-      return { index, score };
-    });
-
-    rows.sort((a, b) => b.score - a.score || (d.catalog.tracks[a.index].id < d.catalog.tracks[b.index].id ? -1 : 1));
-
-    const used = new Set();
-    const counts = new Map();
-    const out = [];
-    let previous = -1;
-    let candidatePool = [...rows];
-
-    // Pass 1: Strict diversity (<= maxPerArtist, non-consecutive artist)
-    while (candidatePool.length && out.length < targetCount) {
-      const pos = candidatePool.findIndex(r =>
-        !used.has(d.catalog.families[r.index]) &&
-        (counts.get(d.catalog.artists[r.index]) || 0) < maxPerArtist &&
-        d.catalog.artists[r.index] !== previous
-      );
-      if (pos < 0) break;
-      const row = candidatePool.splice(pos, 1)[0];
-      const artist = d.catalog.artists[row.index];
-      out.push(row);
-      used.add(d.catalog.families[row.index]);
-      counts.set(artist, (counts.get(artist) || 0) + 1);
-      previous = artist;
-    }
-
-    // Pass 2: Relax consecutive artist alternation if under targetCount
-    if (out.length < targetCount) {
-      while (candidatePool.length && out.length < targetCount) {
-        const pos = candidatePool.findIndex(r =>
-          !used.has(d.catalog.families[r.index]) &&
-          (counts.get(d.catalog.artists[r.index]) || 0) < maxPerArtist
-        );
-        if (pos < 0) break;
-        const row = candidatePool.splice(pos, 1)[0];
-        const artist = d.catalog.artists[row.index];
-        out.push(row);
-        used.add(d.catalog.families[row.index]);
-        counts.set(artist, (counts.get(artist) || 0) + 1);
-      }
-    }
-
-    // Pass 3: Increment artist limit if still under targetCount
-    if (out.length < targetCount) {
-      while (candidatePool.length && out.length < targetCount) {
-        const pos = candidatePool.findIndex(r =>
-          !used.has(d.catalog.families[r.index]) &&
-          (counts.get(d.catalog.artists[r.index]) || 0) < maxPerArtist + 2
-        );
-        if (pos < 0) break;
-        const row = candidatePool.splice(pos, 1)[0];
-        const artist = d.catalog.artists[row.index];
-        out.push(row);
-        used.add(d.catalog.families[row.index]);
-        counts.set(artist, (counts.get(artist) || 0) + 1);
-      }
-    }
-
-    // Pass 4: Fallback from remaining rows ensuring EXACTLY targetCount
-    if (out.length < targetCount) {
-      for (const r of rows) {
-        if (!used.has(d.catalog.families[r.index])) {
-          out.push(r);
-          used.add(d.catalog.families[r.index]);
-          if (out.length === targetCount) break;
-        }
-      }
-    }
-
     return out;
   }
 
   // --- MODEL LOADING ---
+  function validateModel(d) {
+    const { manifest: m, catalog: c, weights: w } = d;
+    const n = m.tracks, dim = m.dimensions, k = m.neighbors;
+    if (m.schema !== 'joint-browser-v1' || !Number.isInteger(n) || n <= 0 || !Number.isInteger(dim) || dim <= 0 || !Number.isInteger(k) || k <= 0 ||
+        c.tracks?.length !== n || c.artists?.length !== n || c.families?.length !== n || d.vectors.length !== n * dim || d.info.length !== n * 2 || d.neighbors.length !== n * k) throw new Error('Несовместимый или неполный каталог рекомендаций');
+    if (!c.tracks.every(t => t && t.id != null && typeof t.artist === 'string' && typeof t.title === 'string') || c.artists.some(x => x == null) || c.families.some(x => x == null)) throw new Error('Повреждены идентификаторы каталога');
+    if (!d.vectors.every(Number.isFinite) || !d.info.every(Number.isFinite) || d.neighbors.some(i => i < -1 || i >= n)) throw new Error('Повреждены признаки каталога');
+    const h = w.b1?.length;
+    if (!h || w.w1?.length !== h || w.w2?.length !== 1 || w.w2[0]?.length !== h || w.b2?.length !== 1 ||
+        !w.w1.every(row => row.length === 6 && row.every(Number.isFinite)) || ![...w.b1, ...w.b2, ...w.w2[0]].every(Number.isFinite)) throw new Error('Несовместимые веса рекомендателя');
+    return d;
+  }
+
   async function loadJointModel(base = '/joint-model') {
-    if (loadedJointData) return loadedJointData;
-    if (loadingPromise) return loadingPromise;
-
-    loadingPromise = (async () => {
-      let m;
-      const isNode = typeof window === 'undefined' && !base.startsWith('http://') && !base.startsWith('https://');
-
-      if (isNode) {
-        const fs = require('fs/promises');
-        const path = require('path');
-        const resolvedBase = path.isAbsolute(base) ? base : path.join(__dirname, '..', base.replace(/^\//, ''));
-        m = JSON.parse(await fs.readFile(path.join(resolvedBase, 'manifest.json'), 'utf8'));
-      } else {
-        const resp = await fetch(`${base}/manifest.json`);
-        if (!resp.ok) throw new Error('Не найден манифест Joint Model (/joint-model/manifest.json)');
-        m = await resp.json();
-      }
-
-      async function fetchBuffer(file) {
+    if (loadedModels.has(base)) return loadedModels.get(base);
+    if (pendingModels.has(base)) return pendingModels.get(base);
+    const promise = (async () => {
+      const isNode = typeof window === 'undefined' && !/^https?:/.test(base);
+      const read = async file => {
         if (isNode) {
-          const fs = require('fs/promises');
-          const path = require('path');
-          const resolvedBase = path.isAbsolute(base) ? base : path.join(__dirname, '..', base.replace(/^\//, ''));
-          const buf = await fs.readFile(path.join(resolvedBase, file));
-          return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+          const fs = require('node:fs/promises'), path = require('node:path');
+          const resolved = base === '/joint-model' ? path.join(__dirname, '../joint-model') : path.isAbsolute(base) ? base : path.join(__dirname, '..', base);
+          const b = await fs.readFile(path.join(resolved, file));
+          return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
         }
-        const r = await fetch(`${base}/${file}`);
-        if (!r.ok) throw new Error(`Ошибка загрузки ${file}`);
-        return await r.arrayBuffer();
-      }
-
-      const [vBuf, nBuf, iBuf, catBuf, rankBuf] = await Promise.all([
-        fetchBuffer('vectors.f32'),
-        fetchBuffer('neighbors.i32'),
-        fetchBuffer('info.f32'),
-        fetchBuffer('catalog.json'),
-        fetchBuffer('ranker.json')
-      ]);
-
-      const textDecoder = new TextDecoder('utf-8');
-      const catalog = JSON.parse(textDecoder.decode(catBuf));
-      const weights = JSON.parse(textDecoder.decode(rankBuf));
-
-      loadedJointData = {
-        manifest: m,
-        catalog,
-        weights,
-        vectors: new Float32Array(vBuf),
-        neighbors: new Int32Array(nBuf),
-        info: new Float32Array(iBuf)
+        const response = await fetch(`${base}/${file}`);
+        if (!response.ok) throw new Error(`Каталог недоступен: ${file} (${response.status})`);
+        return response.arrayBuffer();
       };
-
-      return loadedJointData;
+      const decode = buffer => JSON.parse(new TextDecoder().decode(buffer));
+      const m = decode(await read('manifest.json'));
+      const files = ['vectors.f32', 'neighbors.i32', 'info.f32', 'catalog.json', 'ranker.json'];
+      const buffers = await Promise.all(files.map(async file => {
+        const buffer = await read(file);
+        if (m.sizes?.[file] != null && m.sizes[file] !== buffer.byteLength) throw new Error(`Неполный файл каталога: ${file}`);
+        if (m.sha256?.[file]) {
+          const crypto = isNode ? require('node:crypto').webcrypto : globalThis.crypto;
+          if (!crypto?.subtle) throw new Error('Недоступна проверка целостности каталога');
+          const digest = await crypto.subtle.digest('SHA-256', buffer);
+          const hex = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+          if (hex !== m.sha256[file]) throw new Error(`Повреждён файл каталога: ${file}`);
+        }
+        return buffer;
+      }));
+      const [v, n, i, c, w] = buffers;
+      const data = validateModel({ manifest: m, catalog: decode(c), weights: decode(w), vectors: new Float32Array(v), neighbors: new Int32Array(n), info: new Float32Array(i) });
+      loadedModels.set(base, data);
+      return data;
     })();
-
-    return loadingPromise;
+    pendingModels.set(base, promise);
+    try { return await promise; }
+    finally { pendingModels.delete(base); } // failed loads may be retried
   }
 
-  // --- END-TO-END PLAYLIST SYNTHESIS ---
-  async function generateJointPlaylist(songs, localTracks = [], base = '/joint-model', options = {}) {
-    const data = await loadJointModel(base);
-    if (!songs || !songs.length) throw new Error('Список сидов пуст');
-
-    const profile = resolveSongs(data.catalog, songs);
-    if (!profile.seeds.length) {
-      throw new Error(`Не удалось сопоставить треки с базой из 56 875 композиций. Попробуйте другие песни.`);
-    }
-
-    const recs = recommend(data, profile.seeds, profile.known, options);
-
-    // Build index of local tracks for matching
-    const localMap = new Map();
-    for (const lt of localTracks) {
-      const k = normalize(`${lt.artist || ''} - ${lt.title || ''}`);
-      localMap.set(k, lt);
-      const kAlt = normalize(`${lt.title || ''} - ${lt.artist || ''}`);
-      localMap.set(kAlt, lt);
-    }
-
-    // Normalized match score bounded nicely between 74% and 99%
-    const scores = recs.map(r => r.score);
-    const maxScore = Math.max(...scores);
-    const minScore = Math.min(...scores);
-    const span = Math.max(0.001, maxScore - minScore);
-
-    let tracks = recs.map(({ index, score }, rank) => {
-      const t = data.catalog.tracks[index];
-      const normKey = normalize(`${t.artist} - ${t.title}`);
-      const matchedLocal = localMap.get(normKey) || null;
-      const matchPercent = Math.max(72, Math.min(99, Math.round(99 - ((maxScore - score) / span) * 25)));
-
-      return {
-        rank: rank + 1,
-        id: t.id,
-        artist: t.artist,
-        title: t.title,
-        score: Math.round(score * 100) / 100,
-        matchPercent,
-        hasAudioFeatures: data.info[index * 2 + 1] > 0,
-        popularity: Math.round((data.info[index * 2] || 0) * 100),
-        matchedLocalTrack: matchedLocal,
-        isLocal: !!matchedLocal
-      };
+  function localPlaylist(songs, localTracks, options = {}) {
+    const Taste = typeof module === 'object' && module.exports ? require('./taste-model') : globalThis.TasteModel;
+    const Sound = typeof module === 'object' && module.exports ? require('./audio-profile') : globalThis.AudioProfile;
+    if (!Taste || !Sound) throw new Error('Локальный рекомендатель не загружен');
+    if (options.popularityFilter && options.popularityFilter !== 'all') throw new Error('Фильтр популярности каталога недоступен для локального подбора. Выберите «Все треки».');
+    const catalog = { tracks: localTracks, artists: localTracks.map(t => Taste.artistIdentity(t) || String(t.id)), families: localTracks.map(t => familyName(t)) };
+    const profile = resolveSongs(catalog, songs);
+    if (!profile.seeds.length) throw new Error('Опорные треки не найдены в библиотеке. Укажите точного исполнителя и название.');
+    const excluded = new Set(Array.from(options.excludedTracks || [], String));
+    const identity = t => Taste.artistIdentity(t) ? familyName(t) : `id:${t.id}`;
+    const activeSeeds = profile.seeds.filter(i => !excluded.has(String(localTracks[i].id)));
+    if (!activeSeeds.length) throw new Error('Опорные треки исключены из рекомендаций');
+    const blocked = new Set(profile.known.map(i => identity(localTracks[i])));
+    const model = new Taste(localTracks, options.plays || [], options.now ?? Date.now(), options.audioProfiles || {}, { excludedTracks: excluded });
+    const candidates = localTracks.filter(t => !excluded.has(String(t.id)) && !blocked.has(identity(t)) && (!options.requireAudio || Sound.texture(model.sound(t))));
+    // Separate seed neighbourhoods preserve multiple tastes in an imported list.
+    const lists = selectSeeds(activeSeeds, catalog.artists).map(i => {
+      const seed = localTracks[i];
+      return candidates.map(track => ({ track, seed, ...model.score(seed, track, options.bpmCache || {}, { explicitReference: true }) })).sort((a, b) => b.score - a.score || String(a.track.id).localeCompare(String(b.track.id)));
     });
-
-    if (options.excludedTracks) {
-      const excluded = options.excludedTracks instanceof Set ? options.excludedTracks : new Set(Array.from(options.excludedTracks).map(String));
-      tracks = tracks.filter(t => !excluded.has(String(t.id)) && !(t.matchedLocalTrack && excluded.has(String(t.matchedLocalTrack.id))));
-      tracks.forEach((t, i) => { t.rank = i + 1; });
+    const maxPerArtist = options.maxPerArtist ?? 2, target = options.targetCount ?? 50;
+    if (!Number.isInteger(maxPerArtist) || maxPerArtist < 1 || !Number.isInteger(target) || target < 0 || target > 2000) throw new Error('Некорректный размер плейлиста или лимит исполнителя');
+    const used = new Set(), counts = new Map(), tracks = [];
+    while (tracks.length < target) {
+      let added = false;
+      for (const list of lists) {
+        let row;
+        while (list.length) {
+          const candidate = list.shift(), t = candidate.track, artist = Taste.artistIdentity(t) || String(t.id);
+          if (used.has(identity(t)) || (counts.get(artist) || 0) >= maxPerArtist) continue;
+          row = candidate; counts.set(artist, (counts.get(artist) || 0) + 1); break;
+        }
+        if (!row) continue;
+        const t = row.track;
+        used.add(identity(t)); added = true;
+        tracks.push({ rank: tracks.length + 1, id: t.id, artist: t.artist, title: t.title, score: row.score, matchPercent: null,
+          hasAudioFeatures: !!Sound.texture(model.sound(t)), referenceTitle: row.explanation?.referenceTitle || null, reasons: row.reasons,
+          matchedLocalTrack: t, isLocal: true, source: 'local' });
+        if (tracks.length === target) break;
+      }
+      if (!added) break;
     }
-
-    if (options.localOnly) {
-      tracks = tracks.filter(t => t.isLocal);
-      tracks.forEach((t, i) => { t.rank = i + 1; });
-    }
-
-    return {
-      total: tracks.length,
-      seedsMatched: profile.matches.length,
-      seedsTotal: songs.length,
-      tracks,
-      localAvailableCount: tracks.filter(t => t.isLocal).length
-    };
+    return { total: tracks.length, tracks, seedsMatched: profile.matches.length, seedsTotal: songs.length, localAvailableCount: tracks.length, source: 'local', catalogSize: localTracks.length };
   }
 
-  return {
-    loadJointModel,
-    generateJointPlaylist,
-    resolveSongs,
-    recommend,
-    parseFileContent,
-    isLoaded: () => !!loadedJointData
-  };
-});
+  async function generateJointPlaylist(songs, localTracks = [], base = '/joint-model', options = {}) {
+    if (!Array.isArray(songs) || !songs.length || songs.length > 2000) throw new Error('Нужен список из 1–2000 опорных треков');
+    if (options.localOnly) return localPlaylist(songs, localTracks, options);
+    let data;
+    try { data = await loadJointModel(base); }
+    catch (error) {
+      // The installed app remains useful without the optional catalog, while
+      // explicitly reporting which source was actually used.
+      const result = localPlaylist(songs, localTracks, options);
+      return { ...result, notice: 'catalog-unavailable' };
+    }
+    const profile = resolveSongs(data.catalog, songs);
+    if (!profile.seeds.length) return { ...localPlaylist(songs, localTracks, options), notice: 'seeds-outside-catalog' };
+    const localCatalog = { tracks: localTracks };
+    const localMatches = new Map();
+    const excluded = new Set(Array.from(options.excludedTracks || [], String));
+    const blocked = [...profile.known];
+    // Match identities and aliases before selection; reversed artist/title and
+    // ambiguous duplicate names must not play an unrelated local recording.
+    for (let i = 0; i < data.catalog.tracks.length; i++) {
+      const resolved = resolveSongs(localCatalog, [data.catalog.tracks[i]]);
+      if (resolved.seeds.length === 1) localMatches.set(i, localTracks[resolved.seeds[0]]);
+      if (resolved.known.some(j => excluded.has(String(localTracks[j].id)))) blocked.push(i);
+    }
+    const recs = recommend(data, profile.seeds, blocked, { ...options, excludedTracks: excluded });
+    const tracks = recs.map(({ index, score, reference }, rank) => {
+      const t = data.catalog.tracks[index], matchedLocal = localMatches.get(index) || null;
+      return { rank: rank + 1, id: t.id, artist: t.artist, title: t.title, score, matchPercent: null,
+        hasAudioFeatures: data.info[index * 2 + 1] > 0, referenceTitle: data.catalog.tracks[reference]?.title || null,
+        matchedLocalTrack: matchedLocal, isLocal: !!matchedLocal, source: 'catalog' };
+    });
+    return { total: tracks.length, seedsMatched: profile.matches.length, seedsTotal: songs.length, tracks,
+      localAvailableCount: tracks.filter(t => t.isLocal).length, source: 'catalog', catalogSize: data.catalog.tracks.length,
+      modelStatus: data.manifest.status };
+  }
 
+  return { loadJointModel, generateJointPlaylist, resolveSongs, recommend, parseFileContent, validateModel,
+    isLoaded: () => loadedModels.size > 0 };
+});

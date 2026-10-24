@@ -47,6 +47,12 @@ function createWindow() {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[Main] Renderer process gone:', details);
+    if (details.reason !== 'clean-exit' && !quitting && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.reload();
+    }
+  });
   const load = () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(`http://localhost:${server.address().port}`);
   };

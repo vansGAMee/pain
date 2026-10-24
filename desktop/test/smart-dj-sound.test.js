@@ -170,26 +170,26 @@ test('equally fitting songs beyond the first six can be selected without destabi
  assert.equal(excluded.score(tracks[0],tracks[1]).soundSimilarity,null);
 });
 
-test('unmeasured songs get a bounded discovery turn without changing normal acoustic choices',()=>{
+test('unmeasured songs never displace measured fits on an arbitrary queue turn and remain playable',()=>{
  const current=song('current'),near=song('near'),unknown=Array.from({length:9},(_,i)=>song('unknown'+i));
  const tracks=[current,near,...unknown],profiles={current:profile(current),near:profile(near)};
  const model=new Taste(tracks,[],NOW,profiles),chosen=new Set();
  for(let step=0;step<32;step++){
   const context={seed:step+17,step},pick=model.choose(current,[near,...unknown],{},context);
-  assert.equal(pick.track.id==='near',step%8!==7);
+  assert.equal(pick.track.id,'near');
   assert.equal(pick.track.id,model.choose(current,[near,...unknown],{},context).track.id);
  }
- for(let seed=1;seed<=40;seed++)chosen.add(model.choose(current,[near,...unknown],{},{seed,step:7}).track.id);
- assert.ok(chosen.size>=5,'discovery must not stay on the first unmeasured song');
+ for(let seed=1;seed<=40;seed++)chosen.add(model.choose(current,unknown,{},{seed,step:7}).track.id);
+ assert.ok(chosen.size>=5,'an unmeasured-only library still gets diverse cold-start choices');
  assert.equal(model.choose(current,[near],{},{step:7}).track.id,'near');
  assert.equal(model.choose(current,[],{},{step:7}),null);
  const q=new Queue({shuffleMode:'smart',now:()=>NOW,audioProfiles:profiles});q.setContext('library',tracks);q.smartStep=7;
- const preview=q.peekNext();assert.ok(preview.id.startsWith('unknown'));assert.equal(q.next().id,preview.id);
+ const preview=q.peekNext();assert.equal(preview.id,'near');assert.equal(q.next().id,preview.id);
  const visited=new Set([current.id,preview.id]);
  for(let i=2;i<tracks.length;i++){const next=q.next();assert.ok(next);assert.ok(!visited.has(next.id));visited.add(next.id);}
 });
 
-test('unmeasured discovery respects rejection, exclusions and provisional acoustic skip evidence',()=>{
+test('unmeasured fallback respects rejection, exclusions and provisional acoustic skip evidence',()=>{
  const current=song('current'),near=song('near'),rejected=song('rejected'),excluded=song('excluded'),partial=song('partial'),oldSkip=song('oldSkip');
  const tracks=[current,near,rejected,excluded,partial,oldSkip];
  const profiles={current:profile(current,1500),near:profile(near,1500),rejected:profile(rejected,700,4),partial:profile(partial,700,4)};
@@ -202,7 +202,8 @@ test('unmeasured discovery respects rejection, exclusions and provisional acoust
  const recent=new Taste([current,near,unknown],[skip(unknown)],NOW,profiles);
  assert.equal(recent.choose(current,[near,unknown],{},{step:7}).track.id,'near');
  const accepted=new Taste([current,near,unknown],[{...skip(unknown),started:NOW-10000},{...completed(unknown),started:NOW-1000}],NOW,profiles);
- assert.equal(accepted.choose(current,[near,unknown],{},{step:7}).track.id,'unknown');
+ assert.equal(accepted.choose(current,[near,unknown],{},{step:7}).track.id,'near','completion does not fabricate acoustic similarity');
+ assert.equal(accepted.choose(current,[unknown],{},{step:7}).track.id,'unknown','a successful listen clears the rejection without blocking fallback');
  const allExcluded=new Taste(tracks,[],NOW,profiles,{excludedTracks:tracks.map(t=>t.id)});
  assert.equal(allExcluded.choose(current,tracks,{},{step:7}),null);
 });
