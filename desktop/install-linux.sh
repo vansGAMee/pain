@@ -1,89 +1,42 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+PAIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PAIN_BIN="$HOME/.local/bin"
+PAIN_APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+PAIN_ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/512x512/apps"
+mkdir -p "$PAIN_BIN" "$PAIN_APPS" "$PAIN_ICONS"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BIN_DIR="$HOME/.local/bin"
-APP_DIR="$HOME/.local/share/applications"
-ICON_DIR_512="$HOME/.local/share/icons/hicolor/512x512/apps"
-ICON_DIR_256="$HOME/.local/share/icons/hicolor/256x256/apps"
-PIXMAPS_DIR="$HOME/.local/share/pixmaps"
-
-mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR_512" "$ICON_DIR_256" "$PIXMAPS_DIR"
-
-# 1. Install Icons
-cp "$SCRIPT_DIR/assets/app-icon.png" "$ICON_DIR_512/pain.png"
-cp "$SCRIPT_DIR/assets/app-icon.png" "$ICON_DIR_256/pain.png"
-cp "$SCRIPT_DIR/assets/app-icon.png" "$PIXMAPS_DIR/pain.png"
-
-# 2. Install Executable Launcher
-cat << 'LAUNCHER' > "$BIN_DIR/pain"
-#!/usr/bin/env bash
-PORT=3000
-
-# Locate desktop server.js
-if [ -f "$HOME/mono-local/desktop/src/server.js" ]; then
-    SERVER_JS="$HOME/mono-local/desktop/src/server.js"
-elif [ -f "$HOME/.local/share/pain/src/server.js" ]; then
-    SERVER_JS="$HOME/.local/share/pain/src/server.js"
-elif [ -f "/usr/share/pain/src/server.js" ]; then
-    SERVER_JS="/usr/share/pain/src/server.js"
+# Resolve the real native runtime at install time; never silently fall back to a browser.
+if [[ -x "$PAIN_ROOT/pain" ]]; then
+    PAIN_COMMAND=("$PAIN_ROOT/pain")
+elif [[ -x "$PAIN_ROOT/node_modules/electron/dist/electron" ]]; then
+    PAIN_COMMAND=("$PAIN_ROOT/node_modules/electron/dist/electron" "$PAIN_ROOT")
+elif [[ -n "${PAIN_ELECTRON_PATH:-}" && -x "$PAIN_ELECTRON_PATH" ]]; then
+    PAIN_COMMAND=("$PAIN_ELECTRON_PATH" "$PAIN_ROOT")
 else
-    SERVER_JS="$(dirname "$(dirname "$(readlink -f "$0")")")/desktop/src/server.js"
+    echo 'Native Electron runtime not found. Run npm install in the desktop folder, then run this installer again.' >&2
+    exit 1
 fi
-
-# Start server if not running
-if ! curl -s -m 1 "http://127.0.0.1:$PORT" > /dev/null 2>&1; then
-    if [ -f "$SERVER_JS" ]; then
-        node "$SERVER_JS" > /dev/null 2>&1 &
-        for i in $(seq 1 20); do
-            if curl -s -m 1 "http://127.0.0.1:$PORT" > /dev/null 2>&1; then
-                break
-            fi
-            sleep 0.2
-        done
-    fi
-fi
-
-URL="http://localhost:$PORT"
-
-# Open in standalone app window if chromium / chrome is available, else default browser
-if command -v chromium > /dev/null 2>&1; then
-    exec chromium --app="$URL" --class="Pain" --name="pain" "$@"
-elif command -v google-chrome > /dev/null 2>&1; then
-    exec google-chrome --app="$URL" --class="Pain" --name="pain" "$@"
-elif command -v brave > /dev/null 2>&1; then
-    exec brave --app="$URL" --class="Pain" --name="pain" "$@"
-elif command -v xdg-open > /dev/null 2>&1; then
-    exec xdg-open "$URL"
-else
-    echo "Pain running at $URL"
-fi
-LAUNCHER
-
-chmod +x "$BIN_DIR/pain"
-
-# 3. Install .desktop file
-cat << DESKTOP > "$APP_DIR/pain.desktop"
+[[ ! -f "$PAIN_BIN/pain" ]] || cp -p "$PAIN_BIN/pain" "$PAIN_BIN/pain.before-native"
+{
+    printf '#!/usr/bin/env bash\nexec '
+    printf '%q ' "${PAIN_COMMAND[@]}"
+    printf '"$@"\n'
+} > "$PAIN_BIN/pain"
+chmod +x "$PAIN_BIN/pain"
+cp "$PAIN_ROOT/assets/app-icon.png" "$PAIN_ICONS/pain.png"
+PAIN_DESKTOP_EXEC="${PAIN_BIN//\\/\\\\}/pain"
+PAIN_DESKTOP_EXEC="${PAIN_DESKTOP_EXEC//\"/\\\"}"
+cat > "$PAIN_APPS/pain.desktop" <<EOF
 [Desktop Entry]
-Name=Pain
-GenericName=Music Player & Companion
-Comment=Minimalist Audio Player & Phone Companion
-Exec=$BIN_DIR/pain
+Name=PAIN
+GenericName=Music Player
+Exec="$PAIN_DESKTOP_EXEC"
 Icon=pain
 Terminal=false
 Type=Application
 Categories=AudioVideo;Audio;Player;
-Keywords=music;audio;player;pain;companion;
-StartupWMClass=Pain
-DESKTOP
-
-# 4. Update desktop database & icon cache
-if command -v update-desktop-database > /dev/null 2>&1; then
-    update-desktop-database "$APP_DIR" > /dev/null 2>&1 || true
-fi
-
-if command -v gtk-update-icon-cache > /dev/null 2>&1; then
-    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" > /dev/null 2>&1 || true
-fi
-
-echo "Pain has been successfully installed to Arch Linux application menu!"
+StartupWMClass=pain
+EOF
+if command -v update-desktop-database >/dev/null; then update-desktop-database "$PAIN_APPS" >/dev/null 2>&1 || true; fi
+echo 'PAIN native launcher installed. Start with: pain'

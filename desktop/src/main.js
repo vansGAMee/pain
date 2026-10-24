@@ -1,56 +1,106 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const http = require('http');
 
-let mainWindow;
-if(process.platform==='win32')app.setAppUserModelId('dev.pain.desktop');
+app.setName('PAIN');
+app.setPath('userData', process.env.PAIN_USER_DATA_DIR || path.join(app.getPath('appData'), 'Pain'));
+if (process.platform === 'win32') app.setAppUserModelId('dev.pain.desktop');
+if (process.platform === 'linux') app.setDesktopName('pain.desktop');
 
+let mainWindow = null, tray = null, server = null, quitting = false;
+const icon = path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png');
+function showWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show(); mainWindow.focus();
+}
+function setTray(enabled) {
+  if (enabled && !tray) {
+    const next = new Tray(icon);
+    try {
+      next.setToolTip('PAIN');
+      next.setContextMenu(Menu.buildFromTemplate([
+        { label: 'PAIN — Открыть / Open', click: showWindow },
+        { type: 'separator' },
+        { label: 'Выход / Quit', click: () => app.quit() }
+      ]));
+      next.on('click', showWindow); next.on('double-click', showWindow);
+      tray = next;
+    } catch (error) { next.destroy(); throw error; }
+  } else if (!enabled && tray) {
+    showWindow(); tray.destroy(); tray = null;
+  }
+}
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 780,
-    minWidth: 900,
-    minHeight: 650,
-    backgroundColor: '#EFEDE6',
-    frame: true,
-    titleBarStyle: 'default',
-    title: 'Pain — Local Audio & Sync Companion',
-    icon: process.platform === 'win32' ? path.join(__dirname, '..', 'assets', 'app-icon.ico') : path.join(__dirname, '..', 'assets', 'app-icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: true,
-      contextIsolation: false
-    }
+    width: 1100, height: 780, minWidth: 900, minHeight: 650,
+    show: false, backgroundColor: '#EFEDE6', title: 'PAIN', icon,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true }
   });
-
-  // Wait for the actual listening port, including when 3000 is already occupied.
-  process.env.OPEN_BROWSER='false';
-  const server=require('./server.js');
-  if(!server.listenerCount('activate-window'))server.on('activate-window',()=>{
-    if(mainWindow&&!mainWindow.isDestroyed()){
-      if(mainWindow.isMinimized())mainWindow.restore();
-      mainWindow.show();mainWindow.focus();
-    }
+  const hideToTray = event => {
+    if (!quitting && tray && !tray.isDestroyed()) { event.preventDefault(); mainWindow.hide(); }
+  };
+  mainWindow.on('minimize', hideToTray); mainWindow.on('close', hideToTray);
+  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.once('ready-to-show', showWindow);
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+    return { action: 'deny' };
   });
-  const load=()=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.loadURL(`http://localhost:${server.address().port}`);};
-  if(server.listening)load();else server.once('listening',load);
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  const load = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(`http://localhost:${server.address().port}`);
+  };
+  if (server.listening) load(); else server.once('listening', load);
 }
 
-app.whenReady().then(createWindow);
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => { if (app.isReady()) showWindow(); });
+  app.on('activate', () => { if (mainWindow) showWindow(); else if (server) createWindow(); });
+  app.on('before-quit', () => { quitting = true; });
+  app.on('will-quit', () => { tray?.destroy(); });
+  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.whenReady().then(() => {
+    process.env.OPEN_BROWSER = 'false';
+    if (!process.env.PAIN_DATA_DIR && app.isPackaged) {
+      const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+      const exeDir = path.dirname(process.execPath);
+      const appDataDir = app.getPath('userData');
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+      let baseDir = appDataDir;
+      if (portableDir) {
+        baseDir = portableDir;
+      } else if (fs.existsSync(path.join(exeDir, 'data'))) {
+        baseDir = exeDir;
+      }
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+      // Auto-migration between portable and installed if current target data dir is empty
+      const targetDataDir = path.join(baseDir, 'data');
+      if (!fs.existsSync(path.join(targetDataDir, 'library.json'))) {
+        const candidates = [appDataDir, portableDir, exeDir].filter(Boolean);
+        for (const cand of candidates) {
+          const candData = path.join(cand, 'data');
+          if (cand !== baseDir && fs.existsSync(path.join(candData, 'library.json'))) {
+            try {
+              fs.mkdirSync(targetDataDir, { recursive: true });
+              for (const f of fs.readdirSync(candData)) {
+                const srcPath = path.join(candData, f);
+                const dstPath = path.join(targetDataDir, f);
+                if (!fs.existsSync(dstPath) && fs.statSync(srcPath).isFile()) {
+                  fs.copyFileSync(srcPath, dstPath);
+                }
+              }
+              break;
+            } catch (_) {}
+          }
+        }
+      }
+      process.env.PAIN_DATA_DIR = baseDir;
+    }
+    server = require('./server.js');
     createWindow();
-  }
-});
+    server.on('activate-window', showWindow);
+    server.desktopPreferences.attachShell(setTray);
+  });
+}

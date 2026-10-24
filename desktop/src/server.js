@@ -21,17 +21,25 @@ const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
 const CACHE_DIR = path.join(BASE_DATA_DIR, 'cache');
 const COVERS_DIR = path.join(BASE_DATA_DIR, 'covers');
 const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
-const updater = new Updater({
+const updaterOptions = {
   currentVersion: APP_VERSION,
   appRoot: path.join(__dirname, '..'),
   dataDir: DATA_DIR
-});
+};
+const updater = process.versions.electron
+  ? require('./native-updater')(updaterOptions)
+  : new Updater(updaterOptions);
+const dataGuard = require('./data-guard');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+try { dataGuard.verifyAndRepair(DATA_DIR); } catch (err) { console.error('[DataGuard] Error verifying data:', err); }
+setInterval(() => { try { dataGuard.createSnapshot(DATA_DIR, 'periodic'); } catch (_) {} }, 30 * 60 * 1000).unref();
+
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
+const desktopPreferences = require('./desktop-preferences')(DATA_DIR);
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
@@ -452,6 +460,23 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
+  if (pathname === '/api/desktop-preferences') {
+    let local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    try { if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) local = false; } catch (_) { local = false; }
+    if (!local || (req.method === 'POST' && req.headers['x-pain-update'] !== 'preferences')) { res.writeHead(403); res.end(); return; }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'GET') { res.end(JSON.stringify(desktopPreferences.state())); return; }
+    if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 2048) req.destroy(); });
+    req.on('end', async () => {
+      try { res.end(JSON.stringify(await desktopPreferences.update(JSON.parse(body)))); }
+      catch (error) { res.writeHead(400); res.end(JSON.stringify({ error: error.message })); }
+    });
+    return;
+  }
+
   if (lyricsRoute(req,res,url,DATA_DIR)) return;
 
   if(pathname==='/api/dj-state'){
@@ -461,6 +486,94 @@ const server = http.createServer((req, res) => {
       req.on('data',chunk=>{size+=Buffer.byteLength(chunk);if(size>8*1024*1024)req.destroy();else body+=chunk;});
       req.on('end',()=>{try{const state=phoneSync.saveDjState(JSON.parse(body));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(state));}catch(_){res.writeHead(400);res.end('{}');}});return;
     }
+  }
+
+  if (pathname === '/api/favorite-moments') {
+    const file = path.join(DATA_DIR, 'favorite-moments.json');
+    if (req.method === 'GET') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '{}');
+      return;
+    }
+    if (req.method === 'POST') {
+      let body = '', size = 0; req.setEncoding('utf8');
+      req.on('data', chunk => { size += Buffer.byteLength(chunk); if (size > 2 * 1024 * 1024) req.destroy(); else body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            dataGuard.safeWrite(file, parsed);
+            dataGuard.createSnapshot(DATA_DIR, 'moments-change');
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(parsed));
+            return;
+          }
+          res.writeHead(400); res.end('{}');
+        } catch (_) { res.writeHead(400); res.end('{}'); }
+      });
+      return;
+    }
+  }
+
+  if (pathname === '/api/excluded-tracks') {
+    const file = path.join(DATA_DIR, 'excluded-tracks.json');
+    if (req.method === 'GET') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '[]');
+      return;
+    }
+    if (req.method === 'POST') {
+      let body = '', size = 0; req.setEncoding('utf8');
+      req.on('data', chunk => { size += Buffer.byteLength(chunk); if (size > 2 * 1024 * 1024) req.destroy(); else body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (Array.isArray(parsed)) {
+            const unique = Array.from(new Set(parsed.map(String)));
+            dataGuard.safeWrite(file, unique);
+            dataGuard.createSnapshot(DATA_DIR, 'excluded-change');
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(unique));
+            return;
+          }
+          res.writeHead(400); res.end('[]');
+        } catch (_) { res.writeHead(400); res.end('[]'); }
+      });
+      return;
+    }
+  }
+
+  // Backup & Disaster Recovery Endpoints
+  if (pathname === '/api/backup/status' && req.method === 'GET') {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(dataGuard.getBackupStatus(DATA_DIR)));
+    return;
+  }
+
+  if (pathname === '/api/backup/export' && req.method === 'GET') {
+    const bundle = dataGuard.exportBundle(DATA_DIR);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="pain-backup-${dateStr}.json"`);
+    res.end(JSON.stringify(bundle, null, 2));
+    return;
+  }
+
+  if (pathname === '/api/backup/import' && req.method === 'POST') {
+    let body = '', size = 0; req.setEncoding('utf8');
+    req.on('data', chunk => { size += Buffer.byteLength(chunk); if (size > 100 * 1024 * 1024) req.destroy(); else body += chunk; });
+    req.on('end', () => {
+      try {
+        const bundle = JSON.parse(body);
+        const result = dataGuard.importBundle(DATA_DIR, bundle);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message || 'Import failed' }));
+      }
+    });
+    return;
   }
 
   if (pathname === '/profile') {
@@ -1015,6 +1128,7 @@ server.once('listening', () => {
     console.log(` Keep this console window open while using Pain.`);
     console.log(`========================================================`);
     openWindow();
+    desktopPreferences.start();
     startDiscovery();
     setTimeout(() => updater.check().catch(() => {}), 3000).unref();
 });
@@ -1032,7 +1146,7 @@ server.on('error', (err) => {
   }
 });
 
-if(process.platform==='win32'){
+if(process.platform==='win32' && !process.versions?.electron){
   require('./instance-lock').claim({activate:openWindow}).then(lock=>{
     if(!lock){process.exit(0);return;}
     server.instanceLock=lock;
@@ -1042,3 +1156,4 @@ if(process.platform==='win32'){
 
 
 module.exports = server;
+server.desktopPreferences = desktopPreferences;

@@ -141,7 +141,7 @@ class Updater {
       this.release = { version, asset, sums, page: release.html_url };
       this.state = {
         currentVersion: this.currentVersion, latestVersion: version, status: 'ready', available,
-        canInstall, page: release.html_url, checkedAt: Date.now(), error: null
+        canInstall, page: release.html_url, notes: require('./comfort-utils').releaseSummary(release.body), checkedAt: Date.now(), error: null
       };
     } catch (error) {
       this.release = null;

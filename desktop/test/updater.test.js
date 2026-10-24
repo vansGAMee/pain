@@ -13,11 +13,12 @@ test('update versions, platform assets and checksums are strict',()=>{
 
 test('release check selects exact assets and does not offer source checkout replacement',async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-updater-check-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const release={tag_name:'v1.5.0',html_url:'https://github.com/vansGAMee/pain/releases/tag/v1.5.0',assets:[
+ const release={tag_name:'v1.5.0',body:'## Исправления\n- Перемотка без задержки',html_url:'https://github.com/vansGAMee/pain/releases/tag/v1.5.0',assets:[
   {name:'Pain-v1.5.0-Linux.tar.gz',browser_download_url:'https://github.com/linux'},
   {name:'SHA256SUMS-v1.5.0.txt',browser_download_url:'https://github.com/sums'}]};
  const updater=new Updater({currentVersion:'1.4.8',platform:'linux',appRoot:root,dataDir:root,fetch:async()=>Buffer.from(JSON.stringify(release))});
  let state=await updater.check(true);assert.equal(state.available,true);assert.equal(state.canInstall,true);
+ assert.equal(state.notes,'Исправления\nПеремотка без задержки');
  fs.mkdirSync(path.join(root,'.git'));state=await new Updater({currentVersion:'1.4.8',platform:'linux',appRoot:root,dataDir:root,fetch:async()=>Buffer.from(JSON.stringify(release))}).check(true);
  assert.equal(state.available,true);assert.equal(state.canInstall,false);
 });

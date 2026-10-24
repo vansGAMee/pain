@@ -12,6 +12,7 @@ node_modules/
 desktop/data/*.json
 desktop/data/*.txt
 desktop/data/lyrics/
+desktop/data/backups/
 desktop/downloads/*
 !desktop/downloads/.gitkeep
 desktop/cache/*

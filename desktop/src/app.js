@@ -36,7 +36,14 @@
     smartVolume: localStorage.getItem('pain_smart_volume') === 'true',
     backgroundDuck: localStorage.getItem('pain_background_duck') !== 'false',
     volumeLimit: Math.max(25, Math.min(100, Number(localStorage.getItem('pain_volume_limit')) || 100)),
+    trackTransition: (() => {
+      const raw = localStorage.getItem('pain_track_transition');
+      const saved = raw === null ? NaN : Number(raw);
+      return Number.isFinite(saved) ? Math.max(0, Math.min(4, saved)) : 1;
+    })(),
     reducedMotion: localStorage.getItem('pain_reduced_motion') === 'true',
+    resourceSaver: localStorage.getItem('pain_resource_saver') === 'true',
+    cleanTitles: localStorage.getItem('pain_clean_titles') === 'true',
     saveHistory: localStorage.getItem('pain_save_history') !== 'false',
     lastVolume: 1.0,
     isMuted: false,
@@ -119,6 +126,70 @@
     try{const response=await fetch('/api/dj-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profiles:audioProfiles,vibes:sharedVibes()})});if(response.ok)mergeSharedAudio(await response.json());}catch(_){}
     finally{audioSyncBusy=false;if(audioSyncAgain){audioSyncAgain=false;syncSharedAudio();}}
   }
+  async function syncExcludedTracksFromServer() {
+    try {
+      const res = await fetch('/api/excluded-tracks');
+      if (res.ok) {
+        const remote = await res.json();
+        if (Array.isArray(remote)) {
+          let added = 0;
+          for (const id of remote) {
+            const sid = String(id);
+            if (!state.excludedRecommendations.has(sid)) {
+              state.excludedRecommendations.add(sid);
+              if (queue && typeof queue.excludeTrack === 'function') {
+                queue.excludeTrack(sid);
+              }
+              added++;
+            }
+          }
+          if (added > 0) {
+            try {
+              localStorage.setItem('pain_excluded_recommendations', JSON.stringify(Array.from(state.excludedRecommendations)));
+            } catch (_) {}
+            if (typeof updateExcludedButtonsUI === 'function') updateExcludedButtonsUI();
+            if (typeof updateSettingsExcludedSection === 'function') updateSettingsExcludedSection();
+          }
+          if (state.excludedRecommendations.size > remote.length) {
+            fetch('/api/excluded-tracks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(Array.from(state.excludedRecommendations))
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (_) {}
+  }
+  async function syncFavoriteMomentsFromServer() {
+    try {
+      const res = await fetch('/api/favorite-moments');
+      if (res.ok) {
+        const remote = await res.json();
+        if (remote && typeof remote === 'object' && !Array.isArray(remote)) {
+          let added = 0;
+          for (const [id, sec] of Object.entries(remote)) {
+            if (state.favoriteMoments[id] === undefined && Number.isFinite(sec)) {
+              state.favoriteMoments[id] = sec;
+              added++;
+            }
+          }
+          if (added > 0) {
+            saveFavoriteMoments();
+            if (typeof updateFavoriteMomentUI === 'function') updateFavoriteMomentUI();
+          }
+          const localKeys = Object.keys(state.favoriteMoments || {});
+          if (localKeys.some(k => remote[k] === undefined)) {
+            fetch('/api/favorite-moments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(state.favoriteMoments)
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (_) {}
+  }
   try {
     const rawBpm = localStorage.getItem('pain_bpm_cache_v2');
     if (rawBpm) initialBpmCache = JSON.parse(rawBpm);
@@ -155,6 +226,10 @@
   let audioCtx = null;
   let sourceNode = null;
   let playingTrackSnapshot = null;
+  let transitionGainNode = null;
+  let trackTransitionTimer = null;
+  let trackTransitionRequest = 0;
+  let isTrackFadingOut = false;
   let preampNode = null;
   let smartVolumeNode = null;
   let autoEqHeadroom = null;
@@ -371,7 +446,11 @@
     excludedTracksListContent: document.getElementById('excludedTracksListContent'),
     updateStatusDot: document.getElementById('updateStatusDot'),
     updateStatusText: document.getElementById('updateStatusText'),
-    updateActionBtn: document.getElementById('updateActionBtn')
+    updateActionBtn: document.getElementById('updateActionBtn'),
+    dataGuardStatusHint: document.getElementById('dataGuardStatusHint'),
+    exportBackupBtn: document.getElementById('exportBackupBtn'),
+    importBackupBtn: document.getElementById('importBackupBtn'),
+    importBackupFileInput: document.getElementById('importBackupFileInput')
   };
 
 
@@ -382,7 +461,7 @@
   let autoEqCharacter = 'learning';
 
   // --- TOAST NOTIFICATIONS ---
-  function showToast(message, icon = '✓') {
+  function showToast(message, icon = '✓', duration = 2800) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
     const toast = document.createElement('div');
@@ -392,7 +471,7 @@
     setTimeout(() => {
       toast.classList.add('hiding');
       setTimeout(() => toast.remove(), 250);
-    }, 2800);
+    }, duration);
   }
 
   // --- TIME-OF-DAY GREETING ---
@@ -552,9 +631,12 @@
 
     await loadLocalData();
     syncSharedAudio();
+    syncExcludedTracksFromServer();
+    syncFavoriteMomentsFromServer();
     await loadCachedTracksList();
     updateGreeting();
     setupEventListeners();
+    updateDataGuardStatusUI();
     window.addEventListener('pain:dj-changed',syncSharedAudio);
     setInterval(() => { if (!document.hidden) { updateGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) updateGreeting(); });
@@ -606,6 +688,8 @@
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AudioCtxClass();
       sourceNode = audioCtx.createMediaElementSource(audio);
+      transitionGainNode = audioCtx.createGain();
+      transitionGainNode.gain.value = 1;
       preampNode = audioCtx.createGain();
 
       let lastNode = sourceNode;
@@ -633,11 +717,12 @@
       try {
         smartVolumeNode = SmartVolume.create(audioCtx, audio);
         lastNode.connect(smartVolumeNode.input);
-        smartVolumeNode.output.connect(audioCtx.destination);
+        smartVolumeNode.output.connect(transitionGainNode);
         applySmartVolume();
       } catch (_) {
-        lastNode.connect(audioCtx.destination);
+        lastNode.connect(transitionGainNode);
       }
+      transitionGainNode.connect(audioCtx.destination);
       applyEqualizerAudioGains();
       try { autoEqHeadroom = AutoEqualizer.createHeadroom(audioCtx, EQ_FREQUENCIES); } catch (_) {}
       try {AudioProfile.observe(audioCtx,sourceNode,audio,()=>playingTrackSnapshot,
@@ -1177,20 +1262,7 @@
       if (momentBadge) {
         e.stopPropagation();
         const targetTrackId = momentBadge.dataset.trackId;
-        const targetMoment = typeof FavoriteMoments !== 'undefined'
-          ? FavoriteMoments.getMoment(state.favoriteMoments, targetTrackId)
-          : state.favoriteMoments?.[targetTrackId];
-        if (targetMoment !== null && targetMoment !== undefined) {
-          if (state.currentTrackId === targetTrackId) {
-            seekToPercent(targetMoment / (getCurrentTrackDuration() || 1));
-          } else {
-            const targetTrack = state.tracks.find(t => t.id === targetTrackId);
-            if (targetTrack) {
-              playTrackInContext(targetTrack, container._currentTrackList || state.tracks, container._currentContextInfo);
-              pendingSeekTime = targetMoment;
-            }
-          }
-        }
+        seekToFavoriteMoment(targetTrackId, container._currentTrackList || state.tracks, container._currentContextInfo);
         return;
       }
 
@@ -1285,7 +1357,7 @@
         <img class="row-thumb-img" src="${getCoverUrl(track)}" alt="" loading="lazy" decoding="async">
       </td>
       <td class="col-title">
-        <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
+        <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(displayTrackTitle(track))}</div>
         <div class="track-row-sub">${escapeHtml(track.artist || 'Unknown Artist')}</div>
       </td>
       <td class="col-album">${escapeHtml(track.album || '—')}</td>
@@ -1412,7 +1484,7 @@
           </svg>
         </div>
       </div>
-      <div class="track-card-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(track.title || 'Untitled')}</div>
+      <div class="track-card-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(displayTrackTitle(track))}</div>
       <div class="track-card-artist">${escapeHtml(track.artist || 'Unknown Artist')}</div>
       <div class="track-card-footer">
         <span class="track-card-duration">${formatTime(durationSec)}</span>
@@ -1695,7 +1767,7 @@
     const track = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId) || state.tracks[0];
     if (!track) return;
 
-    DOM.bigTrackTitle.textContent = track.title || 'Untitled';
+    DOM.bigTrackTitle.textContent = displayTrackTitle(track);
     DOM.bigTrackArtist.textContent = track.artist || 'Unknown Artist';
     DOM.bigTrackAlbum.textContent = track.album || '';
 
@@ -1996,35 +2068,85 @@
   }
 
   // --- AUDIO PLAYBACK ENGINE & CONTEXT-AWARE QUEUE ---
-  function playTrackObject(track, startPosition = 0) {
+  function setTrackTransitionGain(value, seconds = 0) {
+    if (!audioCtx || !transitionGainNode) return;
+    try {
+      const now = audioCtx.currentTime;
+      const gain = transitionGainNode.gain;
+      const held = Math.max(0.0001, gain.value);
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+      else { gain.cancelScheduledValues(now); gain.setValueAtTime(held, now); }
+      const target = Math.max(0.0001, Math.min(1, value));
+      if (seconds > 0) gain.linearRampToValueAtTime(target, now + seconds);
+      else {
+        gain.setValueAtTime(target, now);
+        gain.value = target;
+      }
+    } catch (_) {}
+  }
+
+  function startTrackObject(track, startPosition = 0) {
     if (!track) return;
     initAudioNodes();
     sampleListening();
-    if (state.currentTrackId) recordTrackFinished(state.currentTrackId,true);
+    if (state.currentTrackId) recordTrackFinished(state.currentTrackId, true);
     const request = ++playbackRequest;
     state.currentTrackId = track.id;
     state.currentTrackIndex = state.tracks.findIndex(t => t.id === track.id);
     state.hasPrefetchedNext = false;
+    isTrackFadingOut = false;
     beginListening(track);
     state.isPlaying = false;
-    DOM.currentTime.textContent = '0:00';
-    DOM.totalTime.textContent = formatTime(Math.max(0, Number(track.duration) || 0) / 1000);
-    DOM.progressFill.style.width = '0%';
-    if (DOM.progressThumb) DOM.progressThumb.style.left = '0%';
+    const durSec = Math.max(0, Number(track.duration) || 0) / 1000;
+    DOM.currentTime.textContent = formatTime(startPosition);
+    DOM.totalTime.textContent = formatTime(durSec);
+    const startPct = durSec > 0 && startPosition > 0 ? Math.max(0, Math.min(100, (startPosition / durSec) * 100)) : 0;
+    DOM.progressFill.style.width = `${startPct}%`;
+    if (DOM.progressThumb) DOM.progressThumb.style.left = `${startPct}%`;
 
     playingTrackSnapshot = {...track};
     if (state.eq.auto) applyAutoEqualizer(track);
     pendingSeekTime = startPosition > 0 ? startPosition : null;
+    const shouldFadeIn = state.trackTransition > 0 && startPosition <= 0;
+    if (shouldFadeIn && transitionGainNode) setTrackTransitionGain(0.0001);
+    else setTrackTransitionGain(1);
     audio.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
     savePlaybackPosition(true);
     audio.play().then(() => {
-      if (request === playbackRequest) syncPlaybackState();
+      if (request === playbackRequest) {
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        if (pendingSeekTime !== null) {
+          try { audio.currentTime = pendingSeekTime; } catch (_) {}
+          pendingSeekTime = null;
+        }
+        if (shouldFadeIn) {
+          setTrackTransitionGain(1, Math.min(state.trackTransition, 1.0));
+        } else {
+          setTrackTransitionGain(1);
+        }
+        syncPlaybackState();
+      }
     }).catch(async err => {
       // A superseded play or explicit pause must never restore an older source.
       if (request !== playbackRequest || err.name === 'AbortError') return;
       if (state.phoneUrl) {
         audio.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
-        try { await audio.play(); } catch (e) {
+        try {
+          await audio.play();
+          if (request === playbackRequest) {
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+            if (pendingSeekTime !== null) {
+              try { audio.currentTime = pendingSeekTime; } catch (_) {}
+              pendingSeekTime = null;
+            }
+            if (shouldFadeIn) {
+              setTrackTransitionGain(1, Math.min(state.trackTransition, 1.0));
+            } else {
+              setTrackTransitionGain(1);
+            }
+            syncPlaybackState();
+          }
+        } catch (e) {
           if (request === playbackRequest) console.warn('Audio unavailable:', e);
         }
       }
@@ -2048,7 +2170,16 @@
     analyzeTrackBpmInBackground(track);
   }
 
+  function playTrackObject(track, startPosition = 0) {
+    if (!track) return;
+    initAudioNodes();
+    clearTimeout(trackTransitionTimer);
+    ++trackTransitionRequest;
+    startTrackObject(track, startPosition);
+  }
+
   async function analyzeTrackBpmInBackground(track) {
+    if (state.resourceSaver) return;
     if (!track || !track.id || !queue) return;
     if (queue.bpmCache && queue.bpmCache[track.id]) return;
     if (track._bpmAnalyzing) return;
@@ -2091,21 +2222,21 @@
     }
   }
 
-  function playTrackInContext(track, trackList, contextInfo) {
+  function playTrackInContext(track, trackList, contextInfo, startPosition = 0) {
     if (!track) return;
     if (queue) {
       const list = Array.isArray(trackList) && trackList.length > 0 ? trackList : state.tracks;
       const idx = list.findIndex(t => t.id === track.id);
       queue.setContext(contextInfo?.type || 'library', list, idx !== -1 ? idx : 0, contextInfo?.title, !!contextInfo?.allowNew);
     }
-    playTrackObject(track);
+    playTrackObject(track, startPosition);
   }
 
-  function playTrackById(trackId) {
+  function playTrackById(trackId, startPosition = 0) {
     if (queue) {
       const inQueue = queue.jumpToTrack(trackId);
       if (inQueue) {
-        playTrackObject(inQueue);
+        playTrackObject(inQueue, startPosition);
         return;
       }
     }
@@ -2115,7 +2246,7 @@
       const idx = state.tracks.findIndex(t => t.id === trackId);
       queue.setContext('library', state.tracks, idx !== -1 ? idx : 0, state.lang === 'ru' ? 'Фонотека' : 'Library', true);
     }
-    playTrackObject(track);
+    playTrackObject(track, startPosition);
   }
 
   function playTrackIndex(index) {
@@ -2161,6 +2292,42 @@
       return Math.max(0, Number(track.duration) || 0) / 1000;
     }
     return 0;
+  }
+
+  function seekToTime(targetTime) {
+    const time = Number(targetTime);
+    if (!Number.isFinite(time) || time < 0) return;
+    const dur = getCurrentTrackDuration();
+    const clampedTime = dur > 0 ? Math.max(0, Math.min(dur, time)) : time;
+
+    DOM.currentTime.textContent = formatTime(clampedTime);
+    if (dur > 0) {
+      const pct = Math.max(0, Math.min(100, (clampedTime / dur) * 100));
+      DOM.progressFill.style.width = `${pct}%`;
+      if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
+    }
+
+    isTrackFadingOut = false;
+    if (transitionGainNode) setTrackTransitionGain(1);
+
+    if (audio.readyState >= 1) {
+      try {
+        audio.currentTime = clampedTime;
+        pendingSeekTime = null;
+      } catch (err) {
+        console.warn('Audio currentTime seek error:', err);
+        pendingSeekTime = clampedTime;
+      }
+    } else {
+      pendingSeekTime = clampedTime;
+    }
+  }
+
+  function seekToPercent(pct) {
+    const dur = getCurrentTrackDuration();
+    if (dur <= 0) return;
+    const clampedPct = Math.max(0, Math.min(1, pct));
+    seekToTime(clampedPct * dur);
   }
 
   function updatePlayingRowUI() {
@@ -2288,7 +2455,7 @@
   function updatePlayerBarUI(track, isPlaying) {
     window.dispatchEvent(new CustomEvent("pain:track",{detail:track}));
     if (!track) return;
-    DOM.bottomTrackTitle.textContent = track.title || 'Untitled';
+    DOM.bottomTrackTitle.textContent = displayTrackTitle(track);
     DOM.bottomTrackArtist.textContent = (track.artist || 'Unknown Artist') + (track.album ? ` · ${track.album}` : '');
 
     DOM.bottomCoverImg.src = getCoverUrl(track);
@@ -2371,7 +2538,13 @@
     }
 
     try {
-      localStorage.setItem('pain_excluded_recommendations', JSON.stringify(Array.from(state.excludedRecommendations)));
+      const jsonArr = JSON.stringify(Array.from(state.excludedRecommendations));
+      localStorage.setItem('pain_excluded_recommendations', jsonArr);
+      fetch('/api/excluded-tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: jsonArr
+      }).catch(() => {});
     } catch (e) {}
 
     updateExcludedButtonsUI();
@@ -2386,6 +2559,24 @@
         : `${count} ${count === 1 ? 'track' : 'tracks'} excluded`;
     }
     renderExcludedTracksList();
+    updateDataGuardStatusUI();
+  }
+
+  async function updateDataGuardStatusUI() {
+    if (!DOM.dataGuardStatusHint) return;
+    try {
+      const res = await fetch('/api/backup/status');
+      if (res.ok) {
+        const info = await res.json();
+        const ru = state.lang === 'ru';
+        const count = info.snapshotCount || 0;
+        let countStr = `${count} ${count === 1 ? 'снимок' : (count >= 2 && count <= 4 ? 'снимка' : 'снимков')}`;
+        if (!ru) countStr = `${count} ${count === 1 ? 'snapshot' : 'snapshots'}`;
+        DOM.dataGuardStatusHint.textContent = ru
+          ? `Автозащита активна: ${countStr} на диске`
+          : `Auto-protection active: ${countStr} on disk`;
+      }
+    } catch (_) {}
   }
 
   function renderExcludedTracksList() {
@@ -2432,6 +2623,11 @@
         ? FavoriteMoments.serialize(state.favoriteMoments)
         : JSON.stringify(state.favoriteMoments || {});
       localStorage.setItem('pain_favorite_moments', data);
+      fetch('/api/favorite-moments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data
+      }).catch(() => {});
     } catch (_) {}
   }
 
@@ -2504,15 +2700,23 @@
     }
   }
 
-  function seekToFavoriteMoment(trackId = state.currentTrackId) {
+  function seekToFavoriteMoment(trackId = state.currentTrackId, contextList = null, contextInfo = null) {
     if (!trackId) return;
     const moment = typeof FavoriteMoments !== 'undefined'
       ? FavoriteMoments.getMoment(state.favoriteMoments, trackId)
       : (state.favoriteMoments?.[trackId] ?? null);
     if (moment === null || moment === undefined || !Number.isFinite(moment)) return;
-    const dur = getCurrentTrackDuration();
-    if (dur > 0) {
-      seekToPercent(moment / dur);
+
+    if (state.currentTrackId === trackId) {
+      seekToTime(moment);
+      if (audio.paused) {
+        audio.play().then(() => syncPlaybackState()).catch(() => {});
+      }
+    } else {
+      const track = state.tracks.find(t => t.id === trackId);
+      if (track) {
+        playTrackInContext(track, contextList || state.tracks, contextInfo, moment);
+      }
     }
   }
 
@@ -2809,6 +3013,7 @@
     renderCurrentView();
     updateFluidBpmTempo();
     updateAutoEqualizerUI();
+    updateTrackTransitionUI();
     renderUpdateStatus();
     if (DOM.shareProfileModalBackdrop && DOM.shareProfileModalBackdrop.classList.contains('open')) {
       openProfileModal();
@@ -2838,6 +3043,9 @@
   function renderUpdateStatus() {
     if (!DOM.updateStatusText || !DOM.updateActionBtn) return;
     const ru = state.lang === 'ru', status = updateStatus;
+    const notes = document.getElementById('updateReleaseNotes');
+    notes.hidden = !status?.available || !status?.notes;
+    notes.textContent = notes.hidden ? '' : status.notes;
     DOM.updateStatusDot?.classList.toggle('available', !!status?.available);
     DOM.updateStatusDot?.classList.toggle('error', status?.status === 'error');
     DOM.updateActionBtn.disabled = ['checking', 'downloading', 'downloaded'].includes(status?.status);
@@ -2872,7 +3080,7 @@
       renderUpdateStatus();
       if (notify && updateStatus.available && !updateNoticeShown) {
         updateNoticeShown = true;
-        showToast(state.lang === 'ru' ? `Доступно обновление ${updateStatus.latestVersion}` : `Update ${updateStatus.latestVersion} is available`, '↑');
+        showToast((state.lang === 'ru' ? `Доступно обновление ${updateStatus.latestVersion}` : `Update ${updateStatus.latestVersion} is available`) + (updateStatus.notes ? ': ' + updateStatus.notes.slice(0, 240) : ''), '↑', 9000);
       }
     } catch (_) {
       updateStatus = { ...(updateStatus || {}), status: 'error' };
@@ -3111,9 +3319,52 @@
       document.hidden || !document.hasFocus());
   }
 
+  function displayTrackTitle(track) {
+    const title = track.title || 'Untitled';
+    return state.cleanTitles ? ComfortUtils.cleanTitle(title) : title;
+  }
+
+  async function initDesktopPreferences() {
+    const status = document.getElementById('desktopPreferencesStatus');
+    const switches = [['autostartSwitch', 'autostart', 'canAutostart'], ['traySwitch', 'tray', 'canTray']];
+    function render(settings) {
+      for (const [id, key, capability] of switches) {
+        const input = document.getElementById(id);
+        input.checked = settings[key] === true;
+        input.disabled = settings[capability] !== true;
+      }
+      status.textContent = settings.canTray ? '' : (state.lang === 'ru' ? 'Откройте PAIN через меню приложений или команду pain: эти настройки доступны в окне приложения.' : 'Open PAIN from the application menu or the pain command to use these settings.');
+    }
+    try {
+      const response = await fetch('/api/desktop-preferences');
+      if (!response.ok) throw new Error();
+      let settings = await response.json();
+      render(settings);
+      for (const [id, key] of switches) document.getElementById(id).addEventListener('change', async e => {
+        const value = e.target.checked;
+        for (const [control] of switches) document.getElementById(control).disabled = true;
+        try {
+          const result = await fetch('/api/desktop-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pain-Update': 'preferences' }, body: JSON.stringify({ [key]: value }) });
+          if (!result.ok) throw new Error();
+          settings = await result.json(); render(settings);
+        } catch (_) {
+          render(settings);
+          status.textContent = state.lang === 'ru' ? 'Не удалось применить настройку. Попробуйте ещё раз.' : 'Could not apply this setting. Try again.';
+        }
+      });
+    } catch (_) { status.textContent = state.lang === 'ru' ? 'Настройки запуска доступны в локальном приложении.' : 'Startup settings require the local app.'; }
+  }
+
   function initSettingsUI() {
+    for (const [id, key] of [['resourceSaverSwitch', 'resourceSaver'], ['cleanTitlesSwitch', 'cleanTitles']]) {
+      document.getElementById(id).checked = state[key];
+    }
+    document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
+    initDesktopPreferences();
     document.getElementById('volumeLimitSlider').value = state.volumeLimit;
     document.getElementById('volumeLimitValue').textContent = state.volumeLimit + '%';
+    document.getElementById('trackTransitionSlider').value = state.trackTransition;
+    updateTrackTransitionUI();
     document.getElementById('reducedMotionSwitch').checked = state.reducedMotion;
     document.getElementById('saveHistorySwitch').checked = state.saveHistory;
     document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
@@ -3128,9 +3379,20 @@
     updateFluidBpmTempo();
   }
 
+  function updateTrackTransitionUI() {
+    const output = document.getElementById('trackTransitionValue');
+    if (!output) return;
+    output.textContent = state.trackTransition === 0
+      ? (state.lang === 'ru' ? 'Выкл.' : 'Off')
+      : `${state.trackTransition.toLocaleString(state.lang === 'ru' ? 'ru-RU' : 'en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${state.lang === 'ru' ? 'с' : 's'}`;
+  }
+
   // --- DISCOVERY & ZERO-TOUCH AUTO-SYNC ---
   function startDiscoveryPolling() {
+    let lastPoll = 0;
     setInterval(async () => {
+      if (state.resourceSaver && Date.now() - lastPoll < 15000) return;
+      lastPoll = Date.now();
       try {
         const res = await fetch('/api/devices');
         if (res.ok) {
@@ -3892,6 +4154,13 @@
       });
     }
 
+    if (DOM.progressMomentMarker) {
+      DOM.progressMomentMarker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        seekToFavoriteMoment();
+      });
+    }
+
     DOM.bottomVinylToggleBtn.addEventListener('click', () => {
       switchView('player');
     });
@@ -3961,42 +4230,43 @@
       return Math.max(0, Math.min(1, clickX / rect.width));
     }
 
-    function seekToPercent(pct) {
-      const dur = getCurrentTrackDuration();
-      if (dur <= 0) return;
-      const clampedPct = Math.max(0, Math.min(1, pct));
-      const targetTime = clampedPct * dur;
-
-      DOM.currentTime.textContent = formatTime(targetTime);
-      DOM.progressFill.style.width = `${clampedPct * 100}%`;
-      if (DOM.progressThumb) DOM.progressThumb.style.left = `${clampedPct * 100}%`;
-
-      if (audio.readyState >= 1) {
-        try {
-          audio.currentTime = targetTime;
-        } catch (err) {
-          console.warn('Audio currentTime seek error:', err);
-          pendingSeekTime = targetTime;
-        }
-      } else {
-        pendingSeekTime = targetTime;
-      }
-    }
-
     audio.addEventListener('playing',()=>{
       if(listening?.closed){const track=state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
       listening?.anchor(performance.now(),audio.currentTime,!audio.muted&&audio.volume>0);
       syncPlaybackState();
     });
-    audio.addEventListener('pause',()=>{savePlaybackPosition(true);sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);syncPlaybackState();});
-    audio.addEventListener('waiting',()=>{sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);});
-    audio.addEventListener('seeking',()=>listening?.anchor(performance.now(),audio.currentTime,false));
-    audio.addEventListener('seeked',()=>savePlaybackPosition(true));
+    audio.addEventListener('pause',()=>{
+      isTrackFadingOut = false;
+      if (transitionGainNode) setTrackTransitionGain(1);
+      savePlaybackPosition(true);
+      sampleListening(true);
+      listening?.anchor(performance.now(),audio.currentTime,false);
+      syncPlaybackState();
+    });
+    audio.addEventListener('waiting',()=>{
+      isTrackFadingOut = false;
+      setTrackTransitionGain(1);
+      sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);
+    });
+    audio.addEventListener('seeking',()=>{
+      isTrackFadingOut = false;
+      if (transitionGainNode) setTrackTransitionGain(1);
+      listening?.anchor(performance.now(),audio.currentTime,false);
+    });
+    audio.addEventListener('seeked',()=>{
+      isTrackFadingOut = false;
+      if (transitionGainNode) setTrackTransitionGain(1);
+      savePlaybackPosition(true);
+    });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId);});
     audio.addEventListener('error',()=>{state.isPlaying=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
-    audio.addEventListener('ratechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused));
+    audio.addEventListener('ratechange',()=>{
+      isTrackFadingOut = false;
+      setTrackTransitionGain(1);
+      listening?.anchor(performance.now(),audio.currentTime,!audio.paused);
+    });
 
     // Audio Metadata & Buffering
     audio.addEventListener('loadedmetadata', () => {
@@ -4025,6 +4295,19 @@
       const dur = getCurrentTrackDuration();
       const cur = audio.currentTime;
 
+      if (state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended) {
+        const remaining = dur - cur;
+        if (remaining > 0 && remaining <= state.trackTransition) {
+          if (!isTrackFadingOut) {
+            isTrackFadingOut = true;
+            setTrackTransitionGain(0.0001, remaining / Math.max(0.1, audio.playbackRate));
+          }
+        } else if (isTrackFadingOut) {
+          isTrackFadingOut = false;
+          setTrackTransitionGain(1);
+        }
+      }
+
       DOM.currentTime.textContent = formatTime(cur);
       if (dur > 0) {
         DOM.totalTime.textContent = formatTime(dur);
@@ -4040,6 +4323,7 @@
     });
 
     audio.addEventListener('ended', () => {
+      isTrackFadingOut = false;
       sampleListening(true);
       if (state.currentTrackId) {
         recordTrackFinished(state.currentTrackId);
@@ -4224,6 +4508,25 @@
       try { localStorage.setItem('pain_volume_limit', String(state.volumeLimit)); } catch (_) {}
       saveVolume();
     });
+    document.getElementById('trackTransitionSlider').addEventListener('input', e => {
+      state.trackTransition = Math.max(0, Math.min(4, Number(e.target.value) || 0));
+      isTrackFadingOut = false;
+      setTrackTransitionGain(1);
+      updateTrackTransitionUI();
+      try { localStorage.setItem('pain_track_transition', String(state.trackTransition)); } catch (_) {}
+    });
+    for (const [id, key, storageKey] of [['resourceSaverSwitch', 'resourceSaver', 'pain_resource_saver'], ['cleanTitlesSwitch', 'cleanTitles', 'pain_clean_titles']]) {
+      document.getElementById(id).addEventListener('change', e => {
+        state[key] = e.target.checked;
+        try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
+        document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
+        if (key === 'cleanTitles') {
+          state.libraryDirty = true; renderCurrentView();
+          const track = state.tracks.find(t => t.id === state.currentTrackId);
+          if (track) updatePlayerBarUI(track, false);
+        }
+      });
+    }
     document.getElementById('reducedMotionSwitch').addEventListener('change', e => {
       state.reducedMotion = e.target.checked;
       document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
@@ -4294,6 +4597,11 @@
         }
         try {
           localStorage.removeItem('pain_excluded_recommendations');
+          fetch('/api/excluded-tracks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '[]'
+          }).catch(() => {});
         } catch(e) {}
         updateExcludedButtonsUI();
         updateSettingsExcludedSection();
@@ -4302,6 +4610,51 @@
     }
 
     if (DOM.updateActionBtn) DOM.updateActionBtn.addEventListener('click', handleUpdateAction);
+
+    // DataGuard Backup & Restore UI
+    if (DOM.exportBackupBtn) {
+      DOM.exportBackupBtn.addEventListener('click', () => {
+        window.location.href = '/api/backup/export';
+        showToast(state.lang === 'ru' ? 'Резервная копия скачивается…' : 'Downloading backup…');
+      });
+    }
+
+    if (DOM.importBackupBtn && DOM.importBackupFileInput) {
+      DOM.importBackupBtn.addEventListener('click', () => {
+        DOM.importBackupFileInput.click();
+      });
+
+      DOM.importBackupFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const bundle = JSON.parse(text);
+          if (!bundle || !bundle.files) {
+            showToast(state.lang === 'ru' ? 'Неверный формат файла бэкапа' : 'Invalid backup format');
+            return;
+          }
+          const res = await fetch('/api/backup/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: text
+          });
+          if (res.ok) {
+            showToast(state.lang === 'ru' ? 'Резервная копия успешно восстановлена!' : 'Backup restored successfully!');
+            await syncExcludedTracksFromServer();
+            await syncFavoriteMomentsFromServer();
+            await loadLocalData();
+            updateDataGuardStatusUI();
+          } else {
+            showToast(state.lang === 'ru' ? 'Ошибка при импорте бэкапа' : 'Import failed');
+          }
+        } catch (err) {
+          showToast(state.lang === 'ru' ? 'Ошибка чтения файла бэкапа' : 'Error reading backup file');
+        } finally {
+          DOM.importBackupFileInput.value = '';
+        }
+      });
+    }
 
     // New Playlist Modal
     DOM.newPlaylistBtn.addEventListener('click', () => {
@@ -4530,6 +4883,14 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && DOM.shareProfileModalBackdrop?.classList.contains('open')) {
         closeProfileModal();
+      }
+      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.isComposing) return;
+      if (e.target.closest('input, textarea, select, button, a, [role="button"], [role="slider"], [contenteditable]:not([contenteditable="false"])')) return;
+      if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) togglePlay(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (!audio.getAttribute('src')) return;
+        e.preventDefault();
+        seekToTime(Math.max(0, (pendingSeekTime ?? audio.currentTime ?? 0) + (e.key === 'ArrowRight' ? 5 : -5)));
       }
     });
 

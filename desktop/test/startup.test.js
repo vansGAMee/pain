@@ -15,7 +15,7 @@ async function launch({occupied=3,duplicate=false}={}){
  };
  vm.runInNewContext(startup,{server,PORT:3000,process:{env:{},platform:'win32',exit:code=>exits.push(code)},
   require:name=>name==='./windows-identity'?{apply(){}}:{claim:async options=>{activate=options.activate;return duplicate?null:{};}},
-  console:{log(){},warn(){},error(){}},Date,parseInt,
+  console:{log(){},warn(){},error(){}},Date,parseInt,desktopPreferences:{start(){}},
   exec:(...args)=>opened.push(args),startDiscovery:()=>discovery++,setTimeout:()=>({unref(){}}),updater:{},module:{}});
  await tick();return {server,opened,exits,attempts,discovery,activate};
 }

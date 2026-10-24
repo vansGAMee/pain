@@ -2,6 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),{createHash}=require('node:crypto');
 const mergeStats=require('./stats-store');
 const DjState=require('./dj-state');
+const { safeWrite, createSnapshot } = require('./data-guard');
 const flag=value=>value===true||value===1?1:0;
 function request(base,route,body){
  return new Promise((resolve,reject)=>{
@@ -22,7 +23,7 @@ class PhoneSync{
   this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();
  }
  read(name,fallback){try{return JSON.parse(fs.readFileSync(path.join(this.dir,name),'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}}
- write(name,data){const file=path.join(this.dir,name);fs.writeFileSync(file+'.tmp',JSON.stringify(data),'utf8');fs.renameSync(file+'.tmp',file);return data;}
+ write(name,data){const file=path.join(this.dir,name);safeWrite(file,data);return data;}
  persist(){this.write('sync-pending.json',this.pending);}
  saveLibrary(library){
   if(!library||!Array.isArray(library.tracks))throw new Error('Invalid library');
@@ -86,7 +87,9 @@ class PhoneSync{
    // Optional for older phones. An unavailable analysis worker must not stop stats/likes.
    try{djState=this.saveDjState(await request(base,'/api/dj-state',djState));}catch(_){}
   }
-  return {library:this.saveLibrary(library),stats:this.saveStats(stats),djState};
+  const result = {library:this.saveLibrary(library),stats:this.saveStats(stats),djState};
+  try { createSnapshot(this.dir, 'phone-sync'); } catch (_) {}
+  return result;
  });}
 }
 module.exports=PhoneSync;

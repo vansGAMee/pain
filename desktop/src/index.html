@@ -997,6 +997,13 @@
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="backgroundDuckSwitch"><span class="switch-slider round"></span></label></div>
           </div>
+          <div class="fluid-setting-row bpm-row comfort-limit-row">
+            <div class="fluid-row-label">
+              <label for="trackTransitionSlider" data-en="Track transition" data-ru="Переход между треками">Переход между треками</label>
+              <span class="fluid-row-hint" data-en="Gently fades between tracks. Set to zero to turn it off." data-ru="Мягко приглушает смену треков. Ноль — без перехода.">Мягко приглушает смену треков. Ноль — без перехода.</span>
+            </div>
+            <div class="comfort-range"><input type="range" id="trackTransitionSlider" min="0" max="4" step="0.5" value="1"><output id="trackTransitionValue" for="trackTransitionSlider">1,0 с</output></div>
+          </div>
         </div>
         <div class="settings-section">
           <div class="settings-section-head">
@@ -1025,6 +1032,27 @@
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="saveHistorySwitch"><span class="switch-slider round"></span></label></div>
           </div>
         </div>
+        <section class="settings-section">
+          <div class="settings-section-title" data-en="Application" data-ru="Приложение">Приложение</div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="autostartSwitch" data-en="Start at login" data-ru="Запускать при входе в систему">Запускать при входе в систему</label></div>
+            <label class="switch-label"><input type="checkbox" id="autostartSwitch" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="traySwitch" data-en="Minimize to tray" data-ru="Сворачивать в трей">Сворачивать в трей</label><span class="fluid-row-hint" data-en="Close or minimize the window to keep music playing. Open again from the tray. Quit from its menu." data-ru="Закрытие или сворачивание окна оставляет музыку в трее. Открыть плеер и выйти можно через значок.">Закрытие или сворачивание окна оставляет музыку в трее. Открыть плеер и выйти можно через значок.</span></div>
+            <label class="switch-label"><input type="checkbox" id="traySwitch" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <p id="desktopPreferencesStatus" class="fluid-row-hint" role="status"></p>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="resourceSaverSwitch" data-en="Resource saver" data-ru="Экономия ресурсов">Экономия ресурсов</label><span class="fluid-row-hint" data-en="Stops decorative animation, skips extra BPM decoding and checks devices less often." data-ru="Останавливает декоративные анимации, отключает дополнительный анализ BPM и реже проверяет устройства.">Останавливает декоративные анимации, отключает дополнительный анализ BPM и реже проверяет устройства.</span></div>
+            <label class="switch-label"><input type="checkbox" id="resourceSaverSwitch"><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="cleanTitlesSwitch" data-en="Hide download sites in titles" data-ru="Убирать сайты из названий">Убирать сайты из названий</label><span class="fluid-row-hint" data-en="Hides source links at the end of track titles. Files and tags stay unchanged; audio ads are not removed." data-ru="Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.">Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.</span></div>
+            <label class="switch-label"><input type="checkbox" id="cleanTitlesSwitch"><span class="switch-slider round"></span></label>
+          </div>
+          <p class="fluid-row-hint" data-en="Space — play/pause. Left/right arrows — seek 5 seconds." data-ru="Пробел — пауза. Стрелки влево и вправо — перемотка на 5 секунд.">Пробел — пауза. Стрелки влево и вправо — перемотка на 5 секунд.</p>
+        </section>
         <!-- Section: Ambient Fluid Glow -->
         <div class="settings-section">
           <div class="settings-section-head">
@@ -1104,6 +1132,24 @@
           </div>
         </div>
 
+        <div class="settings-section data-guard-settings-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Data Safety & Backup (DataGuard)" data-ru="Защита данных и бэкапы (DataGuard)">Защита данных и бэкапы (DataGuard)</div>
+            <div class="settings-section-desc" data-en="Automatic rolling snapshots protect your history, moments, and exclusions against crashes or OS reinstall." data-ru="Автоматические снимки защищают историю, таймкоды и дизлайки от сбоев и переустановки системы.">Автоматические снимки защищают историю, таймкоды и дизлайки от сбоев и переустановки системы.</div>
+          </div>
+          <div class="fluid-setting-row">
+            <div class="fluid-row-label">
+              <span data-en="Backup Status" data-ru="Статус автозащиты">Статус автозащиты</span>
+              <span class="fluid-row-hint" id="dataGuardStatusHint" data-en="Automatic snapshots active" data-ru="Автоснимки активны">Автоснимки активны</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn-minimal" id="exportBackupBtn" data-en="Export backup" data-ru="Экспорт копии">Экспорт копии</button>
+              <button type="button" class="btn-minimal" id="importBackupBtn" data-en="Restore..." data-ru="Восстановить…">Восстановить…</button>
+              <input type="file" id="importBackupFileInput" accept=".json,application/json" style="display:none;" />
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section update-settings-section">
           <div class="settings-section-head">
             <div class="settings-section-title" data-en="Application updates" data-ru="Обновления приложения">Обновления приложения</div>
@@ -1116,6 +1162,7 @@
             </div>
             <button type="button" class="btn-minimal" id="updateActionBtn" data-en="Check" data-ru="Проверить">Проверить</button>
           </div>
+          <p id="updateReleaseNotes" class="fluid-row-hint" style="white-space: pre-line; overflow-wrap: anywhere" hidden></p>
         </div>
       </div>
 
@@ -1232,6 +1279,7 @@
   <script src="dj-state.js"></script>
   <script src="auto-eq.js"></script>
   <script src="smart-volume.js"></script>
+  <script src="comfort-utils.js"></script>
   <script src="taste-model.js"></script>
   <script src="queue-engine.js"></script>
   <script src="joint-ai.js"></script>

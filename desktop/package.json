@@ -5,12 +5,53 @@
   "main": "src/main.js",
   "bin": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "electron .",
     "electron": "electron .",
     "web": "node src/server.js",
-    "build:win": "electron-builder --win",
-    "package:exe": "npx pkg . --target node18-win-x64 --output dist/Pain.exe && python3 ../tools/patch_windows_exe.py dist/Pain.exe",
+    "build:win": "electron-builder --win nsis zip --publish never",
+    "build:linux": "electron-builder --linux AppImage tar.gz --publish never",
+    "package:exe": "npm run build:win",
     "test": "node --test test/*.test.js"
+  },
+  "build": {
+    "appId": "dev.pain.desktop",
+    "productName": "PAIN",
+    "executableName": "pain",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist/native"
+    },
+    "linux": {
+      "icon": "assets/app-icon.png",
+      "category": "AudioVideo",
+      "artifactName": "Pain-v${version}-Linux.${ext}",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "pain"
+        }
+      }
+    },
+    "win": {
+      "icon": "assets/app-icon.ico",
+      "artifactName": "Pain-v${version}-Windows.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Pain-v${version}-Setup.exe"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "vansGAMee",
+        "repo": "pain"
+      }
+    ]
   },
   "pkg": {
     "assets": [
@@ -27,5 +68,12 @@
     "windows"
   ],
   "author": "Ivan",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
+  }
 }

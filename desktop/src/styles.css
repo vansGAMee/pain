@@ -4617,6 +4617,11 @@ input:checked + .switch-slider:before {
 }
 
 .comfort-range { display: flex; align-items: center; gap: 12px; width: 190px; max-width: 100%; flex: 0 0 auto; }
+html[data-resource-saver] *, html[data-resource-saver] *::before, html[data-resource-saver] *::after {
+  animation: none !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
 .comfort-range input { width: 100%; min-width: 0; accent-color: var(--ink); }
 .comfort-range output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
 @media (max-width: 600px) { .comfort-limit-row { flex-wrap: wrap; } .comfort-range { width: 100%; } }
