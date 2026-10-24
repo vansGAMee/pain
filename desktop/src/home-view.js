@@ -64,6 +64,84 @@
    <div class="home-pair">${section(t('Недавно звучало','Recently played'),m.recent.length?rows(m.recent):empty(t('Здесь будет история полноценных прослушиваний.','Your meaningful listening history will appear here.')))}${section(t('Недавно открыты','Recently discovered'),`<p class="home-section-note">${t('Впервые в сохранённой истории за последние 30 дней.','First heard in your saved history within the last 30 days.')}</p>`+(m.fresh.length?rows(m.fresh):empty(t('Новые открытия ещё впереди.','Your next discoveries are ahead.'))))}</div>
    ${section(t('Всегда рядом','Always close'),m.favorites.length?`<div class="home-favorite-grid">${m.favorites.slice(0,6).map(track=>`<button type="button" class="home-favorite" data-home-action="track" data-id="${escape(track.id)}"><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></button>`).join('')}</div>`:empty(t('Отмечайте любимые треки сердцем — они появятся здесь.','Like your favourite tracks to keep them here.')),button(t('Всё избранное','All favourites'),'favorites','home-text-button'))}
    <div class="home-pair">${section(t('Давно не встречались','Worth returning to'),m.past.length?rows(m.past):empty(t('Здесь появятся знакомые треки, которые не звучали неделю.','Familiar tracks unheard for a week will appear here.')))}${section(t('Ваши плейлисты','Your playlists'),data.playlists.length?`<div class="home-playlists">${data.playlists.map(pl=>`<button type="button" class="home-playlist" data-home-action="playlist" data-id="${escape(pl.id)}"><strong>${escape(pl.name)}</strong><span>${t('Треков','Tracks')}: ${new Set((pl.trackIds||[]).map(String).filter(id=>m.library.has(id))).size}</span></button>`).join('')}</div>`:empty(t('Соберите песни для дороги, работы или тихого вечера.','Collect songs for a journey, work or a quiet evening.')),button(t('Создать','Create'),'new-playlist','home-text-button'))}</div>
+   ${(() => {
+     if (data.showMoments === false) return '';
+     const momentsStore = data.favoriteMoments || {};
+     const moments = [];
+     for (const [id, sec] of Object.entries(momentsStore)) {
+       const track = m.library.get(String(id));
+       if (track && Number.isFinite(sec)) {
+         moments.push({ track, sec, dur: Number(track.duration) || 0 });
+       }
+     }
+     moments.sort((a, b) => (m.last?.get(String(b.track.id)) || 0) - (m.last?.get(String(a.track.id)) || 0));
+     const reel = data.momentsReel || { active: false, snippetSec: 25 };
+     const activeSec = reel.snippetSec ?? 25;
+     const durationsHtml = `
+       <div class="home-moments-controls">
+         <div class="home-moments-durations" role="group" aria-label="${escape(t('Длина фрагмента','Snippet duration'))}">
+           ${[15, 25, 45, 0].map(s => `<button type="button" class="home-duration-pill${activeSec === s ? ' is-selected' : ''}" data-home-action="reel-duration" data-id="${s}">${s === 0 ? t('Вся песня','Full track') : s + ' ' + t('с','s')}</button>`).join('')}
+         </div>
+         ${reel.active
+           ? button(t('Остановить микс','Stop reel'), 'reel-stop', 'home-button is-active')
+           : button(t('Слушать микс моментов','Play moments mix'), 'start-reel', 'home-primary')}
+       </div>
+     `;
+     const reelBanner = reel.active ? `
+       <div class="home-reel-bar">
+         <div class="home-reel-info">
+           <span class="home-reel-badge">⚡ ${t('Микс хайлайтов','Highlight reel')}</span>
+           <span class="home-reel-meta"><strong>${escape(current ? title(current) : '')}</strong> — ${escape(current ? artist(current) : '')}</span>
+           <span class="home-reel-timer">${reel.snippetSec > 0 ? `${reel.snippetSec} ${t('сек / фрагмент','sec / snippet')}` : t('до конца трека','until track ends')}</span>
+         </div>
+         <div class="home-reel-actions">
+           ${button(t('След. момент ⏭','Next moment ⏭'), 'reel-next', 'home-button')}
+           ${button(t('Слушать целиком','Keep playing'), 'reel-keep', 'home-button')}
+           ${button(t('✕ Выйти','✕ Exit'), 'reel-stop', 'home-text-button')}
+         </div>
+       </div>
+     ` : '';
+     const momentsGrid = moments.length ? `
+       <div class="home-moments-grid">
+         ${moments.map(({track, sec, dur}) => {
+           const isCurrent = current && String(current.id) === String(track.id);
+           const isPlayingCurrent = isCurrent && data.isPlaying;
+           const durSec = dur > 0 ? dur / 1000 : 1;
+           const pct = Math.min(100, Math.max(0, Math.round((sec / durSec) * 100)));
+           const snippetSpan = Math.min(100 - pct, Math.max(5, Math.round(((activeSec || 25) / durSec) * 100)));
+           const timeStr = typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.formatTime(sec) : duration(sec * 1000);
+           return `
+             <article class="home-moment-card${isCurrent ? ' is-current' : ''}">
+               <button type="button" class="home-moment-cover-btn" data-home-action="moment" data-id="${escape(track.id)}" title="${escape(title(track) + ' — ' + artist(track) + ' (' + timeStr + ')')}">
+                 <img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt="">
+                 <span class="home-moment-badge">⏱ ${escape(timeStr)}</span>
+                 <span class="home-moment-overlay">${isPlayingCurrent ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>' : icon}</span>
+               </button>
+               <div class="home-moment-meta">
+                 <strong title="${escape(title(track))}">${escape(title(track))}</strong>
+                 <span title="${escape(artist(track))}">${escape(artist(track))}</span>
+               </div>
+               <div class="home-moment-timeline" aria-hidden="true" title="${escape(t('Момент на ','Moment at ') + timeStr + ' / ' + duration(dur) + ' (' + pct + '%)')}">
+                 <div class="home-moment-track-bar">
+                   <div class="home-moment-slice" style="left:${pct}%;width:${snippetSpan}%"></div>
+                   <div class="home-moment-pin" style="left:${pct}%"></div>
+                 </div>
+                 <div class="home-moment-times">
+                   <span>${escape(timeStr)}</span>
+                   <span>${escape(duration(dur))}</span>
+                 </div>
+               </div>
+             </article>
+           `;
+         }).join('')}
+       </div>
+     ` : empty(t('Вы пока не отметили ни одного момента. Во время прослушивания трека нажмите иконку тайм-кода в плеере, чтобы зафиксировать любимую секунду.','You haven’t saved any favorite moments yet. While playing a track, tap the bookmark icon in the player to save your favorite part.'));
+     return section(
+       t('Лучшие моменты', 'Favorite moments'),
+       `<p class="home-section-note">${t('Кульминации ваших треков. Запускайте непрерывный микс хайлайтов или слушайте любимый отрезок песни.','Peak moments from your tracks. Play a continuous highlight reel or jump straight to the best part of any song.')}</p>${reelBanner}${momentsGrid}`,
+       moments.length ? durationsHtml : ''
+     );
+   })()}
    <footer class="home-footer"><span>${t('Только ваша музыка и ваша история.','Just your music and your history.')}</span>${button(t('Больше статистики','More listening insights'),'insights','home-text-button')}</footer>`;
   root.querySelectorAll('[data-home-action="vibe"]').forEach(b=>b.setAttribute('aria-pressed',String(b.classList.contains('is-selected'))));
   if(focusKey){const candidate=[...root.querySelectorAll('[data-home-action]')].find(b=>b.dataset.homeAction===focusKey[0]&&(b.dataset.id||'')===focusKey[1]);candidate?.focus({preventScroll:true});}
@@ -83,6 +161,12 @@
    const track=action==='mix'?tracks.find(t=>String(t.id)===id):tracks[0];
    if(track)actions.playMix(track,tracks);
   }else if(action==='track')actions.playTrack(id);
+  else if(action==='moment'){if(actions.playMoment)actions.playMoment(id);}
+  else if(action==='start-reel'){if(actions.startReel)actions.startReel(null);}
+  else if(action==='reel-stop'){if(actions.stopReel)actions.stopReel();}
+  else if(action==='reel-next'){if(actions.nextReel)actions.nextReel();}
+  else if(action==='reel-keep'){if(actions.keepFull)actions.keepFull();}
+  else if(action==='reel-duration'){if(actions.setSnippetSec)actions.setSnippetSec(Number(id));}
   else if(action==='vibe'){if(window.PainDJVibes?.select(id||null)){mixKey='';render(snapshot,actions);}}
   else if(action==='resume')actions.resume();
   else if(action==='playlist')actions.navigate('playlist',id);
@@ -98,6 +182,9 @@
    const resume=root.querySelector('.home-intro .home-primary');
    if(resume){resume.dataset.homeAction=playing?'player':'resume';resume.textContent=playing?(ru?'Открыть плеер':'Open player'):(ru?'Продолжить слушать':'Continue listening');}
    const label=root.querySelector('.home-now-copy>span');if(label)label.textContent=playing?(ru?'Сейчас звучит':'Now playing'):(ru?'На вашей стороне':'On your side');
+   root.querySelectorAll('.home-moment-card.is-current .home-moment-overlay').forEach(overlay => {
+     overlay.innerHTML = playing ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>' : icon;
+   });
   }
   window.HomeView={render,setPlaying};
 })();

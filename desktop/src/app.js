@@ -87,6 +87,14 @@
         const raw = localStorage.getItem('pain_favorite_moments');
         return typeof FavoriteMoments !== 'undefined' ? FavoriteMoments.deserialize(raw) : (raw ? JSON.parse(raw) : {});
       } catch(e) { return {}; }
+    })(),
+
+    // Favorite Moments on Home tab toggle
+    homeMomentsEnabled: (function() {
+      try {
+        const val = localStorage.getItem('pain_home_moments_enabled');
+        return val === null ? true : val === 'true';
+      } catch (_) { return true; }
     })()
   };
 
@@ -1079,11 +1087,37 @@
 
   function renderHome(){
     if(typeof HomeView==='undefined')return;
-    HomeView.render({tracks:state.tracks,stats:state.stats,playlists:state.playlists,queue,lang:state.lang,
-      current:queue?.getCurrentTrack(),isPlaying:state.isPlaying},
-      {cover:getCoverUrl,fallbackCover:getProceduralCoverSvg,navigate:switchView,resume:togglePlay,
-       playTrack:id=>{const track=state.tracks.find(t=>String(t.id)===id);if(track)playTrackById(track.id);},
-       playMix:(track,tracks)=>playTrackInContext(track,tracks,{type:'playlist',title:'Smart DJ'})});
+    HomeView.render({
+      tracks:state.tracks,
+      stats:state.stats,
+      playlists:state.playlists,
+      queue,
+      lang:state.lang,
+      current:queue?.getCurrentTrack(),
+      isPlaying:state.isPlaying,
+      showMoments:state.homeMomentsEnabled,
+      favoriteMoments:state.favoriteMoments,
+      momentsReel:momentsReel?momentsReel.getState():{active:false,snippetSec:25}
+    }, {
+      cover:getCoverUrl,
+      fallbackCover:getProceduralCoverSvg,
+      navigate:switchView,
+      resume:togglePlay,
+      playTrack:id=>{const track=state.tracks.find(t=>String(t.id)===id);if(track)playTrackById(track.id);},
+      playMix:(track,tracks)=>playTrackInContext(track,tracks,{type:'playlist',title:'Smart DJ'}),
+      playMoment:id=>{
+        if (momentsReel && momentsReel.getState().active) {
+          startMomentsReel(id);
+        } else {
+          seekToFavoriteMoment(id, state.tracks, { type: 'moments', title: state.lang === 'ru' ? 'Лучшие моменты' : 'Favorite Moments' });
+        }
+      },
+      startReel:(id,sec)=>startMomentsReel(id,sec),
+      stopReel:()=>stopMomentsReel(),
+      nextReel:()=>nextMomentsReel(),
+      keepFull:()=>keepFullMomentsReel(),
+      setSnippetSec:sec=>setMomentsSnippetSec(sec)
+    });
   }
 
 
@@ -2224,6 +2258,9 @@
 
   function playTrackInContext(track, trackList, contextInfo, startPosition = 0) {
     if (!track) return;
+    if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active && contextInfo?.type !== 'moments') {
+      momentsReel.stop();
+    }
     if (queue) {
       const list = Array.isArray(trackList) && trackList.length > 0 ? trackList : state.tracks;
       const idx = list.findIndex(t => t.id === track.id);
@@ -2736,6 +2773,64 @@
     }
   }
 
+  const momentsReel = typeof MomentsReel !== 'undefined'
+    ? MomentsReel.createController({
+        initialSnippetSec: Number(localStorage.getItem('pain_moments_snippet_sec')) || 25,
+        onAdvance: (item, idx, list) => {
+          playTrackInContext(item.track, list.map(x => x.track), { type: 'moments', title: state.lang === 'ru' ? 'Микс лучших моментов' : 'Moments Reel' }, item.momentSec);
+        },
+        onFade: (remaining) => {
+          if (state.trackTransition > 0) {
+            setTrackTransitionGain(0.0001, remaining / Math.max(0.1, audio.playbackRate));
+          }
+        },
+        onStateChange: () => {
+          if (state.currentView === 'home') renderHome();
+        }
+      })
+    : null;
+
+  function startMomentsReel(startTrackId = null, snippetSec = null) {
+    if (!momentsReel) return;
+    if (snippetSec !== null && snippetSec !== undefined) {
+      localStorage.setItem('pain_moments_snippet_sec', snippetSec);
+    }
+    const started = momentsReel.start(state.tracks, state.favoriteMoments, startTrackId, snippetSec);
+    if (!started) {
+      showToast(state.lang === 'ru' ? 'Нет сохранённых моментов' : 'No saved moments', 'ℹ');
+      return;
+    }
+    renderCurrentView();
+    showToast(state.lang === 'ru' ? 'Микс лучших моментов запущен' : 'Moments reel started', '▶');
+  }
+
+  function stopMomentsReel() {
+    if (!momentsReel) return;
+    momentsReel.stop();
+    setTrackTransitionGain(1);
+    renderCurrentView();
+  }
+
+  function keepFullMomentsReel() {
+    if (!momentsReel) return;
+    momentsReel.keepFullTrack();
+    setTrackTransitionGain(1);
+    renderCurrentView();
+    showToast(state.lang === 'ru' ? 'Трек играет целиком' : 'Playing full track', '✓');
+  }
+
+  function nextMomentsReel() {
+    if (!momentsReel) return;
+    momentsReel.next();
+  }
+
+  function setMomentsSnippetSec(sec) {
+    if (!momentsReel) return;
+    momentsReel.setSnippetSec(sec);
+    localStorage.setItem('pain_moments_snippet_sec', sec);
+    renderCurrentView();
+  }
+
   function updateSidebarLikedCount() {
     const count = state.tracks.filter(t => !!t.favorite).length;
     DOM.sidebarLikedCount.textContent = state.lang === 'ru' ? `${count} треков` : `${count} tracks`;
@@ -2893,6 +2988,10 @@
   function playNextTrack() {
     sampleListening();
     if(state.currentTrackId)recordTrackFinished(state.currentTrackId,!audio.ended);
+    if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
+      momentsReel.next();
+      return;
+    }
     if (queue) {
       const nextTrack = queue.next();
       if (nextTrack) {
@@ -2918,6 +3017,10 @@
   }
 
   function playPrevTrack() {
+    if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
+      momentsReel.prev();
+      return;
+    }
     if (audio.currentTime > 3) {
       sampleListening();
       pendingSeekTime = null;
@@ -3367,6 +3470,8 @@
     updateTrackTransitionUI();
     document.getElementById('reducedMotionSwitch').checked = state.reducedMotion;
     document.getElementById('saveHistorySwitch').checked = state.saveHistory;
+    const homeMomentsEl = document.getElementById('homeMomentsSwitch');
+    if (homeMomentsEl) homeMomentsEl.checked = state.homeMomentsEnabled;
     document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
     document.getElementById('smartVolumeSwitch').checked = state.smartVolume;
     document.getElementById('backgroundDuckSwitch').checked = state.backgroundDuck;
@@ -4295,6 +4400,14 @@
       const dur = getCurrentTrackDuration();
       const cur = audio.currentTime;
 
+      if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
+        const check = momentsReel.checkTime(cur, dur);
+        if (check.shouldAdvance) {
+          momentsReel.next();
+          return;
+        }
+      }
+
       if (state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended) {
         const remaining = dur - cur;
         if (remaining > 0 && remaining <= state.trackTransition) {
@@ -4327,6 +4440,11 @@
       sampleListening(true);
       if (state.currentTrackId) {
         recordTrackFinished(state.currentTrackId);
+      }
+
+      if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
+        momentsReel.next();
+        return;
       }
 
       if (state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one')) {
@@ -4543,6 +4661,14 @@
       if (track && state.saveHistory) { beginListening(track); sampleListening(); }
       try { localStorage.setItem('pain_save_history', String(state.saveHistory)); } catch (_) {}
     });
+    const homeMomentsInput = document.getElementById('homeMomentsSwitch');
+    if (homeMomentsInput) {
+      homeMomentsInput.addEventListener('change', e => {
+        state.homeMomentsEnabled = e.target.checked;
+        try { localStorage.setItem('pain_home_moments_enabled', String(state.homeMomentsEnabled)); } catch (_) {}
+        if (state.currentView === 'home') renderHome();
+      });
+    }
 
     for (const [id, key, storageKey] of [
       ['smartVolumeSwitch', 'smartVolume', 'pain_smart_volume'],
