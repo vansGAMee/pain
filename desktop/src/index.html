@@ -1092,11 +1092,11 @@
           <div class="settings-section-title" data-en="Application" data-ru="Приложение">Приложение</div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label"><label for="autostartSwitch" data-en="Start at login" data-ru="Запускать при входе в систему">Запускать при входе в систему</label></div>
-            <label class="switch-label"><input type="checkbox" id="autostartSwitch" disabled><span class="switch-slider round"></span></label>
+            <label class="switch-label"><input type="checkbox" id="autostartSwitch"><span class="switch-slider round"></span></label>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label"><label for="traySwitch" data-en="Minimize to tray" data-ru="Сворачивать в трей">Сворачивать в трей</label><span class="fluid-row-hint" data-en="Close or minimize the window to keep music playing. Open again from the tray. Quit from its menu." data-ru="Закрытие или сворачивание окна оставляет музыку в трее. Открыть плеер и выйти можно через значок.">Закрытие или сворачивание окна оставляет музыку в трее. Открыть плеер и выйти можно через значок.</span></div>
-            <label class="switch-label"><input type="checkbox" id="traySwitch" disabled><span class="switch-slider round"></span></label>
+            <label class="switch-label"><input type="checkbox" id="traySwitch"><span class="switch-slider round"></span></label>
           </div>
           <p id="desktopPreferencesStatus" class="fluid-row-hint" role="status"></p>
           <div class="fluid-setting-row bpm-row">
@@ -1185,6 +1185,52 @@
           </div>
           <div id="excludedTracksListContainer" style="display:none; margin-top: 10px; max-height: 200px; overflow-y: auto; background: var(--bg-surface-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
             <div id="excludedTracksListContent" style="display:flex; flex-direction:column; gap:6px;"></div>
+          </div>
+        </div>
+
+        <!-- Section: Send Tracks to Phone -->
+        <div class="settings-section track-upload-section">
+          <div class="settings-section-head">
+            <div class="settings-section-title" data-en="Send Tracks to Phone" data-ru="Передача треков на телефон">Передача треков на телефон</div>
+            <div class="settings-section-desc" data-en="Upload any audio file (MP3, FLAC, WAV, M4A, OGG) to your phone. It will immediately appear in your phone's library and be ready for playback." data-ru="Отправьте любой аудиотрек (MP3, FLAC, WAV, M4A, OGG) на телефон. Он сразу появится в медиатеке телефона и будет доступен для прослушивания.">Отправьте любой аудиотрек (MP3, FLAC, WAV, M4A, OGG) на телефон. Он сразу появится в медиатеке телефона и будет доступен для прослушивания.</div>
+          </div>
+          <div id="trackUploadDeviceBadge" class="upload-device-badge offline">
+            <span class="badge-dot"></span>
+            <span class="badge-text" id="trackUploadDeviceText" data-en="Searching for phone on Wi-Fi…" data-ru="Поиск телефона в сети…">Поиск телефона в сети…</span>
+          </div>
+          <div id="trackUploadDropzone" class="track-upload-dropzone">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14l-4-4h2.5V8h3v4H16l-4 4z"/>
+            </svg>
+            <div class="track-upload-dropzone-title" data-en="Drop your audio file here or click to browse" data-ru="Перетащите аудиофайл сюда или нажмите для выбора">Перетащите аудиофайл сюда или нажмите для выбора</div>
+            <div class="track-upload-dropzone-sub" data-en="Supports MP3, FLAC, WAV, M4A, OGG" data-ru="Поддерживаются MP3, FLAC, WAV, M4A, OGG">Поддерживаются MP3, FLAC, WAV, M4A, OGG</div>
+            <input type="file" id="trackUploadFileInput" accept="audio/*,.mp3,.flac,.wav,.m4a,.ogg" style="display:none;">
+          </div>
+          <div id="trackUploadPreviewCard" class="track-upload-preview" style="display:none;">
+            <div class="track-upload-file-info">
+              <div id="trackUploadFileName" class="track-upload-filename">track.mp3</div>
+              <div id="trackUploadFileSize" class="track-upload-filesize">0 MB</div>
+            </div>
+            <div class="track-upload-meta-grid">
+              <div>
+                <label for="trackUploadTitleInput" class="fluid-row-hint" style="display:block;margin-bottom:4px;" data-en="Title" data-ru="Название">Название</label>
+                <input type="text" id="trackUploadTitleInput" class="upload-meta-input" placeholder="Название трека">
+              </div>
+              <div>
+                <label for="trackUploadArtistInput" class="fluid-row-hint" style="display:block;margin-bottom:4px;" data-en="Artist" data-ru="Исполнитель">Исполнитель</label>
+                <input type="text" id="trackUploadArtistInput" class="upload-meta-input" placeholder="Исполнитель">
+              </div>
+            </div>
+            <div class="track-upload-actions">
+              <button type="button" class="btn-minimal" id="trackUploadCancelBtn" data-en="Cancel" data-ru="Отмена">Отмена</button>
+              <button type="button" class="btn-minimal primary" id="trackUploadSubmitBtn" data-en="Send to Phone" data-ru="Отправить на телефон">Отправить на телефон</button>
+            </div>
+          </div>
+          <div id="trackUploadProgressContainer" style="display:none; margin-top:10px;">
+            <div class="track-upload-progress-bar">
+              <div id="trackUploadProgressFill" class="track-upload-progress-fill"></div>
+            </div>
+            <div id="trackUploadStatusMsg" class="fluid-row-hint" style="margin-top:6px; font-weight:500;"></div>
           </div>
         </div>
 
@@ -1340,6 +1386,7 @@
   <script src="comfort-utils.js"></script>
   <script src="taste-graph.js"></script>
   <script src="taste-model.js"></script>
+  <script src="dj-worker-client.js"></script>
   <script src="queue-engine.js"></script>
   <script src="joint-ai.js"></script>
   <script src="favorite-moments.js"></script>

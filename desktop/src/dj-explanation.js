@@ -1,6 +1,7 @@
 /* Translate the recorded decision, never recompute or invent a selection reason. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.DJExplanation=factory();})(globalThis,()=>{
   const copy={
+    'Вы возвращаетесь к этому треку':['Трек получал завершённые прослушивания в вашей истории. При недостатке данных о звучании подбор опирается на эту частоту.','You have completed this track before. When sound evidence is unavailable, selection uses your completed-listen frequency.','You return to this track'],
     'Близкое звучание':['Анализ звука показал сходство с музыкой, которая сейчас служит ориентиром.','Audio analysis found a similar sound to the current reference.','Similar sound'],
     'Звучание сохранённого вайба':['По звучанию близок к сохранённому вайбу, включённому в момент подбора.','Its sound matches the saved vibe that was active when this track was picked.','Matches the saved vibe'],
     'Сочетается с вашей сессией':['Связи в вашей истории прослушиваний дают этому треку преимущество рядом с последними выбранными треками.','Connections in your listening history favour this track alongside your recent choices.','Fits this session'],
@@ -18,7 +19,7 @@
     'Любимый трек':['Вы добавили этот трек в любимые. Учитываем лайк вместе с дослушиваниями и пропусками.','You liked this track. The like is considered together with completed listens and skips.','Favorite track']
   };
   const reasons=d=>Array.isArray(d?.reasons)?[...new Set(d.reasons.filter(r=>typeof r==='string'))].slice(0,3):[];
-  function summary(d,lang='ru'){const r=reasons(d)[0];if(!r)return '';return copy[r]?(lang==='ru'?r:copy[r][2]):r;}
+  function summary(d,lang='ru'){const r=reasons(d)[0];if(!r)return '';return copy[r]?(lang==='ru'?r:copy[r][2]):'';}
   function describe(d,lang='ru'){
     const ru=lang==='ru',details=d?.explanation||{};
     const lines=reasons(d).map(r=>{

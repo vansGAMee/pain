@@ -5,7 +5,13 @@ const fs = require('fs');
 app.setName('PAIN');
 app.setPath('userData', process.env.PAIN_USER_DATA_DIR || path.join(app.getPath('appData'), 'Pain'));
 if (process.platform === 'win32') app.setAppUserModelId('dev.pain.desktop');
-if (process.platform === 'linux') app.setDesktopName('pain.desktop');
+if (process.platform === 'linux') {
+  app.setDesktopName('pain.desktop');
+  app.commandLine?.appendSwitch('enable-features', 'WaylandWindowDecorations');
+  if (process.env.XDG_SESSION_TYPE === 'wayland' || process.env.WAYLAND_DISPLAY) {
+    app.commandLine?.appendSwitch('ozone-platform-hint', 'auto');
+  }
+}
 
 let mainWindow = null, tray = null, server = null, quitting = false;
 const icon = path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png');
@@ -40,14 +46,15 @@ function createWindow() {
   const hideToTray = event => {
     if (!quitting && tray && !tray.isDestroyed()) { event.preventDefault(); mainWindow.hide(); }
   };
-  mainWindow.on('minimize', hideToTray); mainWindow.on('close', hideToTray);
+  // Minimize remains visible to the window manager; only Close uses the tray.
+  mainWindow.on('close', hideToTray);
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.once('ready-to-show', showWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
+  mainWindow.webContents.on?.('render-process-gone', (event, details) => {
     console.error('[Main] Renderer process gone:', details);
     if (details.reason !== 'clean-exit' && !quitting && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.reload();

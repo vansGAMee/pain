@@ -59,3 +59,19 @@ test('per-decision validation never retains a replaced file or an in-place profi
  profiles['2'].vector[0]=NaN;
  assert.equal(m.score(tracks[0],tracks[2]).soundSimilarity,null);
 });
+
+test('one selection reuses acoustic comparisons without changing the selected track or scores',()=>{
+ const {tracks,profiles}=fixture();
+ const plays=tracks.slice(0,5).map((t,i)=>({track:t.id,started:NOW-(6-i)*180000,heard:180000,media_heard:180000,duration:180000,finished:1}));
+ const model=new Taste(tracks,plays,NOW,profiles),compare=model.similarity;let calls=0;
+ model.similarity=(...args)=>{calls++;return compare(...args);};
+ const instrumented=model.similarity;
+ model._profileCache=new WeakMap();
+ const expected=model.chooseCandidates(tracks[0],tracks.slice(1),{},{seed:44});
+ const uncachedCalls=calls;calls=0;model._profileCache=null;model.soundPreferenceCache.clear();
+ const actual=model.choose(tracks[0],tracks.slice(1),{},{seed:44});
+ assert.deepEqual(actual,expected);
+ assert.ok(calls<uncachedCalls,`${calls} cached comparisons vs ${uncachedCalls} uncached`);
+ assert.equal(model.similarity,instrumented);
+ assert.equal(model._profileCache,null);
+});

@@ -80,4 +80,4 @@ async function decodePcmServer(file, { signal } = {}) {
   });
 }
 
-module.exports = { decodePcmServer };
+module.exports = { decodePcmServer, probeDuration };

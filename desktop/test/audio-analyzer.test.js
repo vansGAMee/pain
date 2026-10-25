@@ -242,3 +242,11 @@ test('explicit reanalysis reaches the server with force=1', async t => {
   await new Promise(resolve => analyzer.start([track], { same: profile }, { overwriteExisting: true, onComplete: resolve }));
   assert.equal(analyzer.succeeded, 1);
 });
+
+test('fabricated metadata profiles are never accepted as acoustic evidence',()=>{
+ const track={id:'fake',duration:60000};
+ const profile={version:4,signature:AudioProfile.signature(track),vector:Array(6).fill(.3),variance:Array(6).fill(.01),timbre:Array(12).fill(.4),timbreVariance:Array(12).fill(.01),frames:24,seconds:12,positions:Array.from({length:24},(_,i)=>i),detail:{version:1,mean:Array(7).fill(.4),frames:24,seconds:12,positions:Array.from({length:24},(_,i)=>i)},analysis:{method:'metadata-fallback-v1'}};
+ assert.equal(AudioAnalyzer.complete(profile,track),false);
+ assert.equal(AudioProfile.get({fake:profile},track),null);
+ assert.equal(Object.keys(AudioProfile.restore({fake:profile})).length,0);
+});

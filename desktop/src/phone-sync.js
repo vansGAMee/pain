@@ -20,21 +20,34 @@ function request(base,route,body){
 }
 class PhoneSync{
  constructor(dir){
-  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();
+  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();this._djState=null;
  }
- read(name,fallback){try{return JSON.parse(fs.readFileSync(path.join(this.dir,name),'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}}
- write(name,data){const file=path.join(this.dir,name);safeWrite(file,data);return data;}
+ read(name,fallback){
+  if(name==='dj-state.json'&&this._djState)return this._djState;
+  try{const data=JSON.parse(fs.readFileSync(path.join(this.dir,name),'utf8'));if(name==='dj-state.json')this._djState=data;return data;}catch(e){if(e.code==='ENOENT')return fallback;throw e;}
+ }
+ write(name,data){
+  if(name==='dj-state.json')this._djState=data;
+  const file=path.join(this.dir,name);safeWrite(file,data);return data;
+ }
  persist(){this.write('sync-pending.json',this.pending);}
  saveLibrary(library){
   if(!library||!Array.isArray(library.tracks))throw new Error('Invalid library');
+  // A phone snapshot is not a deletion command: it can be empty while scanning,
+  // and cannot contain PC files that are still waiting for upload.
+  const tracks=new Map(this.read('library.json',{tracks:[]}).tracks.map(track=>[String(track.id),track]));
+  for(const track of library.tracks)tracks.set(String(track.id),{...tracks.get(String(track.id)),...track});
   const likes=new Map(this.pending.favorites.map(item=>[String(item.trackId),item.favorite]));
-  return this.write('library.json',{...library,tracks:library.tracks.map(track=>likes.has(String(track.id))?{...track,favorite:likes.get(String(track.id))}:track)});
+  return this.write('library.json',{...library,tracks:[...tracks.values()].map(track=>likes.has(String(track.id))?{...track,favorite:likes.get(String(track.id))}:track)});
  }
  saveStats(stats){
   if(!stats||!Array.isArray(stats.plays))throw new Error('Invalid statistics');
   return this.write('stats.json',mergeStats(this.read('stats.json',{plays:[],slices:[]}),stats));
  }
- saveDjState(state){return this.write('dj-state.json',DjState.merge(this.read('dj-state.json',{}),state));}
+ saveDjState(state){
+  const merged=DjState.merge(this.read('dj-state.json',{}),state);
+  return this.write('dj-state.json',merged);
+ }
  favorite(trackId,favorite){
   if(typeof trackId!=='string'||!trackId||trackId.length>1024)throw new Error('Invalid track');
   const item={trackId,favorite:flag(favorite)};

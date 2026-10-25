@@ -26,4 +26,17 @@ public class SyncHttpTest {
     SyncHttp.Request request = SyncHttp.read(input("GET /api/stats HTTP/1.1", ""));
     assertEquals("GET", request.method); assertEquals("{}", request.body);
   }
+  @Test public void preservesRawBinaryBytesAndHeadersForTrackUpload() throws Exception {
+    byte[] audioDummy = new byte[] { (byte)0xFF, (byte)0xFB, (byte)0x90, (byte)0x64, 0x00, 0x01, 0x02 };
+    ByteArrayOutputStream stream = new ByteArrayOutputStream();
+    stream.write("POST /api/upload-track?filename=test.mp3 HTTP/1.1\r\nContent-Type: audio/mpeg\r\nContent-Length: 7\r\nX-Track-Artist: Queen\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+    stream.write(audioDummy);
+    SyncHttp.Request request = SyncHttp.read(new ByteArrayInputStream(stream.toByteArray()));
+    assertEquals("POST", request.method);
+    assertEquals("/api/upload-track?filename=test.mp3", request.path);
+    assertEquals("Queen", request.getHeader("x-track-artist"));
+    assertEquals(7, request.rawBody.length);
+    assertArrayEquals(audioDummy, request.rawBody);
+    assertEquals("{}", request.body); // Binary bodies don't waste heap on UTF-8 stringification
+  }
 }

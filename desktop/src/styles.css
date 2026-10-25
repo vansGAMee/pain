@@ -702,12 +702,11 @@ body,
   display: block;
 }
 
-/* Pause heavy background animations when view pane is inactive */
+/* Completely hide heavy background animations when view pane is inactive */
 .view-pane:not(.active) .favorites-ambient-layer,
 .view-pane:not(.active) .aura-orb {
-  animation-duration: .01ms !important;
-  animation-delay: 0s !important;
-  animation-iteration-count: 1 !important;
+  display: none !important;
+  animation: none !important;
 }
 
 .view-hero-header {
@@ -2421,7 +2420,8 @@ input:checked + .switch-slider:before {
   width: 680px;
   height: 580px;
   background: radial-gradient(circle, var(--fluid-orb1-c1) 0%, var(--fluid-orb1-c2) 50%, transparent 72%);
-  filter: blur(80px);
+  filter: blur(28px);
+  transform: translate3d(0, 0, 0);
   animation: orbLiquidDrift1 var(--fluid-cycle-orb1, 22s) ease-in-out infinite alternate;
 }
 
@@ -2436,7 +2436,8 @@ input:checked + .switch-slider:before {
   width: 620px;
   height: 520px;
   background: radial-gradient(circle, var(--fluid-orb2-c1) 0%, var(--fluid-orb2-c2) 50%, transparent 72%);
-  filter: blur(85px);
+  filter: blur(28px);
+  transform: translate3d(0, 0, 0);
   animation: orbLiquidDrift2 var(--fluid-cycle-orb2, 26s) ease-in-out infinite alternate;
 }
 
@@ -2451,7 +2452,8 @@ input:checked + .switch-slider:before {
   width: 580px;
   height: 480px;
   background: radial-gradient(circle, var(--fluid-orb3-c1) 0%, var(--fluid-orb3-c2) 50%, transparent 72%);
-  filter: blur(90px);
+  filter: blur(28px);
+  transform: translate3d(0, 0, 0);
   animation: orbLiquidDrift3 var(--fluid-cycle-orb3, 28s) ease-in-out infinite alternate;
 }
 
@@ -4617,18 +4619,27 @@ input:checked + .switch-slider:before {
 }
 
 .comfort-range { display: flex; align-items: center; gap: 12px; width: 190px; max-width: 100%; flex: 0 0 auto; }
-html[data-resource-saver] *, html[data-resource-saver] *::before, html[data-resource-saver] *::after {
+html[data-resource-saver] .favorites-ambient-layer,
+html[data-resource-saver] .aura-orb,
+html[data-resource-saver] .vinyl-disc,
+html[data-resource-saver] .playing-eq-bar {
+  display: none !important;
   animation: none !important;
-  transition-duration: 0s !important;
-  scroll-behavior: auto !important;
+}
+html[data-resource-saver] * {
+  animation: none !important;
 }
 .comfort-range input { width: 100%; min-width: 0; accent-color: var(--ink); }
 .comfort-range output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
 @media (max-width: 600px) { .comfort-limit-row { flex-wrap: wrap; } .comfort-range { width: 100%; } }
-html[data-reduced-motion] *, html[data-reduced-motion] *::before, html[data-reduced-motion] *::after {
+html[data-reduced-motion] .favorites-ambient-layer,
+html[data-reduced-motion] .aura-orb {
+  display: none !important;
+  animation: none !important;
+}
+html[data-reduced-motion] * {
   animation-play-state: paused !important;
-  transition-duration: 0s !important;
-  scroll-behavior: auto !important;
+  transition-duration: 0.05s !important;
 }
 
 .share-track-info {
@@ -4700,4 +4711,177 @@ html[data-reduced-motion] *, html[data-reduced-motion] *::before, html[data-redu
     margin-top: 14px;
     align-self: center;
   }
+}
+
+/* ========================================================
+   TRACK UPLOAD TO PHONE (SETTINGS MODAL)
+   ======================================================== */
+.track-upload-section {
+  position: relative;
+}
+
+.upload-device-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  color: var(--text-secondary, #a1a1aa);
+  transition: all 0.2s ease;
+}
+
+.upload-device-badge.connected {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.upload-device-badge.offline {
+  border-color: rgba(234, 179, 8, 0.35);
+  background: rgba(234, 179, 8, 0.08);
+  color: #eab308;
+}
+
+.upload-device-badge .badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.track-upload-dropzone {
+  border: 2px dashed var(--border, rgba(255, 255, 255, 0.18));
+  border-radius: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.02));
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.track-upload-dropzone:hover,
+.track-upload-dropzone.dragover {
+  border-color: var(--accent, #7c4dff);
+  background: rgba(124, 77, 255, 0.07);
+  transform: translateY(-1px);
+}
+
+.track-upload-dropzone svg {
+  width: 36px;
+  height: 36px;
+  fill: var(--accent, #7c4dff);
+  opacity: 0.85;
+  transition: transform 0.2s ease;
+}
+
+.track-upload-dropzone:hover svg {
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+.track-upload-dropzone-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #fff);
+}
+
+.track-upload-dropzone-sub {
+  font-size: 11px;
+  color: var(--text-secondary, #71717a);
+}
+
+.track-upload-preview {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.track-upload-file-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.track-upload-filename {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #fff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 75%;
+}
+
+.track-upload-filesize {
+  font-size: 11px;
+  color: var(--text-secondary, #71717a);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.track-upload-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 500px) {
+  .track-upload-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.upload-meta-input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-surface, rgba(0, 0, 0, 0.2));
+  color: var(--text, #fff);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.upload-meta-input:focus {
+  border-color: var(--accent, #7c4dff);
+}
+
+.track-upload-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.track-upload-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.track-upload-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: var(--accent, #7c4dff);
+  transition: width 0.2s ease;
 }

@@ -218,6 +218,103 @@
         ? new Set(Array.from(options.excludedTracks).map(String)) 
         : new Set(Array.from(options.excludedTracks || []).map(String));
       this.onQueueChange = options.onQueueChange || null;
+      this.selectInWorker = options.selectInWorker || globalThis.DJWorker?.request;
+      this._selectionGeneration = 0;
+    }
+
+    workerSnapshot() {
+      return {
+        now: this.now(), stats: this.stats, bpmCache: this.bpmCache,
+        audioProfiles: this.audioProfiles, excludedTracks: [...this.excludedTracks],
+        shuffleMode: this.shuffleMode, loopMode: this.loopMode,
+        tracks: this.tracks, context: this.context,
+        navigation: this.navigationSnapshot(), vibeProfile: this.vibeProfile
+      };
+    }
+
+    navigationSnapshot() {
+      return {
+        currentIndex: this.currentIndex, currentStartedAt: this.currentStartedAt,
+        playedHistory: [...this.playedHistory], forwardHistory: [...this.forwardHistory],
+        recentArtists: [...this.recentArtists], unplayedIndices: [...this.unplayedIndices],
+        smartStep: this.smartStep, smartSeed: this.smartSeed,
+        sessionRootTrack: this.sessionRootTrack, lastTransition: this.lastTransition
+      };
+    }
+
+    static fromWorkerSnapshot(snapshot) {
+      const q = new QueueEngine({...snapshot, now: () => snapshot.now});
+      q.tracks = snapshot.tracks; q.context = snapshot.context;
+      Object.assign(q, snapshot.navigation);
+      q.unplayedIndices = new Set(snapshot.navigation.unplayedIndices);
+      q.vibeProfile = snapshot.vibeProfile;
+      return q;
+    }
+
+    selectionKey() {
+      return JSON.stringify([this.recommendationRevision, this.shuffleMode, this.loopMode,
+        this.navigationSnapshot(), [...this.excludedTracks], this.vibeProfile,
+        this.tracks.map(t => [t.id,t.title,t.artist,t.album,t.genre,t.favorite,t.bpm,Sound.signature(t)]), this.bpmCache]);
+    }
+
+    workerSelection() {
+      const key = this.selectionKey(), now = this.now(), old = this._selectionJob;
+      if (old?.key === key && now >= old.now && now-old.now < 60000) return old;
+      const job = {key, now};
+      job.promise = this.selectInWorker({action:'next', snapshot:this.workerSnapshot()}).then(result => {
+        job.result = result;
+        return result;
+      }).catch(error => {
+        if(this._selectionJob === job)this._selectionJob = null;
+        throw error;
+      });
+      this._selectionJob = job;
+      return job;
+    }
+
+    cancelPendingSelection() {
+      this._selectionGeneration++;
+      this._selectionJob = null;
+    }
+
+    async peekNextAsync() {
+      if(this.shuffleMode !== 'smart' || !this.selectInWorker)return this.peekNext();
+      try {
+        const job = this.workerSelection(), result = await job.promise;
+        if(job.key !== this.selectionKey())return undefined;
+        return result.trackId == null ? null : this.tracks.find(t => String(t.id) === String(result.trackId));
+      } catch (_) {
+        return this.peekNext();
+      }
+    }
+
+    async nextAsync() {
+      const generation = ++this._selectionGeneration;
+      if(this.shuffleMode !== 'smart' || !this.selectInWorker)return this.next();
+      if(this.loopMode === 'one' && this.currentIndex >= 0)return this.tracks[this.currentIndex];
+      if(this.forwardHistory.length > 0)return this.next();
+      const tracks = this.tracks, index = this.currentIndex, visit = this.currentStartedAt, step = this.smartStep;
+      while(generation === this._selectionGeneration) {
+        try {
+          const job = this.workerSelection(), result = await job.promise;
+          // A delayed answer must never override a user's manual track selection.
+          if(generation !== this._selectionGeneration || this.tracks !== tracks || this.currentIndex !== index || this.currentStartedAt !== visit || this.smartStep !== step)return undefined;
+          // New likes, skips, BPM or audio evidence need a fresh calculation.
+          if(job.key !== this.selectionKey()) {
+            if(this.shuffleMode !== 'smart')return undefined;
+            continue;
+          }
+          Object.assign(this, result.navigation);
+          this.unplayedIndices = new Set(result.navigation.unplayedIndices);
+          if(result.trackId == null)return null;
+          this._notify();
+          return this.getCurrentTrack();
+        } catch (_) {
+          if(generation !== this._selectionGeneration)return undefined;
+          return this.next();
+        }
+      }
+      return undefined;
     }
 
     setExcludedTracks(tracks) {
@@ -620,6 +717,10 @@
       }
 
       if (this.shuffleMode === 'smart') {
+        if (this._selectionJob?.key === this.selectionKey() && this._selectionJob?.result) {
+          const res = this._selectionJob.result;
+          return res.trackId == null ? null : this.tracks.find(t => String(t.id) === String(res.trackId));
+        }
         const candidates = this.smartCandidates();
         if (candidates.length === 0) return null;
         const current = this.getCurrentTrack();

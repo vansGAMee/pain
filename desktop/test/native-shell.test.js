@@ -116,7 +116,7 @@ for (const platform of ['linux', 'win32']) {
     assert.equal(window.visible, true);
   });
 
-  test(`${platform}: close and minimize use the tray; all activation paths restore the same window`, async () => {
+  test(`${platform}: close uses the tray and all activation paths restore the same window`, async () => {
     const shell = await launch({ platform });
     const window = shell.windows[0], tray = shell.trays[0];
     const activations = [
@@ -126,7 +126,8 @@ for (const platform of ['linux', 'win32']) {
     ];
     for (const [index, activate] of activations.entries()) {
       window.show();
-      assert.equal(request(window, index % 2 ? 'minimize' : 'close'), true);
+      assert.equal(request(window, 'minimize'), false, 'minimizing must not hide the window in the tray');
+      assert.equal(request(window, 'close'), true);
       assert.equal(window.visible, false);
       window.minimized = true;
       const focused = window.focusCount;

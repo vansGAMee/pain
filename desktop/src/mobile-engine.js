@@ -97,7 +97,10 @@
    let sampleAfter=0;
    if(profile?.frames>=48&&(profile.detail?.frames>=24||data.rate<16000||data.rate>192000)){
     const step=Math.max(.5,Math.ceil(duration/360*2)/2),body=Math.ceil(Math.max(30,duration*.35)/step);
-    sampleAfter=duration>=60&&profile.frames<72&&profile.positions.filter(p=>p>=body).length<24?body*step*1000:null;
+    const fullFile=profile.analysis?.method==='stratified-pcm-v1'&&!!Audio.detail(profile);
+    const bodyDetail=Audio.detailFrames(profile,body*step);
+    const needsDetail=!fullFile&&data.rate>=16000&&data.rate<=192000&&bodyDetail<24;
+    sampleAfter=duration>=60&&(profile.frames<72&&profile.positions.filter(p=>p>=body).length<24||needsDetail)?body*step*1000:null;
    }
    return {track:track.id,eq:EQ.recommend(track,profile),volumeDb,sampleAfter};
   }

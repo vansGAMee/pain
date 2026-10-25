@@ -11,8 +11,8 @@
   return {items,activeId:ids.has(data.activeId)?data.activeId:null,updatedAt:data.updatedAt};
  }
  function merge(a={},b={}){
-  const result=Audio.restore(JSON.stringify(a.profiles||{}));
-  for(const [id,p] of Object.entries(Audio.restore(JSON.stringify(b.profiles||{})))){
+  const result=Audio.restore(a.profiles||{});
+  for(const [id,p] of Object.entries(Audio.restore(b.profiles||{}))){
    const old=result[id];
    const full=x=>x?.analysis?.method==='stratified-pcm-v1'&&!!Audio.texture(x)&&!!Audio.detail(x);
    const incomingFull=full(p),oldFull=full(old);
@@ -21,12 +21,12 @@
    // evidence with the same frame count; frame count is not a freshness clock.
    const sameFile=old&&old.signature===p.signature;
    const newerFull=sameFile&&incomingFull&&(!oldFull||p.updatedAt>old.updatedAt);
-   const morePartial=sameFile&&!incomingFull&&!oldFull&&(p.frames>old.frames||p.frames===old.frames&&(p.detail?.frames||0)>(old.detail?.frames||0));
+   const morePartial=sameFile&&!incomingFull&&!oldFull&&(p.frames>old.frames||p.frames===old.frames&&Audio.detailFrames(p)>Audio.detailFrames(old));
    if(!old||old.signature!==p.signature&&p.updatedAt>old.updatedAt||newerFull||morePartial)
     Object.defineProperty(result,id,{value:p,enumerable:true,writable:true,configurable:true});
   }
   const av=vibes(a.vibes),bv=vibes(b.vibes),chosen=bv&&(!av||bv.updatedAt>av.updatedAt)?bv:av;
-  return {version:1,profiles:Audio.restore(JSON.stringify(result)),...(chosen?{vibes:chosen}:{})};
+  return {version:1,profiles:Audio.restore(result),...(chosen?{vibes:chosen}:{})};
  }
  return {merge};
 });

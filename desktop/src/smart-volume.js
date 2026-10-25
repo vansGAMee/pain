@@ -90,7 +90,7 @@
     previousEnabled=enabled;
     if(enabled)start();else {stop();reset();}
    }
-   const duck=enabled&&duckInBackground&&background;
+   const duck=!!(duckInBackground&&background);
    if(duck!==previousDuck){set(output.gain,duck?.3:1,duck?.25:.5);previousDuck=duck;}
   },destroy(){disposed=true;stop();for(const remove of listeners)remove();splitter?.disconnect();for(const node of meter||[])node.disconnect();input.disconnect();normalizer.disconnect();compressor.disconnect();output.disconnect();}};
  }

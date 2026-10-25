@@ -156,3 +156,22 @@ test('DataGuard: exportBundle and importBundle roundtrip', () => {
     fs.rmSync(restoreDir, { recursive: true, force: true });
   }
 });
+
+test('rapid restarts preserve older backups and protect both sync outboxes', () => {
+ const dir=createTempDataDir();
+ try {
+  dataGuard.safeWrite(path.join(dir,'library.json'),{tracks:[{id:'keep'}]});
+  dataGuard.safeWrite(path.join(dir,'sync-pending.json'),{favorites:[{trackId:'keep',favorite:1}],plays:[]});
+  dataGuard.safeWrite(path.join(dir,'pending-uploads.json'),[{trackId:'keep',filePath:'/saved/music.mp3'}]);
+  dataGuard.createSnapshot(dir,'before-restarts');
+  for(let i=0;i<15;i++){
+   delete require.cache[require.resolve('../src/data-guard')];
+   require('../src/data-guard').verifyAndRepair(dir);
+  }
+  const snapshots=dataGuard.listSnapshots(dir);
+  assert.equal(snapshots.length,1);
+  for(const name of ['sync-pending.json','pending-uploads.json']){
+   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(snapshots[0].fullPath,name))),JSON.parse(fs.readFileSync(path.join(dir,name))));
+  }
+ } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});

@@ -4,8 +4,9 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
+const crypto = require('crypto');
 const { exec, spawn } = require('child_process');
-const { decodePcmServer } = require('./audio-decode');
+const { decodePcmServer, probeDuration } = require('./audio-decode');
 const activeAudioAnalyses = new Set();
 const MAX_CONCURRENT_AUDIO_ANALYSES = 2;
 
@@ -54,6 +55,8 @@ let hasAutoSynced = false;
 let autoSyncBusy = false;
 let lastFullSync=0,lastSyncDevice='';
 let udpSocket = null;
+let resourceSaverActive = false;
+let lastDjStatePostHash = '', lastDjStateResponseJson = null;
 
 // ==========================================
 // 1. MEGA-SMART DISCOVERY & AUTO-SYNC ENGINE
@@ -112,22 +115,130 @@ function probeDevice(ip, port = MOBILE_HTTP_PORT, timeoutMs = 1200) {
   });
 }
 
+const PENDING_UPLOADS_FILE = path.join(DATA_DIR, 'pending-uploads.json');
+
+function readPendingUploads() {
+  try {
+    if (fs.existsSync(PENDING_UPLOADS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(PENDING_UPLOADS_FILE, 'utf8'));
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (_) {}
+  return [];
+}
+
+function writePendingUploads(list) {
+  try {
+    const tmp = PENDING_UPLOADS_FILE + '.' + crypto.randomUUID() + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(list || []), 'utf8');
+    safeAtomicRename(tmp, PENDING_UPLOADS_FILE);
+  } catch (_) {
+    try { fs.writeFileSync(PENDING_UPLOADS_FILE, JSON.stringify(list || []), 'utf8'); } catch (_) {}
+  }
+}
+
+async function pushTrackToPhone(phoneBase, filePath, metadata) {
+  return new Promise((resolve, reject) => {
+    try {
+      const destUrl = new URL('/api/upload-track', phoneBase);
+      if (metadata.filename) destUrl.searchParams.set('filename', metadata.filename);
+      if (metadata.title) destUrl.searchParams.set('title', metadata.title);
+      if (metadata.artist) destUrl.searchParams.set('artist', metadata.artist);
+      if (metadata.album) destUrl.searchParams.set('album', metadata.album);
+      if (metadata.trackId) destUrl.searchParams.set('trackId', metadata.trackId);
+
+      const stat = fs.statSync(filePath);
+      const req = http.request(destUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': metadata.mime || 'audio/mpeg',
+          'Content-Length': stat.size,
+          'X-Filename': encodeURIComponent(metadata.filename || path.basename(filePath)),
+          'X-Title': encodeURIComponent(metadata.title || ''),
+          'X-Artist': encodeURIComponent(metadata.artist || ''),
+          'X-Album': encodeURIComponent(metadata.album || '')
+        },
+        timeout: 60000
+      }, res => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 200) {
+              resolve(JSON.parse(body));
+            } else {
+              reject(new Error(`Phone HTTP ${res.statusCode}: ${body}`));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy(new Error('Phone upload timed out'));
+      });
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.on('error', error => req.destroy(error));
+      req.on('close', () => fileStream.destroy());
+      fileStream.pipe(req);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+let isUploadingPending = false;
+async function processPendingTrackUploads(base) {
+  if (isUploadingPending) return;
+  isUploadingPending = true;
+  try {
+    const pending = readPendingUploads();
+    if (!pending || pending.length === 0) return;
+    const sent = new Set();
+    for (const item of pending) {
+      try {
+        if (fs.existsSync(item.filePath)) {
+          await pushTrackToPhone(base, item.filePath, item);
+          sent.add(JSON.stringify(item));
+          console.log(`[UploadQueue] Successfully pushed pending track ${item.filename} to phone at ${base}`);
+        }
+      } catch (err) {
+        // Keep failed and missing files queued for recovery/retry.
+      }
+    }
+    // New uploads may have arrived while the network request was in flight.
+    writePendingUploads(readPendingUploads().filter(item => !sent.has(JSON.stringify(item))));
+  } catch (_) {
+  } finally {
+    isUploadingPending = false;
+  }
+}
+
 // Background auto-sync function
 async function triggerBackgroundAutoSync(device) {
   if (autoSyncBusy) return;
   autoSyncBusy = true;
   try {
     const base = `http://${device.ip}:${device.port}`;
-    if (!hasAutoSynced||base!==lastSyncDevice||Date.now()-lastFullSync>=30000) { await phoneSync.synchronize(base); hasAutoSynced = true;lastFullSync=Date.now();lastSyncDevice=base; }
-    else await phoneSync.flush(base);
+    if (!hasAutoSynced || base !== lastSyncDevice || Date.now() - lastFullSync >= 300000) {
+      await phoneSync.synchronize(base);
+      hasAutoSynced = true;
+      lastFullSync = Date.now();
+      lastSyncDevice = base;
+    } else {
+      await phoneSync.flush(base);
+    }
+    await processPendingTrackUploads(base);
   } catch (_) { /* Keep pending changes; the next discovery retries. */ }
   finally { autoSyncBusy = false; }
 }
 
-// Fast ARP Table Scanner (executes in <10ms, discovers all active LAN devices)
+// Fast ARP Table Scanner (executes in <10ms, discovers active LAN devices)
 function scanArpTable() {
+  if (typeof resourceSaverActive !== 'undefined' && resourceSaverActive && Math.random() < 0.5) return;
   try {
-    const cmd = process.platform === 'win32' ? 'arp -a' : 'arp -a 2>/dev/null || ip neighbor 2>/dev/null';
+    const cmd = process.platform === 'win32' ? 'arp -a' : 'ip -4 neigh show 2>/dev/null || arp -an 2>/dev/null';
     exec(cmd, { timeout: 2000, windowsHide: true }, (err, stdout) => {
       if (err || !stdout) return;
       const ipMatches = stdout.match(/\b(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b/g);
@@ -160,16 +271,20 @@ function checkLastKnownIp() {
 // Smart Batched Subnet Scanner
 let isScanningSubnet = false;
 async function scanSubnetsSmart() {
-  if (isScanningSubnet) return;
+  if (isScanningSubnet || resourceSaverActive) return;
+  // If we already have discovered devices active recently, no need to flood subnets
+  const recentDevice = discoveredDevices.find(d => Date.now() - (d.lastSeen || 0) < 60000);
+  if (recentDevice) return;
   isScanningSubnet = true;
 
   try {
     const interfaces = os.networkInterfaces();
     const subnets = [];
     for (const name of Object.keys(interfaces)) {
+      if (/^(amn|tun|tap|wg|docker|veth|br-|virbr|dummy|lo)/i.test(name)) continue;
       for (const iface of interfaces[name]) {
         if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal && iface.address) {
-          if (iface.address.startsWith('169.254.')) continue;
+          if (iface.address.startsWith('169.254.') || iface.address.startsWith('127.')) continue;
           const parts = iface.address.split('.');
           if (parts.length === 4) {
             parts.pop();
@@ -207,6 +322,7 @@ function broadcastDiscovery() {
   try {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
+      if (/^(amn|tun|tap|wg|docker|veth|br-|virbr|dummy|lo)/i.test(name)) continue;
       for (const iface of interfaces[name]) {
         if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal && iface.address) {
           const parts = iface.address.split('.');
@@ -247,7 +363,7 @@ try {
   udpSocket.bind(UDP_PORT, () => {
     udpSocket.setBroadcast(true);
     broadcastDiscovery();
-    setInterval(broadcastDiscovery, 3000);
+    setInterval(broadcastDiscovery, 5000);
   });
 } catch (e) {
   try {
@@ -255,7 +371,7 @@ try {
     udpSocket.bind(0, () => {
       udpSocket.setBroadcast(true);
       broadcastDiscovery();
-      setInterval(broadcastDiscovery, 3000);
+      setInterval(broadcastDiscovery, 5000);
     });
   } catch (err) {}
 }
@@ -264,9 +380,8 @@ try {
 checkLastKnownIp();
 scanArpTable();
 setTimeout(scanArpTable, 1500);
-setTimeout(scanSubnetsSmart, 500);
-setInterval(scanArpTable, 5000);
-setInterval(scanSubnetsSmart, 15000);
+setTimeout(scanSubnetsSmart, 2000);
+setInterval(scanArpTable, 20000);
 }
 }
 
@@ -340,6 +455,17 @@ function getResolvedAudioFilePath(trackId, readOnly = false) {
     const tracks = getLibraryTracks();
     const track = tracks.find(t => String(t.id) === String(trackId));
     if (track) {
+      if (track.path) {
+        const directDlPath = path.join(DOWNLOADS_DIR, track.path);
+        if (fs.existsSync(directDlPath) && fs.statSync(directDlPath).size >= 4096) {
+          try {
+            if (!readOnly && !fs.existsSync(cachedFile)) {
+              try { fs.linkSync(directDlPath, cachedFile); } catch (_) { fs.copyFileSync(directDlPath, cachedFile); }
+            }
+          } catch (_) {}
+          return directDlPath;
+        }
+      }
       const ext = track.path ? track.path.split('.').pop() : 'mp3';
       const rawName = `${track.artist} - ${track.title}.${ext}`;
       const safeFilename = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
@@ -485,12 +611,55 @@ const server = http.createServer((req, res) => {
 
   if (lyricsRoute(req,res,url,DATA_DIR)) return;
 
-  if(pathname==='/api/dj-state'){
-    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(phoneSync.read('dj-state.json',{})));return;}
-    if(req.method==='POST'){
-      let body='',size=0;req.setEncoding('utf8');
-      req.on('data',chunk=>{size+=Buffer.byteLength(chunk);if(size>8*1024*1024)req.destroy();else body+=chunk;});
-      req.on('end',()=>{try{const state=phoneSync.saveDjState(JSON.parse(body));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(state));}catch(_){res.writeHead(400);res.end('{}');}});return;
+  if (pathname === '/api/resource-saver') {
+    if (req.method === 'POST') {
+      let body = ''; req.setEncoding('utf8');
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const json = JSON.parse(body);
+          resourceSaverActive = !!json.resourceSaver;
+        } catch (_) {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, resourceSaver: resourceSaverActive }));
+      });
+      return;
+    }
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ resourceSaver: resourceSaverActive }));
+      return;
+    }
+  }
+
+  if (pathname === '/api/dj-state') {
+    if (req.method === 'GET') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(phoneSync.read('dj-state.json', {})));
+      return;
+    }
+    if (req.method === 'POST') {
+      let body = '', size = 0; req.setEncoding('utf8');
+      req.on('data', chunk => { size += Buffer.byteLength(chunk); if (size > 8 * 1024 * 1024) req.destroy(); else body += chunk; });
+      req.on('end', () => {
+        try {
+          const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
+          if (lastDjStatePostHash === bodyHash && lastDjStateResponseJson) {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(lastDjStateResponseJson);
+            return;
+          }
+          const state = phoneSync.saveDjState(JSON.parse(body));
+          lastDjStatePostHash = bodyHash;
+          lastDjStateResponseJson = JSON.stringify(state);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(lastDjStateResponseJson);
+        } catch (_) {
+          res.writeHead(400);
+          res.end('{}');
+        }
+      });
+      return;
     }
   }
 
@@ -514,13 +683,26 @@ const server = http.createServer((req, res) => {
       // The request may not label an arbitrary cached file as another song.
       const track = getLibraryTracks().find(t => String(t.id) === trackId);
       if (!track) { reply(404, { error: 'Track not found in the saved library' }); return; }
+
+      const isForce = url.searchParams.get('force') === '1';
+      const existing = phoneSync.read('dj-state.json', {}).profiles?.[trackId];
+
       const file = getResolvedAudioFilePath(trackId, true);
-      if (!file) { reply(404, { error: 'Audio file not found on disk' }); return; }
+      if (!file) {
+        if (existing && AudioAnalyzer.complete(existing, track)) {
+          reply(200, { success: true, profile: existing, bpm: null, cached: true }); return;
+        }
+        reply(404, { error: 'Audio file unavailable; download it before analysis' }); return;
+      }
       let stat;
-      try { stat = fs.statSync(file); } catch (_) { reply(404, { error: 'Audio file is unavailable' }); return; }
-      if (url.searchParams.get('force') !== '1') {
-        const existing = phoneSync.read('dj-state.json', {}).profiles?.[trackId];
-        if (AudioAnalyzer.complete(existing, track) && existing.analysis.source?.bytes === stat.size && existing.analysis.source?.modified === stat.mtimeMs) {
+      try { stat = fs.statSync(file); } catch (_) {
+        if (existing && AudioAnalyzer.complete(existing, track)) {
+          reply(200, { success: true, profile: existing, bpm: null, cached: true }); return;
+        }
+        reply(404, { error: 'Audio file unavailable; download it before analysis' }); return;
+      }
+      if (!isForce && existing && AudioAnalyzer.complete(existing, track)) {
+        if (!existing.analysis?.source || (existing.analysis.source?.bytes === stat.size && existing.analysis.source?.modified === stat.mtimeMs)) {
           reply(200, { success: true, profile: existing, bpm: null, cached: true }); return;
         }
       }
@@ -735,6 +917,183 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
+    });
+    return;
+  }
+
+  if (pathname === '/api/upload-status' && req.method === 'GET') {
+    const pending = readPendingUploads();
+    const phone = discoveredDevices.length > 0 ? discoveredDevices[0] : null;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      phoneConnected: !!phone,
+      phoneIp: phone ? `${phone.ip}:${phone.port}` : null,
+      phoneName: phone ? phone.name : null,
+      pendingCount: pending.length,
+      pending
+    }));
+    return;
+  }
+
+  if (pathname === '/api/upload-to-phone' && req.method === 'POST') {
+    let rawFilename, rawTitle, rawArtist, rawAlbum;
+    try {
+      const field = (name, fallback = '') => url.searchParams.get(name) || (req.headers['x-' + name] ? decodeURIComponent(req.headers['x-' + name]) : fallback);
+      rawFilename = field('filename', `track-${Date.now()}.mp3`);
+      rawTitle = field('title'); rawArtist = field('artist'); rawAlbum = field('album', 'PC Uploads');
+    } catch (_) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid upload metadata' }));
+      req.resume(); return;
+    }
+
+    const safeFilename = rawFilename.replace(/[/\\?%*:|"<>]/g, '_').trim();
+    if (!safeFilename || safeFilename === '.' || safeFilename === '..') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid filename' }));
+      req.resume(); return;
+    }
+    const dest = path.join(DOWNLOADS_DIR, safeFilename);
+    const tmpDest = `${dest}.${crypto.randomUUID()}.tmp`;
+
+    const fileStream = fs.createWriteStream(tmpDest);
+    req.pipe(fileStream);
+
+    fileStream.on('finish', async () => {
+      try {
+        const sz = fs.existsSync(tmpDest) ? fs.statSync(tmpDest).size : 0;
+        if (sz < 4096) {
+          try { fs.unlinkSync(tmpDest); } catch (_) {}
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File too small or corrupted' }));
+          return;
+        }
+
+        await fs.promises.rename(tmpDest, dest);
+
+        const ext = path.extname(safeFilename).replace(/^\./, '').toLowerCase() || 'mp3';
+        let mime = 'audio/mpeg';
+        if (ext === 'flac') mime = 'audio/flac';
+        else if (ext === 'wav') mime = 'audio/wav';
+        else if (ext === 'm4a') mime = 'audio/mp4';
+        else if (ext === 'ogg') mime = 'audio/ogg';
+
+        let title = rawTitle;
+        let artist = rawArtist;
+        if (!title) {
+          const baseNoExt = path.basename(safeFilename, path.extname(safeFilename));
+          if (baseNoExt.includes(' - ')) {
+            const parts = baseNoExt.split(' - ');
+            artist = artist || parts[0].trim();
+            title = parts.slice(1).join(' - ').trim();
+          } else {
+            title = baseNoExt;
+          }
+        }
+        if (!artist) artist = 'Загружено с ПК';
+
+        const trackId = 'pc_upload_' + crypto.createHash('sha256').update(safeFilename).digest('hex').substring(0, 16);
+
+        // Also cache locally for immediate offline playback on desktop
+        const cachedPath = path.join(CACHE_DIR, `${trackId}.mp3`);
+        const cacheTmp = `${cachedPath}.${crypto.randomUUID()}.tmp`;
+        try {
+          try { await fs.promises.link(dest, cacheTmp); } catch (_) { await fs.promises.copyFile(dest, cacheTmp); }
+          await fs.promises.rename(cacheTmp, cachedPath);
+        } finally { await fs.promises.unlink(cacheTmp).catch(() => {}); }
+        let duration = 0;
+        try { duration = Math.round(await probeDuration(dest) * 1000); } catch (_) { /* Unknown until playback reads it. */ }
+
+        const track = {
+          id: trackId,
+          uri: `file://${dest}`,
+          path: safeFilename,
+          title,
+          artist,
+          album: rawAlbum || 'PC Library',
+          folder: 'downloads',
+          mime,
+          duration,
+          bytes: sz,
+          added: Math.floor(Date.now() / 1000),
+          album_id: 0,
+          number: 0,
+          favorite: 0
+        };
+
+        // Add to desktop library
+        try {
+          const curLib = phoneSync.read('library.json', { tracks: [] });
+          const curTracks = Array.isArray(curLib.tracks) ? curLib.tracks : [];
+          const idx = curTracks.findIndex(t => String(t.id) === trackId);
+          if (idx >= 0) {
+            track.favorite = curTracks[idx].favorite;
+            curTracks[idx] = { ...curTracks[idx], ...track };
+          }
+          else curTracks.push(track);
+          phoneSync.saveLibrary({ ...curLib, tracks: curTracks });
+        } catch (e) {
+          console.error('[UploadToPhone] Error saving library:', e);
+          throw e;
+        }
+
+        // Try pushing directly to phone if online
+        let pushed = false;
+        let phoneResult = null;
+        const phoneBase = discoveredDevices.length > 0 ? `http://${discoveredDevices[0].ip}:${discoveredDevices[0].port}` : null;
+        if (phoneBase) {
+          try {
+            phoneResult = await pushTrackToPhone(phoneBase, dest, {
+              trackId,
+              filename: safeFilename,
+              title,
+              artist,
+              album: rawAlbum,
+              mime
+            });
+            pushed = true;
+          } catch (phoneErr) {
+            console.log(`[UploadToPhone] Direct push failed (${phoneErr.message}), queueing for later`);
+          }
+        }
+
+        if (!pushed) {
+          const pending = readPendingUploads().filter(item => item.trackId !== trackId);
+          pending.push({
+            id: crypto.randomUUID(),
+            filePath: dest,
+            filename: safeFilename,
+            title,
+            artist,
+            album: rawAlbum,
+            mime,
+            trackId,
+            queuedAt: Date.now()
+          });
+          writePendingUploads(pending);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'ok',
+          phoneOnline: pushed,
+          track,
+          phoneResult,
+          message: pushed
+            ? 'Трек успешно отправлен на телефон и добавлен в медиатеку!'
+            : 'Трек сохранён на ПК и будет автоматически передан на телефон при подключении к сети.'
+        }));
+      } catch (err) {
+        try { if (fs.existsSync(tmpDest)) fs.unlinkSync(tmpDest); } catch (_) {}
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+
+    fileStream.on('error', (err) => {
+      try { if (fs.existsSync(tmpDest)) fs.unlinkSync(tmpDest); } catch (_) {}
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
     });
     return;
   }

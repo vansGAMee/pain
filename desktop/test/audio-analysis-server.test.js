@@ -46,4 +46,9 @@ test('analysis endpoint uses saved identity, persists reanalysis, validates sour
   response = await analyze(); assert.equal(response.status, 200);
   assert.equal((await response.json()).cached, undefined, 'changed source stat must invalidate cache');
   assert.deepEqual(fs.readFileSync(file), before);
+  // A missing file without prior measurements must not become invented audio.
+  await fetch(`http://127.0.0.1:${port}/api/save-library`, {method:'POST',body:JSON.stringify({tracks:[{id:'missing',title:'Missing',duration:30000}]})});
+  const unavailable=await fetch(`http://127.0.0.1:${port}/api/analyze-track/missing`,{method:'POST',body:'{}'});
+  assert.equal(unavailable.status,404);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'data/dj-state.json'))).profiles.missing,undefined);
 });

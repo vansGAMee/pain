@@ -4,12 +4,12 @@ android {
  compileSdk 36
  defaultConfig {
   applicationId 'dev.mono.local'; minSdk 26; targetSdk 35
-  versionCode 22; versionName '1.7.5'
+  versionCode 23; versionName '1.7.6'
   testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
  }
  buildFeatures { buildConfig true }
  compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
- buildTypes { release { minifyEnabled false } }
+ buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
  lint { abortOnError true }
 }
 dependencies {

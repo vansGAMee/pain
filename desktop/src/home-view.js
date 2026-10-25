@@ -21,9 +21,18 @@
   if(key!==mixKey){
    mixKey=key;mixPending=true;mixError=false;const generation=++ticket;
    // Paint Home first; bounded existing DJ scoring runs once per mix, not per frame.
-   requestAnimationFrame(()=>setTimeout(()=>{
+   requestAnimationFrame(()=>setTimeout(async ()=>{
     if(generation!==ticket)return;
-    try{mix=HomeModel.mix(snapshot.tracks,snapshot.queue,6,variation);}catch(_){mix=[];mixError=true;}
+    try{
+      if(globalThis.DJWorker?.request&&typeof snapshot.queue?.workerSnapshot==='function'){
+        mix=await globalThis.DJWorker.request({action:'mix',tracks:snapshot.tracks,snapshot:snapshot.queue.workerSnapshot(),limit:6,variation});
+      }else{
+        mix=HomeModel.mix(snapshot.tracks,snapshot.queue,6,variation);
+      }
+    }catch(_){
+      try{mix=HomeModel.mix(snapshot.tracks,snapshot.queue,6,variation);}catch(_){mix=[];mixError=true;}
+    }
+    if(generation!==ticket)return;
     mixPending=false;if(document.getElementById('view-home').classList.contains('active'))render(snapshot,actions);
    },0));
   }

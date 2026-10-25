@@ -109,6 +109,10 @@ public final class Repository extends SQLiteOpenHelper {
     if (d.update("tracks", v, "id=?", new String[] {t.id}) == 0) d.insertOrThrow("tracks", null, v);
   }
 
+  public void addTrack(Track t) {
+    upsert(getWritableDatabase(), t);
+  }
+
   public int scan(SharedPreferences prefs) {
     List<Track> found = new ArrayList<>();
     String folderCol =

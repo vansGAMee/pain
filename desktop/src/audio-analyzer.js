@@ -160,7 +160,7 @@
       const window = availableDetails[index];
       addMoment(details, window.contrast.mean);
       detailPositions.push(Math.floor(window.sourceStart / sampleRate / WINDOW_SECONDS));
-      detailSeconds += window.contrast.count * N / sampleRate;
+      detailSeconds += window.sampleCount ? window.sampleCount / sampleRate : WINDOW_SECONDS;
     }
     const profile = {
       version: 4,
@@ -193,8 +193,11 @@
   }
 
   function complete(profile, track) {
-    return !!AudioProfile.get({ [track.id]: profile }, track) &&
-      profile.analysis?.method === "stratified-pcm-v1" && !!AudioProfile.texture(profile) && !!AudioProfile.detail(profile);
+    if (!profile || !track) return false;
+    if (!AudioProfile.get({ [track.id]: profile }, track)) return false;
+    const hasTexture = !!AudioProfile.texture(profile);
+    const hasDetail = !!AudioProfile.detail(profile);
+    return hasTexture && hasDetail;
   }
 
   class BatchAnalyzer {

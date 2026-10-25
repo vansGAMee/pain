@@ -88,3 +88,16 @@ test('listening evidence learns section contrast for unheard tracks without arti
  const model=new Taste(tracks,plays,now,profiles);
  assert.ok(model.score(null,tracks[2]).probability>model.score(null,tracks[3]).probability+.02);
 });
+
+test('scoring detail cache expires before a subsequent profile edit is validated',()=>{
+ const Audio=require('../src/audio-profile');
+ const profile={detail:{version:1,mean:Array(7).fill(.3),frames:24,seconds:12,positions:Array.from({length:24},(_,i)=>i)}};
+ assert.deepEqual(Audio.withCachedDetails(()=>Audio.detail(profile)),Array(7).fill(.3));
+ profile.detail.positions[1]=0;
+ assert.equal(Audio.detail(profile),null);
+ assert.equal(Audio.withCachedDetails(()=>Audio.detail(profile)),null);
+ profile.detail.positions[1]=1;
+ assert.throws(()=>Audio.withCachedDetails(()=>{Audio.detail(profile);throw new Error('selection aborted');}));
+ profile.detail.mean[0]=NaN;
+ assert.equal(Audio.detail(profile),null);
+});

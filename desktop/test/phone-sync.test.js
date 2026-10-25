@@ -78,3 +78,16 @@ test('lost responses retry safely and pre-outbox PC history is recovered',async 
  assert.equal(result.stats.plays.length,1);assert.equal(result.stats.plays[0].heard,120000);assert.equal(posts,2);
  await sync.synchronize(base);assert.equal(posts,2);
 });
+
+test('partial or empty phone libraries preserve PC tracks, favorites and history references', async t=>{
+ const sync=new Sync(temp(t));
+ const local={id:'pc_upload_1234567890abcdef',title:'Local recording',favorite:1};
+ sync.saveLibrary({tracks:[local,{id:'media:1',title:'Phone track',favorite:0}]});
+ const base=await phone(t,(req,res)=>reply(res,req.url==='/api/library'?{tracks:[]}:{plays:[]}));
+ assert.deepEqual((await sync.synchronize(base)).library.tracks,[local,{id:'media:1',title:'Phone track',favorite:0}]);
+ const merged=sync.saveLibrary({tracks:[{id:'media:1',title:'Updated phone title',favorite:1}]});
+ assert.deepEqual(merged.tracks[0],local);
+ assert.equal(merged.tracks[1].title,'Updated phone title');
+ assert.equal(merged.tracks[1].favorite,1);
+ assert.equal(new Sync(sync.dir).read('library.json',null).tracks.length,2);
+});

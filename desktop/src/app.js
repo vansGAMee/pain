@@ -117,14 +117,69 @@
   try {audioProfiles=AudioProfile.restore(localStorage.getItem('pain_audio_profiles_v4'));}catch(_){}
   let initialBpmCache = {};
   let audioSyncTimer=null,audioSyncBusy=false,audioSyncAgain=false;
+
+  let persistAudioProfilesTimer = null;
+  function schedulePersistAudioProfiles(immediate = false) {
+    if (immediate) {
+      if (persistAudioProfilesTimer) {
+        clearTimeout(persistAudioProfilesTimer);
+        persistAudioProfilesTimer = null;
+      }
+      try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+      return;
+    }
+    if (!persistAudioProfilesTimer) {
+      persistAudioProfilesTimer = setTimeout(() => {
+        persistAudioProfilesTimer = null;
+        try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+      }, 5000);
+    }
+  }
+
+  let persistBpmCacheTimer = null;
+  function schedulePersistBpmCache(immediate = false) {
+    if (immediate) {
+      if (persistBpmCacheTimer) {
+        clearTimeout(persistBpmCacheTimer);
+        persistBpmCacheTimer = null;
+      }
+      if (queue?.bpmCache) {
+        try { localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache)); } catch (_) {}
+      }
+      return;
+    }
+    if (!persistBpmCacheTimer) {
+      persistBpmCacheTimer = setTimeout(() => {
+        persistBpmCacheTimer = null;
+        if (queue?.bpmCache) {
+          try { localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache)); } catch (_) {}
+        }
+      }, 5000);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+      schedulePersistAudioProfiles(true);
+      schedulePersistBpmCache(true);
+    });
+  }
+
   function sharedVibes(){try{const v=JSON.parse(localStorage.getItem('pain_dj_vibes_v1'));return v?{...v,updatedAt:v.updatedAt||0}:null;}catch(_){return null;}}
   function mergeSharedAudio(remote){
     if(!remote)return;
     const state=DjState.merge({profiles:audioProfiles,vibes:sharedVibes()},remote),merged=state.profiles;
+    let changed = false;
     for(const [id,profile] of Object.entries(merged)){
-      if(JSON.stringify(audioProfiles[id])!==JSON.stringify(profile)){audioProfiles[id]=profile;queue?.setAudioProfile(id,profile);}
+      const existing = audioProfiles[id];
+      if (existing !== profile) {
+        if (!existing || existing.updatedAt !== profile.updatedAt || existing.signature !== profile.signature) {
+          audioProfiles[id] = profile;
+          queue?.setAudioProfile(id, profile);
+          changed = true;
+        }
+      }
     }
-    AudioProfile.persist(audioProfiles,localStorage);
+    if (changed) schedulePersistAudioProfiles();
     if(state.vibes&&JSON.stringify(state.vibes)!==JSON.stringify(sharedVibes())){
       try{localStorage.setItem('pain_dj_vibes_v1',JSON.stringify(state.vibes));window.dispatchEvent(new CustomEvent('pain:dj-state',{detail:state.vibes}));}catch(_){}
     }
@@ -226,6 +281,7 @@
   }
   let activeDeck = deckA;
   let standbyDeck = deckB;
+  const deckTrackSnapshots = new WeakMap();
   let sourceNodeA = null;
   let sourceNodeB = null;
   let gainNodeA = null;
@@ -530,7 +586,23 @@
     audioAnalysisCurrentTrack: document.getElementById('audioAnalysisCurrentTrack'),
     startAudioAnalysisBtn: document.getElementById('startAudioAnalysisBtn'),
     pauseAudioAnalysisBtn: document.getElementById('pauseAudioAnalysisBtn'),
-    audioAnalysisProgressBar: document.getElementById('audioAnalysisProgressBar')
+    audioAnalysisProgressBar: document.getElementById('audioAnalysisProgressBar'),
+
+    // Track Upload to Phone
+    trackUploadDeviceBadge: document.getElementById('trackUploadDeviceBadge'),
+    trackUploadDeviceText: document.getElementById('trackUploadDeviceText'),
+    trackUploadDropzone: document.getElementById('trackUploadDropzone'),
+    trackUploadFileInput: document.getElementById('trackUploadFileInput'),
+    trackUploadPreviewCard: document.getElementById('trackUploadPreviewCard'),
+    trackUploadFileName: document.getElementById('trackUploadFileName'),
+    trackUploadFileSize: document.getElementById('trackUploadFileSize'),
+    trackUploadTitleInput: document.getElementById('trackUploadTitleInput'),
+    trackUploadArtistInput: document.getElementById('trackUploadArtistInput'),
+    trackUploadSubmitBtn: document.getElementById('trackUploadSubmitBtn'),
+    trackUploadCancelBtn: document.getElementById('trackUploadCancelBtn'),
+    trackUploadProgressContainer: document.getElementById('trackUploadProgressContainer'),
+    trackUploadProgressFill: document.getElementById('trackUploadProgressFill'),
+    trackUploadStatusMsg: document.getElementById('trackUploadStatusMsg')
   };
 
 
@@ -821,13 +893,18 @@
       applyEqualizerAudioGains();
       try { autoEqHeadroom = AutoEqualizer.createHeadroom(audioCtx, EQ_FREQUENCIES); } catch (_) {}
       try {
-        AudioProfile.observe(audioCtx, preampNode, audio, () => playingTrackSnapshot,
-          (track, profile) => {
+        const onProfile = (track, profile) => {
             queue?.setAudioProfile(track.id, profile);
             if (state.eq.auto && String(track.id) === String(state.currentTrackId)) applyAutoEqualizer(track, profile);
-            try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
-            if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 1500);
-          }, audioProfiles);
+            schedulePersistAudioProfiles();
+            if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 30000);
+          };
+        // Measure each source before the decks are mixed. A crossfade contains
+        // two recordings and must never be stored as either track's identity.
+        for (const [deck, source] of [[deckA, sourceNodeA], [deckB, sourceNodeB]]) {
+          if (deck && source) AudioProfile.observe(audioCtx, source, deck,
+            () => deckTrackSnapshots.get(deck), onProfile, audioProfiles);
+        }
       } catch (_) {}
     } catch (err) {
       console.warn('Web Audio API Equalizer initialization deferred or unsupported:', err);
@@ -2321,6 +2398,7 @@
       }
 
       if (transitionGainNode) setTrackTransitionGain(1);
+      deckTrackSnapshots.set(incomingDeck, playingTrackSnapshot);
       incomingDeck.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
       if (startPosition > 0) {
         const onLoaded = () => {
@@ -2381,6 +2459,7 @@
       }
       activeDeck = deckA;
       standbyDeck = deckB;
+      deckTrackSnapshots.set(deckA, playingTrackSnapshot);
       deckA.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
       savePlaybackPosition(true);
       deckA.play().then(() => {
@@ -2433,6 +2512,9 @@
 
   function playTrackObject(track, startPosition = 0) {
     if (!track) return;
+    pendingNextSkips = 0;
+    isNavigatingNext = false;
+    if (queue) queue.cancelPendingSelection();
     initAudioNodes();
     clearTimeout(trackTransitionTimer);
     ++trackTransitionRequest;
@@ -2998,14 +3080,16 @@
           queue?.setAudioProfile(track.id, profile);
           if (bpm) {
             queue?.setTrackBpm(track.id, bpm);
-            try { localStorage.setItem('pain_bpm_cache_v2', JSON.stringify(queue.bpmCache)); } catch (_) {}
+            schedulePersistBpmCache();
           }
-          try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+          schedulePersistAudioProfiles();
           if (audioSyncTimer === null) {
             audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 2500);
           }
         },
         onComplete: () => {
+          schedulePersistAudioProfiles(true);
+          schedulePersistBpmCache(true);
           syncSharedAudio();
           updateAudioAnalysisSettingsUI();
           const failed = batchAudioAnalyzer.failed || 0;
@@ -3043,6 +3127,141 @@
         body: data
       }).catch(() => {});
     } catch (_) {}
+  }
+  // --- TRACK UPLOAD TO PHONE CONTROLLER ---
+  let selectedUploadTrackFile = null;
+
+  async function updateTrackUploadSettingsUI() {
+    if (!DOM.trackUploadDeviceBadge) return;
+    const ru = state.lang === 'ru';
+    try {
+      const res = await fetch('/api/upload-status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.phoneConnected) {
+          DOM.trackUploadDeviceBadge.className = 'upload-device-badge connected';
+          DOM.trackUploadDeviceText.textContent = ru
+            ? `Телефон на связи (${data.phoneIp})`
+            : `Phone connected (${data.phoneIp})`;
+        } else {
+          DOM.trackUploadDeviceBadge.className = 'upload-device-badge offline';
+          const queueText = data.pendingCount > 0 ? (ru ? ` · в очереди: ${data.pendingCount}` : ` · in queue: ${data.pendingCount}`) : '';
+          DOM.trackUploadDeviceText.textContent = ru
+            ? `Телефон не в сети (сохранение в очередь)${queueText}`
+            : `Phone offline (will queue)${queueText}`;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function handleUploadFileSelection(file) {
+    if (!file) return;
+    const ru = state.lang === 'ru';
+    const validExts = ['.mp3', '.flac', '.wav', '.m4a', '.ogg'];
+    const lowerName = file.name.toLowerCase();
+    const isAudio = validExts.some(ext => lowerName.endsWith(ext)) || (file.type && file.type.startsWith('audio/'));
+    if (!isAudio) {
+      showToast(ru ? 'Пожалуйста, выберите аудиофайл (MP3, FLAC, WAV, M4A, OGG)' : 'Please select an audio file (MP3, FLAC, WAV, M4A, OGG)', '⚠');
+      return;
+    }
+
+    selectedUploadTrackFile = file;
+    if (DOM.trackUploadFileName) DOM.trackUploadFileName.textContent = file.name;
+    if (DOM.trackUploadFileSize) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      DOM.trackUploadFileSize.textContent = `${sizeMb} MB`;
+    }
+
+    // Auto-detect Title and Artist from filename: "Artist - Title.ext"
+    const dotIdx = file.name.lastIndexOf('.');
+    const nameWithoutExt = dotIdx > 0 ? file.name.substring(0, dotIdx) : file.name;
+    let title = nameWithoutExt;
+    let artist = '';
+    if (nameWithoutExt.includes(' - ')) {
+      const parts = nameWithoutExt.split(' - ');
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' - ').trim();
+    }
+    if (DOM.trackUploadTitleInput) DOM.trackUploadTitleInput.value = title;
+    if (DOM.trackUploadArtistInput) DOM.trackUploadArtistInput.value = artist;
+
+    if (DOM.trackUploadPreviewCard) DOM.trackUploadPreviewCard.style.display = 'block';
+    if (DOM.trackUploadProgressContainer) DOM.trackUploadProgressContainer.style.display = 'none';
+    if (DOM.trackUploadSubmitBtn) DOM.trackUploadSubmitBtn.disabled = false;
+  }
+
+  function resetTrackUploadUI() {
+    selectedUploadTrackFile = null;
+    if (DOM.trackUploadFileInput) DOM.trackUploadFileInput.value = '';
+    if (DOM.trackUploadPreviewCard) DOM.trackUploadPreviewCard.style.display = 'none';
+    if (DOM.trackUploadProgressContainer) DOM.trackUploadProgressContainer.style.display = 'none';
+    if (DOM.trackUploadSubmitBtn) DOM.trackUploadSubmitBtn.disabled = false;
+  }
+
+  async function submitTrackUpload() {
+    if (!selectedUploadTrackFile) return;
+    const ru = state.lang === 'ru';
+    if (DOM.trackUploadSubmitBtn) DOM.trackUploadSubmitBtn.disabled = true;
+    if (DOM.trackUploadProgressContainer) DOM.trackUploadProgressContainer.style.display = 'block';
+    if (DOM.trackUploadProgressFill) DOM.trackUploadProgressFill.style.width = '30%';
+    if (DOM.trackUploadStatusMsg) {
+      DOM.trackUploadStatusMsg.textContent = ru ? 'Передача трека…' : 'Uploading track…';
+      DOM.trackUploadStatusMsg.style.color = 'var(--text-secondary, #a1a1aa)';
+    }
+
+    try {
+      const title = DOM.trackUploadTitleInput ? DOM.trackUploadTitleInput.value.trim() : '';
+      const artist = DOM.trackUploadArtistInput ? DOM.trackUploadArtistInput.value.trim() : '';
+      const uploadUrl = new URL('/api/upload-to-phone', window.location.origin);
+      uploadUrl.searchParams.set('filename', selectedUploadTrackFile.name);
+      if (title) uploadUrl.searchParams.set('title', title);
+      if (artist) uploadUrl.searchParams.set('artist', artist);
+
+      if (DOM.trackUploadProgressFill) DOM.trackUploadProgressFill.style.width = '65%';
+
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': selectedUploadTrackFile.type || 'audio/mpeg',
+          'X-Filename': encodeURIComponent(selectedUploadTrackFile.name),
+          'X-Title': encodeURIComponent(title),
+          'X-Artist': encodeURIComponent(artist)
+        },
+        body: selectedUploadTrackFile
+      });
+
+      if (DOM.trackUploadProgressFill) DOM.trackUploadProgressFill.style.width = '100%';
+
+      if (res.ok) {
+        const data = await res.json();
+        const successMsg = data.message || (ru ? 'Трек успешно загружен!' : 'Track uploaded successfully!');
+        if (DOM.trackUploadStatusMsg) {
+          DOM.trackUploadStatusMsg.textContent = successMsg;
+          DOM.trackUploadStatusMsg.style.color = 'var(--accent, #7c4dff)';
+        }
+        showToast(successMsg, '✓', 4000);
+        setTimeout(resetTrackUploadUI, 2200);
+        updateTrackUploadSettingsUI();
+        await loadLocalData();
+        await loadCachedTracksList();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        const errMsg = err.error || (ru ? 'Не удалось загрузить трек' : 'Track upload failed');
+        if (DOM.trackUploadStatusMsg) {
+          DOM.trackUploadStatusMsg.textContent = errMsg;
+          DOM.trackUploadStatusMsg.style.color = '#ef4444';
+        }
+        showToast(errMsg, '⚠', 4000);
+        if (DOM.trackUploadSubmitBtn) DOM.trackUploadSubmitBtn.disabled = false;
+      }
+    } catch (e) {
+      if (DOM.trackUploadStatusMsg) {
+        DOM.trackUploadStatusMsg.textContent = e.message;
+        DOM.trackUploadStatusMsg.style.color = '#ef4444';
+      }
+      showToast(e.message, '⚠', 4000);
+      if (DOM.trackUploadSubmitBtn) DOM.trackUploadSubmitBtn.disabled = false;
+    }
   }
 
   function updateFavoriteMomentUI(track = null) {
@@ -3343,12 +3562,24 @@
   }
 
   // --- SLEEP-RESISTANT PREFETCHING ---
-  function prefetchNextTrack() {
+  async function prefetchNextTrack() {
     if (state.hasPrefetchedNext) return;
-    const nextTrack = getNextTrack();
-    if (!nextTrack) return;
-
     state.hasPrefetchedNext = true;
+    let nextTrack;
+    if (queue && queue.shuffleMode === 'smart' && typeof queue.peekNextAsync === 'function') {
+      try {
+        nextTrack = await queue.peekNextAsync();
+      } catch (_) {
+        nextTrack = queue.peekNext();
+      }
+    } else {
+      nextTrack = getNextTrack();
+    }
+    if (!nextTrack) {
+      state.hasPrefetchedNext = false;
+      return;
+    }
+
     fetch(`/api/preload-track/${encodeURIComponent(nextTrack.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`, {
       method: 'POST'
     }).catch(() => {});
@@ -3364,7 +3595,10 @@
     return state.tracks[nextIdx];
   }
 
-  function playNextTrack(isAutoAdvance = false) {
+  let isNavigatingNext = false;
+  let pendingNextSkips = 0;
+
+  async function playNextTrack(isAutoAdvance = false) {
     sampleListening();
     // DOM click handlers pass an Event; only an explicit true means natural end.
     const explicitSkip = isAutoAdvance === true ? false : !audio.ended;
@@ -3373,32 +3607,70 @@
       momentsReel.next();
       return;
     }
-    if (queue) {
-      const nextTrack = queue.next();
-      if (nextTrack) {
-        playTrackObject(nextTrack);
+
+    if (!queue) {
+      if (state.tracks.length === 0) return;
+      let nextIdx;
+      if (state.shuffle) {
+        nextIdx = Math.floor(Math.random() * state.tracks.length);
       } else {
-        isCrossfading = false;
-        state.isPlaying = false;
-        updatePlayBtnUI();
-        DOM.vinylBigDisc.classList.remove('spinning');
-        updatePlayingRowUI();
+        nextIdx = state.currentTrackIndex + 1;
+        if (nextIdx >= state.tracks.length) nextIdx = 0;
+      }
+      playTrackIndex(nextIdx);
+      return;
+    }
+
+    if (isNavigatingNext) {
+      if (!isAutoAdvance) {
+        pendingNextSkips++;
       }
       return;
     }
 
-    if (state.tracks.length === 0) return;
-    let nextIdx;
-    if (state.shuffle) {
-      nextIdx = Math.floor(Math.random() * state.tracks.length);
-    } else {
-      nextIdx = state.currentTrackIndex + 1;
-      if (nextIdx >= state.tracks.length) nextIdx = 0;
+    isNavigatingNext = true;
+    try {
+      while (true) {
+        let nextTrack;
+        if (queue.shuffleMode === 'smart' && typeof queue.nextAsync === 'function') {
+          nextTrack = await queue.nextAsync();
+        } else {
+          nextTrack = queue.next();
+        }
+
+        if (nextTrack === undefined) {
+          // Manual track selection or cancel superseded this calculation
+          return;
+        }
+
+        if (pendingNextSkips > 0) {
+          pendingNextSkips--;
+          if (nextTrack) {
+            continue;
+          }
+        }
+
+        if (nextTrack) {
+          playTrackObject(nextTrack);
+        } else {
+          isCrossfading = false;
+          state.isPlaying = false;
+          updatePlayBtnUI();
+          DOM.vinylBigDisc.classList.remove('spinning');
+          updatePlayingRowUI();
+        }
+        break;
+      }
+    } finally {
+      isNavigatingNext = false;
+      pendingNextSkips = 0;
     }
-    playTrackIndex(nextIdx);
   }
 
   function playPrevTrack() {
+    pendingNextSkips = 0;
+    isNavigatingNext = false;
+    if (queue) queue.cancelPendingSelection();
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.prev();
       return;
@@ -3518,6 +3790,7 @@
       updateAutoEqualizerUI();
       updateSettingsExcludedSection();
       updateAudioAnalysisSettingsUI();
+      updateTrackUploadSettingsUI();
     }
   }
 
@@ -3847,6 +4120,12 @@
       document.getElementById(id).checked = state[key];
     }
     document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
+    if (state.resourceSaver) {
+      fetch('/api/resource-saver', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resourceSaver: true })
+      }).catch(() => {});
+    }
     initDesktopPreferences();
     document.getElementById('volumeLimitSlider').value = state.volumeLimit;
     document.getElementById('volumeLimitValue').textContent = state.volumeLimit + '%';
@@ -3859,7 +4138,6 @@
     document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
     document.getElementById('smartVolumeSwitch').checked = state.smartVolume;
     document.getElementById('backgroundDuckSwitch').checked = state.backgroundDuck;
-    document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
     updateAutoEqualizerUI();
     applyFluidColor(state.fluidColor);
     if (DOM.fluidBpmSyncSwitch) {
@@ -3901,11 +4179,11 @@
             }
 
             // Refresh quietly without overlapping exchanges.
-            if (!syncBusy && Date.now() - lastSyncAttempt > 60000) syncAll({background:true});
+            if (!syncBusy && Date.now() - lastSyncAttempt > 180000) syncAll({background:true});
           }
         }
       } catch (ignored) {}
-    }, 1500);
+    }, 4000);
   }
 
   async function checkConnection() {
@@ -3933,6 +4211,29 @@
     }
   }
 
+  function isStatsDiffer(oldStats, newStats) {
+    if (!oldStats || !newStats) return true;
+    const op = oldStats.plays || [], np = newStats.plays || [];
+    if (op.length !== np.length) return true;
+    if (op.length > 0) {
+      const lo = op[op.length - 1], ln = np[np.length - 1];
+      if (lo?.id !== ln?.id || lo?.started !== ln?.started) return true;
+      const fo = op[0], fn = np[0];
+      if (fo?.id !== fn?.id || fo?.started !== fn?.started) return true;
+    }
+    const os = oldStats.slices || [], ns = newStats.slices || [];
+    return os.length !== ns.length;
+  }
+
+  function isLibraryDiffer(oldTracks, newTracks) {
+    if (!oldTracks || !newTracks) return true;
+    if (oldTracks.length !== newTracks.length) return true;
+    if (oldTracks.length > 0) {
+      if (oldTracks[0]?.id !== newTracks[0]?.id || oldTracks[oldTracks.length - 1]?.id !== newTracks[newTracks.length - 1]?.id) return true;
+    }
+    return false;
+  }
+
   let syncBusy = false, lastSyncAttempt = 0, localSyncRevision = 0;
   async function syncAll({background = false} = {}) {
     if (syncBusy) return;
@@ -3958,8 +4259,8 @@
       if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
       // A local click/play during the exchange must not be rolled back by its response.
       if (revision !== localSyncRevision) { lastSyncAttempt = 0; return; }
-      const libraryChanged = JSON.stringify(state.tracks) !== JSON.stringify(libData.tracks);
-      const statsChanged = JSON.stringify(state.stats.plays) !== JSON.stringify(stats.plays) || JSON.stringify(state.stats.slices) !== JSON.stringify(stats.slices);
+      const libraryChanged = isLibraryDiffer(state.tracks, libData.tracks);
+      const statsChanged = isStatsDiffer(state.stats, stats);
       if (libraryChanged) {
         const oldIds = new Set(state.tracks.map(t => String(t.id)));
         const wholeLibrary = queue && queue.getContext().allowNew && queue.getTracks().length === oldIds.size && queue.getTracks().every(t => oldIds.has(String(t.id)));
@@ -3974,7 +4275,9 @@
         invalidatePlayCountsCache();
         if (queue) setQueueTasteStats(state.stats);
         updateSidebarLikedCount();
-        renderCurrentView();
+        if (!background || (state.currentView === 'library' || state.currentView === 'home')) {
+          renderCurrentView();
+        }
       }
       if (!background) {
         DOM.syncProgressFill.style.width = '100%';
@@ -4076,13 +4379,8 @@
     if (state.jointState.results && state.jointState.results.length > 0) {
       renderJointResults(state.jointState.results);
     }
-    if (typeof JointAI !== 'undefined' && JointAI.isLoaded && JointAI.isLoaded()) {
-      if (DOM.jointModelBadgeText) {
-        DOM.jointModelBadgeText.textContent = state.lang === 'ru'
-          ? (response.source === 'local' ? 'Подбор по вашей библиотеке' : `Каталог: ${response.catalogSize} треков`)
-          : (response.source === 'local' ? 'Recommendations from your library' : `Catalog: ${response.catalogSize} tracks`);
-      }
-    }
+    // The generation result sets the badge. Model load state alone cannot
+    // identify which source produced the currently displayed playlist.
   }
 
   function renderJointSeeds() {
@@ -5023,6 +5321,49 @@
       });
     }
 
+    // Track Upload to Phone Dropzone & Controls
+    if (DOM.trackUploadDropzone) {
+      DOM.trackUploadDropzone.addEventListener('click', (e) => {
+        if (e.target !== DOM.trackUploadFileInput && DOM.trackUploadFileInput) {
+          DOM.trackUploadFileInput.click();
+        }
+      });
+      DOM.trackUploadDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.trackUploadDropzone.classList.add('dragover');
+      });
+      DOM.trackUploadDropzone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.trackUploadDropzone.classList.remove('dragover');
+      });
+      DOM.trackUploadDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.trackUploadDropzone.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleUploadFileSelection(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    if (DOM.trackUploadFileInput) {
+      DOM.trackUploadFileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleUploadFileSelection(e.target.files[0]);
+        }
+      });
+    }
+
+    if (DOM.trackUploadCancelBtn) {
+      DOM.trackUploadCancelBtn.addEventListener('click', resetTrackUploadUI);
+    }
+
+    if (DOM.trackUploadSubmitBtn) {
+      DOM.trackUploadSubmitBtn.addEventListener('click', submitTrackUpload);
+    }
+
     // Swatches
     document.querySelectorAll('.fluid-color-swatch').forEach(sw => {
       sw.addEventListener('click', () => {
@@ -5073,16 +5414,31 @@
       updateTrackTransitionUI();
       try { localStorage.setItem('pain_track_transition', String(state.trackTransition)); } catch (_) {}
     });
-    for (const [id, key, storageKey] of [['resourceSaverSwitch', 'resourceSaver', 'pain_resource_saver'], ['cleanTitlesSwitch', 'cleanTitles', 'pain_clean_titles']]) {
-      document.getElementById(id).addEventListener('change', e => {
-        state[key] = e.target.checked;
-        try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
+    const resourceSaverInput = document.getElementById('resourceSaverSwitch');
+    if (resourceSaverInput) {
+      resourceSaverInput.addEventListener('change', e => {
+        state.resourceSaver = e.target.checked;
+        try { localStorage.setItem('pain_resource_saver', String(state.resourceSaver)); } catch (_) {}
         document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
-        if (key === 'cleanTitles') {
-          state.libraryDirty = true; renderCurrentView();
-          const track = state.tracks.find(t => t.id === state.currentTrackId);
-          if (track) updatePlayerBarUI(track, false);
-        }
+        fetch('/api/resource-saver', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resourceSaver: state.resourceSaver })
+        }).catch(() => {});
+        showToast(state.lang === 'ru'
+          ? (state.resourceSaver ? 'Экономия ресурсов включена' : 'Экономия ресурсов отключена')
+          : (state.resourceSaver ? 'Resource saver enabled' : 'Resource saver disabled')
+        );
+      });
+    }
+    const cleanTitlesInput = document.getElementById('cleanTitlesSwitch');
+    if (cleanTitlesInput) {
+      cleanTitlesInput.addEventListener('change', e => {
+        state.cleanTitles = e.target.checked;
+        try { localStorage.setItem('pain_clean_titles', String(state.cleanTitles)); } catch (_) {}
+        state.libraryDirty = true;
+        renderCurrentView();
+        const track = state.tracks.find(t => t.id === state.currentTrackId);
+        if (track) updatePlayerBarUI(track, false);
       });
     }
     document.getElementById('reducedMotionSwitch').addEventListener('change', e => {
@@ -5113,13 +5469,15 @@
     for (const [id, key, storageKey] of [
       ['smartVolumeSwitch', 'smartVolume', 'pain_smart_volume'],
       ['backgroundDuckSwitch', 'backgroundDuck', 'pain_background_duck']
-    ]) document.getElementById(id).addEventListener('change', e => {
-      state[key] = e.target.checked;
-      try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
-      document.getElementById('backgroundDuckSwitch').disabled = !state.smartVolume;
-      applySmartVolume();
-      updateAutoEqualizerUI();
-    });
+    ]) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', e => {
+        state[key] = e.target.checked;
+        try { localStorage.setItem(storageKey, String(state[key])); } catch (_) {}
+        applySmartVolume();
+        updateAutoEqualizerUI();
+      });
+    }
     if (DOM.autoEqSwitch) DOM.autoEqSwitch.addEventListener('change', e => {
       initAudioNodes();
       setAutoEqualizer(e.target.checked);
@@ -5428,6 +5786,15 @@
       });
     }
 
+    if (DOM.jointFilterLocalOnly && DOM.jointFilterPopularity) {
+      const updateCatalogFilter = () => {
+        const local = DOM.jointFilterLocalOnly.value === 'local_only';
+        DOM.jointFilterPopularity.disabled = local;
+        if (local) DOM.jointFilterPopularity.value = 'all';
+      };
+      DOM.jointFilterLocalOnly.addEventListener('change', updateCatalogFilter);
+      updateCatalogFilter();
+    }
     if (DOM.jointGenerateBtn) {
       DOM.jointGenerateBtn.addEventListener('click', handleGenerateJoint);
     }

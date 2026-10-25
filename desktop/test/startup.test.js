@@ -5,6 +5,12 @@ const {claim}=require('../src/instance-lock');
 const source=fs.readFileSync(require.resolve('../src/server'),'utf8');
 const startup=source.slice(source.indexOf('let currentPort ='));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('every desktop browser script parses before shipping',()=>{
+ const dir=path.resolve(__dirname,'../src');
+ for(const name of fs.readdirSync(dir).filter(name=>name.endsWith('.js'))){
+  assert.doesNotThrow(()=>new vm.Script(fs.readFileSync(path.join(dir,name),'utf8'),{filename:name}),name);
+ }
+});
 async function launch({occupied=3,duplicate=false}={}){
  const server=new EventEmitter(),opened=[],exits=[];let attempts=0,discovery=0,activate;
  server.address=()=>({port:3000+attempts-1});

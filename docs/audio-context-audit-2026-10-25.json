@@ -1,0 +1,91 @@
+{
+  "profiles": 766,
+  "wholeFileProfiles": 765,
+  "selection": "Six evenly spaced entries among 748 cached recordings of 36 seconds to 10 minutes, selected before decoding.",
+  "redecoded": [
+    {
+      "index": 0,
+      "seconds": 217.8880045351474,
+      "firstSecond": 0,
+      "lastSecond": 217.5,
+      "fftFrames": 720,
+      "maxDescriptorDifference": 0,
+      "fileUnchanged": true
+    },
+    {
+      "index": 136,
+      "seconds": 168.3548299319728,
+      "firstSecond": 2.5,
+      "lastSecond": 165.5,
+      "fftFrames": 700,
+      "maxDescriptorDifference": 1.1102230246251565e-16,
+      "fileUnchanged": true
+    },
+    {
+      "index": 263,
+      "seconds": 195.02439909297053,
+      "firstSecond": 0,
+      "lastSecond": 194.5,
+      "fftFrames": 718,
+      "maxDescriptorDifference": 3.469446951953614e-18,
+      "fileUnchanged": true
+    },
+    {
+      "index": 390,
+      "seconds": 183.9586394557823,
+      "firstSecond": 0,
+      "lastSecond": 183.5,
+      "fftFrames": 714,
+      "maxDescriptorDifference": 1.1102230246251565e-16,
+      "fileUnchanged": true
+    },
+    {
+      "index": 515,
+      "seconds": 223.3063038548753,
+      "firstSecond": 0,
+      "lastSecond": 222.5,
+      "fftFrames": 719,
+      "maxDescriptorDifference": 1.1102230246251565e-16,
+      "fileUnchanged": true
+    },
+    {
+      "index": 641,
+      "seconds": 169.73786848072564,
+      "firstSecond": 0,
+      "lastSecond": 167,
+      "fftFrames": 709,
+      "maxDescriptorDifference": 1.1102230246251565e-16,
+      "fileUnchanged": true
+    }
+  ],
+  "interpretation": "Checks reproducible feature extraction and file integrity, not perceptual or genre accuracy.",
+  "switchingPerformance": {
+    "tracks": 766,
+    "historyRows": 3170,
+    "historyWindow": 256,
+    "acousticEvidenceTracks": 184,
+    "uncachedMilliseconds": 288.639145,
+    "cachedMilliseconds": 30.78095000000002,
+    "identicalDistribution": true
+  },
+  "browser": {
+    "tracks": 766,
+    "rapidSmartDjChanges": 12,
+    "cpuSlowdown": 4,
+    "maxLongTaskMilliseconds": 282,
+    "errors": []
+  },
+  "checks": {
+    "audioTests": 110,
+    "profileCacheAndBudgetTests": 74,
+    "bodyBudgetFinalTests": 68,
+    "crossfadeBrowser": "passed",
+    "catalogNavigationBrowser": "passed",
+    "androidSharedAssets": "built",
+    "lastFullSuite": {
+      "passed": 318,
+      "failed": 78,
+      "newFailures": 0
+    }
+  }
+}

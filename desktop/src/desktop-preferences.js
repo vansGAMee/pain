@@ -27,8 +27,8 @@ module.exports = function createPreferences(dataDir, options = {}) {
     if (nativeApp && platform === 'win32') {
       const settings = nativeApp.getLoginItemSettings(login());
       autostart = settings.openAtLogin && settings.executableWillLaunchAtLogin !== false;
-    } else if (nativeApp && platform === 'linux') autostart = fs.existsSync(startupFile) && (!hypr || hasHook());
-    return { autostart, tray: trayActive, canAutostart: !!nativeApp && ['linux', 'win32'].includes(platform), canTray: !!shell };
+    } else if (platform === 'linux') autostart = fs.existsSync(startupFile) && (!hypr || hasHook());
+    return { autostart, tray: trayActive, canAutostart: ['linux', 'win32'].includes(platform), canTray: !!shell };
   }
   function setHyprHook(enabled) {
     if (!hypr && !hasHook()) return;
@@ -48,6 +48,7 @@ module.exports = function createPreferences(dataDir, options = {}) {
   function autostart(enabled) {
     if (!state().canAutostart) throw new Error('Requires native PAIN app');
     if (platform === 'win32') {
+      if (!nativeApp) throw new Error('Requires native PAIN app');
       nativeApp.setLoginItemSettings({ ...login(), openAtLogin: enabled, enabled });
       if (state().autostart !== enabled) throw new Error('System login setting was not applied');
     } else {
