@@ -5,7 +5,7 @@ test('queue records the real tempo reference and like at selection time',()=>{
  const tracks=[{id:'a',title:'Reference',bpm:90},{id:'b',title:'Selected',bpm:180,favorite:true}];
  const q=new Queue({shuffleMode:'smart'});q.setContext('library',tracks,0,'Library');q.next();
  const decision=q.getLastTransition();
- assert.equal(decision.explanation.referenceTitle,'Reference');assert.equal(decision.explanation.referenceBpm,90);
+ assert.equal(decision.explanation.referenceTitle,null);assert.equal(decision.explanation.referenceBpm,90);
  assert.equal(decision.bpm,180);assert.equal(decision.explanation.liked,true);
  tracks[1].favorite=false;q.setStats({plays:[]});
  assert.equal(decision.explanation.liked,true,'later actions must not rewrite the recorded reason');

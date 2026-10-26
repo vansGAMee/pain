@@ -12,13 +12,19 @@
       const profile=QueueEngine.validateVibeProfile(item?.profile);
       if(!profile||typeof item.id!=='string'||item.id.length>100||ids.has(item.id)||typeof item.name!=='string'||!item.name.trim())continue;
       ids.add(item.id);
-      saved.items.push({id:item.id,name:item.name.trim().slice(0,80),source:typeof item.source==='string'?item.source.slice(0,300):'',profile});
+      saved.items.push({id:item.id,name:item.name.trim().slice(0,80),source:typeof item.source==='string'?item.source.slice(0,300):'',...(typeof item.trackId==='string'?{trackId:item.trackId}:{}),profile});
     }
     saved.activeId=saved.items.some(v=>v.id===data?.activeId)?data.activeId:null;
     saved.updatedAt=Number.isSafeInteger(data?.updatedAt)?data.updatedAt:0;
   } catch (_) {}
   const active=()=>saved.items.find(v=>v.id===saved.activeId);
-  queue.setVibeProfile(active()?.profile||null);
+  applyVibe();
+  function applyVibe(){
+    const v=active();
+    queue.pulseflowVibe=v?{trackId:v.trackId,source:v.source}:null;
+    queue.pulseflowPlan=null;
+    queue.setVibeProfile(v?.profile||null);
+  }
   function draftProfile(){
     if(!draft)return null;
     if(!draft.profile){
@@ -34,7 +40,7 @@
     const source=draft?.track?.title||text('Без названия','Untitled');
     el('djVibeHint').textContent=!ready
       ?(draft?text(`Нужно больше звучания трека «${source}». Послушайте его немного дольше.`,`More sound from “${source}” is needed. Listen a little longer.`):text('Выберите трек, чтобы сохранить его звучание.','Choose a track to save its sound.'))
-      :text(`Ориентир — «${source}». Пропуски и ваш вкус продолжат учитываться.`,`Sound reference: “${source}”. Skips and your listening preferences still count.`);
+      :text(`Ориентир — «${source}». PulseFlow использует звучание этого трека.`,`Sound reference: “${source}”. PulseFlow uses the sound of this track.`);
     if(saved.items.length>=limit)el('djVibeHint').textContent=text('Сохранено 8 вайбов. Удалите один, чтобы добавить новый.','8 vibes saved. Remove one to add another.');
   }
   function commit(next,message){
@@ -43,7 +49,7 @@
     catch (_) { el('djStatus').textContent=text('Не удалось сохранить. Возможно, закончилось место.','Could not save. Storage may be full.');return false; }
     saved=next;
     window.dispatchEvent(new Event('pain:dj-changed'));
-    queue.setVibeProfile(active()?.profile||null);
+    applyVibe();
     render();
     el('djStatus').textContent=message;
     return true;
@@ -125,7 +131,7 @@
     const existing=saved.items.find(v=>v.name===name&&v.source===source&&JSON.stringify(v.profile)===JSON.stringify(profile));
     if(existing){commit({...saved,activeId:existing.id},text('Этот вайб уже сохранён.','This vibe is already saved.'));return;}
     const id=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
-    const item={id,name:name.slice(0,80),source,profile};
+    const item={id,name:name.slice(0,80),source,trackId:String(draft.track.id),profile};
     commit({items:[...saved.items,item],activeId:item.id},text('Вайб сохранён. ','Vibe saved. ')+activationMessage());
   });
   el('djRelease').addEventListener('click',()=>{
@@ -140,7 +146,7 @@
       return commit({...saved,activeId:id},id?activationMessage():text('Подбор снова свободный.','Selection is free again.'));
     }
   };
-  window.addEventListener('pain:dj-state',event=>{saved=event.detail;listKey='';queue.setVibeProfile(active()?.profile||null);render();});
+  window.addEventListener('pain:dj-state',event=>{saved=event.detail;listKey='';applyVibe();render();});
   el('audioEngine').addEventListener('timeupdate',availability);
   el('langToggle').addEventListener('click',()=>queueMicrotask(render));
   render();

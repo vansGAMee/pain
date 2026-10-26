@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/Philippe-Guerrier/pulseflow-ai-offline-music-recommender",
+  "commit": "d1fedcd4e1a676c0838ab2f7eb9ba6934676bcff",
+  "files": {
+    "environment.yml": "e8ac68a9260d664a6c50b7769934dff3d6c693dd842753f09b3a772bf235d421",
+    "main.py": "255c0e47bbedeaffcfb753efcb7174e09b67428e248b55280173829eed4ea785",
+    "requirements.txt": "0d7cb0f83280cd52c94c15ace40dcd7fa1d211420cdd978dd6e5142f2783d9de",
+    "run.py": "e710c2ceb00b568a198338ae58af24aa556a00fce7f008d6f91d5b89fa3291b2",
+    "README.md": "feaba328ecb63d52f34900809fb51829b8919991d8e02f87c9114fa4718d2f4e",
+    "config.yaml.example": "29128d0f3f401e264dbd38f5ac60b89a0ca5bbd41b5c655ff74ad0196af9fc39",
+    "scripts/generate_playlist.py": "b4f0d986a665332c56b5e0365fad86e7a8ee24cf342969906ed877167c42f1db",
+    "scripts/extract_features.py": "17c04390f9af497155167ddd6c50a80536df05685ea322fc47d3ef29b3f4a315",
+    "scripts/sequencer.py": "4e09ee70532838eb7596b53a6776088d3ac14657adaa960a3774a0ceb91b144b",
+    "scripts/fingerprint.py": "8cdf1aafdacd3a5a68d8a79006dfe0a13b5514fec62b0738ff380e001f712b37",
+    "scripts/web_app.py": "6caf7e52f4e4cebd12808394b7f03c064bc7b34fa7ea4cd7ff36fb1fab066227",
+    "scripts/explanation.py": "3547bb5628dfbf82dbbff5d52ffc84d07e5b69e3a8670d7ed11a9593bb0d9f57",
+    "scripts/embed_clap.py": "7a30f91c0666afab176836ca13821c7f0f51d225845c5341ddb0c47f71fc44d5",
+    "scripts/build_faiss_index.py": "825eb8549a0bf403f9467b3718733c2f5db97d53edbb87dec9346cf3f7485d3d",
+    "web/static/playlist.m3u8": "00ed90b34d8ceb1394e4d49bac4c8962a52c54b3efe8852fd190761800fdac4d",
+    "web/static/style.css": "b71cd8dfef2fcd06a4c5e5dce6dd034316b04f79f2c8da94510de9e26280d1d6",
+    "web/templates/index.html": "c9e3ea5732ec2f4665ed5b82d24fb03a5a02a5176424adb047bcfbe845edf398"
+  }
+}

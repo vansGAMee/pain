@@ -155,3 +155,26 @@ test('HomeModel.mix produces identical playlist whether calculated directly or f
     assert.equal(directMix[i].track.id, workerMix[i].track.id);
   }
 });
+
+test('worker failure uses completed-frequency fallback without calling the expensive model', async()=>{
+ const now=Date.now();
+ const q=new QueueEngine({shuffleMode:'smart',now:()=>now,selectInWorker:async()=>{throw Error('crash');},
+  stats:{plays:[{track:'3',started:now-1000,finished:1},{track:'2',started:now-2000,skipped:1}]}});
+ q.setContext('library',sampleTracks,0);
+ q.smartChoose=()=>{throw Error('renderer must never score music');};
+ assert.equal(q.peekNext(),null);
+ assert.equal((await q.peekNextAsync()).id,'3');
+ assert.equal((await q.nextAsync()).id,'3');
+ assert.equal(q.getLastTransition().explanation.method,'frequency-fallback');
+});
+
+test('rejected worker cannot advance a newly selected track or reuse an excluded preview',async()=>{
+ let reject;
+ const q=new QueueEngine({shuffleMode:'smart',selectInWorker:()=>new Promise((_,r)=>reject=r)});
+ q.setContext('library',sampleTracks,0);
+ const next=q.nextAsync();q.jumpToTrack('5');reject(Error('late failure'));
+ assert.equal(await next,undefined);assert.equal(q.getCurrentTrack().id,'5');
+ q._selectionJob={key:'obsolete',result:{trackId:'2'}};q.excludeTrack('2');
+ q.smartChoose=()=>{throw Error('synchronous scoring');};
+ assert.equal(q.peekNext(),null);
+});

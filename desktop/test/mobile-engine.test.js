@@ -19,7 +19,8 @@ test('mobile accepts exclusions, scope changes, fast skips and portable vibe boo
  const mobile=new Engine();mobile.update({tracks,stats:{plays:[]},profiles,excluded:['t1']});
  mobile.feedback({track:'t0',started:Date.now()-5000,heard:5000,duration:180000,skipped:1});
  const choice=mobile.choose({ids:['t0','t1','t2','t8'],current:'t0',seed:123});
- assert.equal(choice.next,'t8','confident fast skip changes sound instead of following the rejected profile');
+ assert.ok(['t2','t8'].includes(choice.next),'feedback must preserve the allowed scope');
+ assert.deepEqual(mobile.q.tasteModel().outcomes.get('t0'),[0,1],'explicit skip is preserved without an invented acoustic penalty');
  const saved=mobile.vibe({action:'save',track:'t2',name:'My sound'});assert.ok(saved.activeId);
  const second=new Engine();second.update({tracks,profiles,vibes:saved});assert.equal(second.vibes.activeId,saved.activeId);
  const released=second.vibe({action:'activate'});assert.equal(released.activeId,null);

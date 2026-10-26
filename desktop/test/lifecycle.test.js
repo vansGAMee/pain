@@ -56,10 +56,10 @@ test('closing the app mid-song does not train dislike; intentional skips still d
  assert.ok(rejected.score(null,library[1]).probability<.4);
 });
 
-test('temporary skip feedback expires after a long pause without requiring new listening events',()=>{
+test('model refresh preserves measured outcomes and filters events after a backwards clock jump',()=>{
  let now=NOW;const q=new Queue({shuffleMode:'smart',now:()=>now,stats:{plays:[0,1].map(i=>({track:'t'+i,started:now-(i+1)*60000,duration:180000,heard:5000,skipped:1}))}});
- q.setContext('library',tracks);q.peekNext();assert.equal(q._taste.recentSkips.length,2);
- now+=11*60000;q.peekNext();assert.equal(q._taste.recentSkips.length,0);
+ q.setContext('library',tracks);q.peekNext();assert.equal(q._taste.outcomes.size,2);
+ now+=11*60000;q.peekNext();assert.equal(q._taste.outcomes.size,2);
  now-=DAY;q.peekNext();assert.equal(q._taste.now,now);assert.equal(q._taste.samples,0);
 });
 

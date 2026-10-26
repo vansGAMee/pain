@@ -1,0 +1,334 @@
+{
+  "protocolVersion": 1,
+  "configuration": {
+    "trainFraction": 0.8,
+    "topK": [
+      10,
+      50
+    ],
+    "queueStarts": 8,
+    "queueLength": 30,
+    "timeZone": "Europe/Saratov"
+  },
+  "sourceSha256": {
+    "recommendation-model.js": "70dd9bbaff21cb05392c1a8cfea4f7dd2cc81bb5c3cfbaca0c89e63372fed9ca",
+    "audio-profile.js": "164b6ee98dfe3542e4b6ee9d2b98d37b5590979e43e1273a9a85570538b48fc7",
+    "queue-engine.js": "6e1a050425e136d26dbbfb045e71a1d11092b7f6800da8ee30f98b20a4d901b9",
+    "session-graph.js": "6cdf0aafbffe51e3471deb6cb189fc89d8357d15946e006e9335f252815976c2"
+  },
+  "data": {
+    "tracks": 769,
+    "allowedTracks": 709,
+    "events": 3658,
+    "input": 3659,
+    "unknownTrack": 1,
+    "invalidTime": 0,
+    "duplicates": 0,
+    "completedEvents": 1173,
+    "mediaCoverageEvents": 3658,
+    "firstEvent": "2026-10-17T09:00:57.836Z",
+    "lastEvent": "2026-10-26T03:09:27.575Z"
+  },
+  "audio": {
+    "rawProfiles": 769,
+    "validStoredProfiles": 769,
+    "signatureMatchingProfiles": 767,
+    "timbreProfiles": 767,
+    "detailProfiles": 767,
+    "limitation": "Schema, file signature and finite-vector checks only; no claim that a profile captures perceived musical similarity."
+  },
+  "holdout": {
+    "status": "evaluated",
+    "cutoff": "2026-10-24T20:51:33.508Z",
+    "trainingEvents": 2855,
+    "heldOutEvents": 732,
+    "excludedTrainingOutcomesAfterCutoff": 0,
+    "candidateCatalog": 708,
+    "historicalAudioProfiles": 0,
+    "targetDefinition": "Explicit finished/completed flag only; other events supply preceding-track context, never held-out training labels.",
+    "omitted": {
+      "notCompleted": 712,
+      "outsideCutoffCatalog": 0,
+      "immediateRepeat": 0,
+      "noCandidates": 0
+    },
+    "invalid": {
+      "nonFiniteScores": 0,
+      "emptyReasons": 0,
+      "unsupportedAcousticReasons": 0
+    },
+    "top10CatalogCoverage": 0.015536723163841809,
+    "scoreAllCandidatesMilliseconds": {
+      "median": 0.2947319999999962,
+      "p95": 1.1453679999999906
+    },
+    "methods": {
+      "model": {
+        "all": {
+          "queries": 20,
+          "metrics": {
+            "hit@10": 0.15,
+            "ndcg@10": 0.08111990798256105,
+            "mrr@10": 0.062142857142857146,
+            "hit@50": 0.3,
+            "ndcg@50": 0.11011938836021515,
+            "mrr@50": 0.06647619047619048,
+            "meanRank": 150.3,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.052368745896216595,
+            0.36041886474075696
+          ],
+          "hit@50Wilson95": [
+            0.1454772448676043,
+            0.5189728183535235
+          ]
+        },
+        "previouslyHeard": {
+          "queries": 18,
+          "metrics": {
+            "hit@10": 0.16666666666666666,
+            "ndcg@10": 0.0901332310917345,
+            "mrr@10": 0.06904761904761905,
+            "hit@50": 0.3333333333333333,
+            "ndcg@50": 0.12235487595579461,
+            "mrr@50": 0.07386243386243387,
+            "meanRank": 106.11111111111111,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.05836576805861446,
+            0.39222038103915724
+          ],
+          "hit@50Wilson95": [
+            0.1627877475083369,
+            0.5625053270405489
+          ]
+        },
+        "unheard": {
+          "queries": 2,
+          "metrics": {
+            "hit@10": 0,
+            "ndcg@10": 0,
+            "mrr@10": 0,
+            "hit@50": 0,
+            "ndcg@50": 0,
+            "mrr@50": 0,
+            "meanRank": 548,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0,
+            0.6576197724933469
+          ],
+          "hit@50Wilson95": [
+            0,
+            0.6576197724933469
+          ]
+        }
+      },
+      "completedCount": {
+        "all": {
+          "queries": 20,
+          "metrics": {
+            "hit@10": 0.15,
+            "ndcg@10": 0.08111990798256105,
+            "mrr@10": 0.062142857142857146,
+            "hit@50": 0.3,
+            "ndcg@50": 0.11011938836021515,
+            "mrr@50": 0.06647619047619048,
+            "meanRank": 150.3,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.052368745896216595,
+            0.36041886474075696
+          ],
+          "hit@50Wilson95": [
+            0.1454772448676043,
+            0.5189728183535235
+          ]
+        },
+        "previouslyHeard": {
+          "queries": 18,
+          "metrics": {
+            "hit@10": 0.16666666666666666,
+            "ndcg@10": 0.0901332310917345,
+            "mrr@10": 0.06904761904761905,
+            "hit@50": 0.3333333333333333,
+            "ndcg@50": 0.12235487595579461,
+            "mrr@50": 0.07386243386243387,
+            "meanRank": 106.11111111111111,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.05836576805861446,
+            0.39222038103915724
+          ],
+          "hit@50Wilson95": [
+            0.1627877475083369,
+            0.5625053270405489
+          ]
+        },
+        "unheard": {
+          "queries": 2,
+          "metrics": {
+            "hit@10": 0,
+            "ndcg@10": 0,
+            "mrr@10": 0,
+            "hit@50": 0,
+            "ndcg@50": 0,
+            "mrr@50": 0,
+            "meanRank": 548,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0,
+            0.6576197724933469
+          ],
+          "hit@50Wilson95": [
+            0,
+            0.6576197724933469
+          ]
+        }
+      },
+      "lastCompleted": {
+        "all": {
+          "queries": 20,
+          "metrics": {
+            "hit@10": 0.15,
+            "ndcg@10": 0.11505149978319906,
+            "mrr@10": 0.10555555555555556,
+            "hit@50": 0.3,
+            "ndcg@50": 0.15043798499228994,
+            "mrr@50": 0.11395833333333331,
+            "meanRank": 151.15,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.052368745896216595,
+            0.36041886474075696
+          ],
+          "hit@50Wilson95": [
+            0.1454772448676043,
+            0.5189728183535235
+          ]
+        },
+        "previouslyHeard": {
+          "queries": 18,
+          "metrics": {
+            "hit@10": 0.16666666666666666,
+            "ndcg@10": 0.12783499975911006,
+            "mrr@10": 0.11728395061728396,
+            "hit@50": 0.3333333333333333,
+            "ndcg@50": 0.16715331665809993,
+            "mrr@50": 0.12662037037037036,
+            "meanRank": 107.05555555555556,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0.05836576805861446,
+            0.39222038103915724
+          ],
+          "hit@50Wilson95": [
+            0.1627877475083369,
+            0.5625053270405489
+          ]
+        },
+        "unheard": {
+          "queries": 2,
+          "metrics": {
+            "hit@10": 0,
+            "ndcg@10": 0,
+            "mrr@10": 0,
+            "hit@50": 0,
+            "ndcg@50": 0,
+            "mrr@50": 0,
+            "meanRank": 548,
+            "candidates": 707
+          },
+          "hit@10Wilson95": [
+            0,
+            0.6576197724933469
+          ],
+          "hit@50Wilson95": [
+            0,
+            0.6576197724933469
+          ]
+        }
+      },
+      "randomExpected": {
+        "all": {
+          "queries": 20,
+          "metrics": {
+            "hit@10": 0.014144271570014138,
+            "ndcg@10": 0.006426533717239528,
+            "mrr@10": 0.0041428122404077155,
+            "hit@50": 0.07072135785007072,
+            "ndcg@50": 0.018242903397266547,
+            "mrr@50": 0.006363798215458874,
+            "meanRank": 354,
+            "candidates": 707
+          }
+        },
+        "previouslyHeard": {
+          "queries": 18,
+          "metrics": {
+            "hit@10": 0.01414427157001414,
+            "ndcg@10": 0.006426533717239529,
+            "mrr@10": 0.0041428122404077155,
+            "hit@50": 0.07072135785007072,
+            "ndcg@50": 0.018242903397266547,
+            "mrr@50": 0.006363798215458873,
+            "meanRank": 354,
+            "candidates": 707
+          }
+        },
+        "unheard": {
+          "queries": 2,
+          "metrics": {
+            "hit@10": 0.014144271570014143,
+            "ndcg@10": 0.006426533717239527,
+            "mrr@10": 0.004142812240407714,
+            "hit@50": 0.07072135785007072,
+            "ndcg@50": 0.01824290339726655,
+            "mrr@50": 0.0063637982154588725,
+            "meanRank": 354,
+            "candidates": 707
+          }
+        }
+      }
+    }
+  },
+  "queue": {
+    "status": "evaluated",
+    "transitions": 240,
+    "previewMismatches": 0,
+    "exclusionViolations": 0,
+    "outOfCatalog": 0,
+    "repeatedWithinCycle": 0,
+    "immediateArtistRepeats": 6,
+    "missingExplanations": 0,
+    "nonFiniteScores": 0,
+    "uniqueTracks": 140,
+    "uniqueArtists": 120,
+    "catalogCoverage": 0.19746121297602257,
+    "interpretation": "Current-state functional and diversity checks, not listening satisfaction or offline relevance metrics."
+  },
+  "limitations": [
+    "A single listener and a short observation window do not establish quality for other listeners or parity with Spotify.",
+    "Logged completions are implicit outcomes, not labels for unplayed songs; next-track retrieval is only a proxy for recommendation quality.",
+    "The historical policy, manual selections and repeated sessions bias these logs; this is not a randomized comparison or causal estimate.",
+    "The temporal test does not train on held-out events. Current favourites are masked; current exclusions define scope; only pre-cutoff audio profiles are used.",
+    "Training outcomes recorded after the cutoff are omitted. Where an event has no completion timestamp, started + heard is the available proxy; unlogged pauses cannot be reconstructed.",
+    "Rank metrics evaluate score(), while queue invariants exercise choose()/QueueEngine. Stochastic playback ranking is not equivalent to deterministic retrieval.",
+    "Wilson intervals describe event counts only and ignore dependence between events from the same listener/session.",
+    "Input integrity covers the top-level files in the supplied data directory. The evaluator never writes user state or touches media files."
+  ],
+  "integrity": {
+    "verifiedFiles": 9,
+    "unchanged": true,
+    "snapshotSha256": "511c4895e936654f165256926def9e51d2b641b1e89cb293e6b2afd9da4a0b86"
+  }
+}

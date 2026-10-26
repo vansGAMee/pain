@@ -69,10 +69,9 @@ function setupTestEnvironment() {
     }),
     mix: (tracks, queue, limit, variation) => {
       mixCallCount++;
-      // Rotate tracks according to variation, keeping real track IDs
-      const offset = variation % tracks.length;
-      const rotated = [...tracks.slice(offset), ...tracks.slice(0, offset)];
-      return rotated.slice(0, limit).map(t => ({ track: t, decision: null }));
+      // Keep deterministic scores; refresh advances the eligible catalog.
+      const eligible = tracks.filter(t => !(queue.excludedTracks || []).includes(String(t.id)));
+      return eligible.slice(0, limit).map(t => ({ track: t, decision: null }));
     }
   };
 
@@ -80,6 +79,7 @@ function setupTestEnvironment() {
     document: doc,
     window: windowObj,
     HomeModel: HomeModelMock,
+    DJWorker: {request: async payload => HomeModelMock.mix(payload.tracks, payload.snapshot, payload.limit, payload.variation)},
     requestAnimationFrame: (fn) => fn(),
     setTimeout: (fn) => fn(),
     Date,
@@ -101,7 +101,7 @@ function setupTestEnvironment() {
   };
 }
 
-test('Smart DJ mix stays stable when playback starts and does not regenerate or blink', () => {
+test('Smart DJ mix stays stable when playback starts and does not regenerate or blink', async () => {
   const { HomeView, root, getMixCalls } = setupTestEnvironment();
   const tracks = Array.from({ length: 10 }, (_, i) => ({
     id: `track-${i}`,
@@ -110,7 +110,7 @@ test('Smart DJ mix stays stable when playback starts and does not regenerate or 
     duration: 180000
   }));
 
-  const queueMock = { excludedTracks: new Set(), recommendationRevision: 1, isExcluded: () => false };
+  const queueMock = { workerSnapshot: () => ({}), excludedTracks: new Set(), recommendationRevision: 1, isExcluded: () => false };
   const handlers = {
     cover: () => 'cover.jpg',
     fallbackCover: () => 'fallback.svg',
@@ -129,6 +129,7 @@ test('Smart DJ mix stays stable when playback starts and does not regenerate or 
     current: null,
     isPlaying: false
   }, handlers);
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.equal(getMixCalls(), 1, 'mix should be generated once on initial load');
   assert.match(root.innerHTML, /Song 0/);
@@ -143,6 +144,7 @@ test('Smart DJ mix stays stable when playback starts and does not regenerate or 
     current: tracks[0],
     isPlaying: true
   }, handlers);
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.equal(getMixCalls(), 1, 'playback change must NOT trigger mix regeneration');
   assert.match(root.innerHTML, /Song 0/, 'same tracks must remain on screen');
@@ -151,8 +153,8 @@ test('Smart DJ mix stays stable when playback starts and does not regenerate or 
   assert.doesNotMatch(root.innerHTML, /Собираем подборку…/, 'UI must not blink or wipe tracks');
 });
 
-test('Clicking a mix track triggers playMix and subsequent click on playing track toggles resume', () => {
-  const { HomeView, root } = setupTestEnvironment();
+test('Clicking a mix track triggers playMix and subsequent click on playing track toggles resume', async () => {
+  const { HomeView, root, getMixCalls } = setupTestEnvironment();
   const tracks = Array.from({ length: 6 }, (_, i) => ({
     id: `t${i}`,
     title: `Song ${i}`,
@@ -173,7 +175,7 @@ test('Clicking a mix track triggers playMix and subsequent click on playing trac
     playMix: (t, list) => { playedTrack = t; playedList = list; }
   };
 
-  const queueMock = { excludedTracks: new Set(), isExcluded: () => false };
+  const queueMock = { workerSnapshot: () => ({}), excludedTracks: new Set(), isExcluded: () => false };
 
   HomeView.render({
     tracks,
@@ -184,6 +186,7 @@ test('Clicking a mix track triggers playMix and subsequent click on playing trac
     current: null,
     isPlaying: false
   }, handlers);
+  await new Promise(resolve => setImmediate(resolve));
 
   // Click on track t2
   root.listeners.click({
@@ -210,6 +213,10 @@ test('Clicking a mix track triggers playMix and subsequent click on playing trac
     current: { id: 't2' },
     isPlaying: true
   }, handlers);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(getMixCalls(), 1, 'starting the chosen mix must not regenerate it');
+  assert.match(root.innerHTML, /data-home-action="mix" data-id="t0"/);
 
   // Clicking on t2 while it is playing must toggle pause (resume)
   root.listeners.click({
@@ -224,15 +231,37 @@ test('Clicking a mix track triggers playMix and subsequent click on playing trac
   assert.equal(resumeCalled, true, 'clicking currently playing track must toggle resume/pause');
 });
 
-test('Explicit refresh regenerates mix but keeps existing tracks rendered until ready', () => {
+test('each track change refreshes Home automatically, retaining the visible mix until ready', async () => {
   const { HomeView, root, getMixCalls } = setupTestEnvironment();
-  const tracks = Array.from({ length: 6 }, (_, i) => ({
+  const tracks = Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, title: `Song ${i}` }));
+  const data = { tracks, stats: {}, playlists: [], lang: 'ru', current: tracks[0], isPlaying: true,
+    queue: { context: { title: 'Smart DJ' }, workerSnapshot: () => ({}), excludedTracks: new Set(), isExcluded: () => false } };
+  const handlers = { cover: () => '', fallbackCover: () => '' };
+  HomeView.render(data, handlers);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(getMixCalls(), 1);
+  for (let i = 1; i <= 3; i++) {
+    HomeView.render({ ...data, current: tracks[i] }, handlers);
+    assert.match(root.innerHTML, /data-home-action="mix" data-id=/, 'keep old rows while computing');
+    assert.doesNotMatch(root.innerHTML, /Собираем подборку…/);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(getMixCalls(), i + 1, 'even a track inside the mix triggers an update');
+    assert.ok(!root.innerHTML.includes(`data-home-action="mix" data-id="t${i - 1}"`), 'previous track leaves recommendations');
+    HomeView.render({ ...data, current: tracks[i], isPlaying: false }, handlers);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(getMixCalls(), i + 1, 'pause does not recalculate');
+  }
+});
+
+test('Explicit refresh advances the eligible catalog without changing scores', async () => {
+  const { HomeView, root, getMixCalls } = setupTestEnvironment();
+  const tracks = Array.from({ length: 12 }, (_, i) => ({
     id: `t${i}`,
     title: `Song ${i}`,
     duration: 180000
   }));
 
-  const queueMock = { excludedTracks: new Set(), isExcluded: () => false };
+  const queueMock = { workerSnapshot: () => ({}), excludedTracks: new Set(), isExcluded: () => false };
   const handlers = {
     cover: () => '',
     fallbackCover: () => '',
@@ -251,6 +280,7 @@ test('Explicit refresh regenerates mix but keeps existing tracks rendered until 
     current: null,
     isPlaying: false
   }, handlers);
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.equal(getMixCalls(), 1);
   assert.match(root.innerHTML, /Song 0/);
@@ -264,7 +294,8 @@ test('Explicit refresh regenerates mix but keeps existing tracks rendered until 
     }
   });
 
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(getMixCalls(), 2, 'refresh must trigger mix recalculation with variation');
-  // With variation=1, tracks rotated so Song 1 is first
-  assert.match(root.innerHTML, /Song 1/);
+  assert.match(root.innerHTML, /data-home-action="mix" data-id="t6"/);
+  assert.doesNotMatch(root.innerHTML, /data-home-action="mix" data-id="t0"/);
 });

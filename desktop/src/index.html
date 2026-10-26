@@ -60,14 +60,6 @@
             <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
             <span class="nav-label" data-en="Devices & Sync" data-ru="Устройства">Devices & Sync</span>
           </li>
-          <li class="nav-item" data-view="taste-graph">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="8" x2="10" y2="16"/><line x1="16" y1="8" x2="14" y2="16"/><line x1="9" y1="6" x2="15" y2="6"/></svg>
-            <span class="nav-label" data-en="Taste Map" data-ru="Карта вкуса">Taste Map</span>
-          </li>
-          <li class="nav-item" data-view="joint-ai">
-            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V17a1 1 0 0 1-2 0v-.07A7.003 7.003 0 0 1 5.07 11H5a1 1 0 0 1 0-2h.07A7.003 7.003 0 0 1 11 5.07V5a1 1 0 0 1 2 0v.07A7.003 7.003 0 0 1 18.93 11H19a1 1 0 0 1 0 2h-.07A7.003 7.003 0 0 1 13 16.93z"/><circle cx="12" cy="11" r="2.5"/></svg>
-            <span class="nav-label" data-en="Joint AI" data-ru="Joint AI">Joint AI</span>
-          </li>
         </ul>
       </nav>
 
@@ -137,7 +129,6 @@
             <button data-form-view="player" data-en="Player" data-ru="Плеер">Плеер</button>
             <button data-form-view="insights" data-en="Insights" data-ru="Статистика">Статистика</button>
             <button data-form-view="sync" data-en="Devices" data-ru="Устройства">Устройства</button>
-            <button data-form-view="joint-ai">Joint AI</button>
             <button data-form-view="language">RU / EN</button>
           </nav>
         </details>
@@ -585,169 +576,7 @@
           </div>
         </section>
 
-        <!-- VIEW: TASTE MAP -->
-        <section class="view-pane" id="view-taste-graph">
-          <div class="view-hero-header">
-            <div>
-              <h1 class="view-heading" data-en="Taste Map" data-ru="Карта вкуса">Taste Map</h1>
-              <div class="view-subheading" data-en="Tracks that play together form clusters. Size = plays. Gold = liked. Red = skipped more than played." data-ru="Треки, которые играют вместе, образуют кластеры. Размер = прослушивания. Золото = лайк. Красный = скипал чаще, чем слушал.">Tracks that play together form clusters.</div>
-            </div>
-            <div class="view-hero-actions">
-              <button class="btn-minimal primary" id="tasteGraphRebuildBtn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                <span data-en="Rebuild" data-ru="Перестроить">Rebuild</span>
-              </button>
-            </div>
-          </div>
-          <div class="chart-card" style="position: relative; min-height: 600px; overflow: hidden;">
-            <div id="tasteGraphContainer" style="width: 100%; min-height: 600px;"></div>
-            <div id="tasteGraphLegend" style="position: absolute; top: 12px; right: 12px; background: var(--bg-surface, #fff); padding: 10px 14px; border-radius: 8px; font-size: 11px; border: 1px solid var(--border, rgba(0,0,0,0.1)); line-height: 1.6;">
-              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #d4a017; margin-right: 6px;"></span><span data-en="Liked" data-ru="Лайк">Liked</span></div>
-              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #7c4dff; margin-right: 6px;"></span><span data-en="Played" data-ru="Слушал">Played</span></div>
-              <div><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #c75c5c; margin-right: 6px;"></span><span data-en="More skips" data-ru="Больше скипов">More skips</span></div>
-            </div>
-          </div>
-        </section>
 
-        <!-- VIEW 7: JOINT AUDIO AI LAB -->
-        <section class="view-pane" id="view-joint-ai">
-          <div class="view-hero-header">
-            <div>
-              <div class="joint-model-badge">
-                <span class="joint-badge-dot"></span>
-                <span id="jointModelBadgeText">Подбор по опорным трекам</span>
-              </div>
-              <h1 class="view-heading" data-en="Joint Audio AI" data-ru="Joint Audio AI">Joint Audio AI</h1>
-              <div class="view-subheading" data-en="Find up to 50 tracks from your library or the available catalog." data-ru="Подбор до 50 треков из вашей библиотеки или доступного каталога.">Find up to 50 tracks from your library or the available catalog.</div>
-            </div>
-          </div>
-
-          <div class="joint-grid">
-            <!-- Left: Seed Selection & Tuning Card -->
-            <div class="joint-card" id="jointCardLeft">
-              <div class="joint-card-title" data-en="Seed Tracks & Import" data-ru="Опорные треки и импорт">Опорные треки и импорт</div>
-              <div class="joint-card-sub" data-en="Add tracks from your library, upload CSV/JSON/TXT files, or paste a list of any size (up to 500+ tracks)." data-ru="Добавьте треки из фонотеки, загрузите файл CSV/JSON/TXT/M3U или вставьте список любой длины (до 500+ треков).">Добавьте треки из фонотеки, загрузите файл CSV/JSON/TXT или вставьте список любой длины (до 500+ треков).</div>
-
-              <div class="joint-seed-actions">
-                <button class="btn-minimal" id="jointUseCurrentBtn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
-                  <span data-en="Current Track" data-ru="Текущий трек">Текущий трек</span>
-                </button>
-                <button class="btn-minimal" id="jointUseFavoritesBtn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                  <span id="jointUseFavoritesBtnText" data-en="Liked Songs" data-ru="Все избранные">Все избранные</span>
-                </button>
-                <button class="btn-minimal" id="jointUseLibraryBtn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                  <span id="jointUseLibraryBtnText" data-en="All Library" data-ru="Вся фонотека">Вся фонотека</span>
-                </button>
-                <button class="btn-minimal" id="jointUploadFileBtn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  <span data-en="Upload File" data-ru="Загрузить файл">Загрузить файл</span>
-                </button>
-                <input type="file" id="jointFileInput" accept=".json,.csv,.tsv,.txt,.m3u,.m3u8,.pls" style="display: none;">
-                <button class="btn-minimal" id="jointPasteListBtn">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                  <span data-en="Paste List" data-ru="Вставить списком">Вставить списком</span>
-                </button>
-                <button class="btn-minimal danger-hover" id="jointClearSeedsBtn">
-                  <span data-en="Clear" data-ru="Очистить">Очистить</span>
-                </button>
-              </div>
-
-              <!-- Paste List Drawer -->
-              <div class="joint-paste-box" id="jointPasteBox" style="display: none;">
-                <textarea class="joint-textarea" id="jointPasteTextarea" rows="4" placeholder="Вставьте список треков построчно (например:&#10;Molchat Doma - Sudno&#10;FACE - Yumorist&#10;Radiohead - Creep)"></textarea>
-                <div class="joint-paste-actions">
-                  <button class="btn-minimal primary" id="jointApplyPasteBtn" data-en="Import List" data-ru="Импортировать список">Импортировать</button>
-                  <button class="btn-minimal" id="jointCancelPasteBtn" data-en="Cancel" data-ru="Отмена">Отмена</button>
-                </div>
-              </div>
-
-              <!-- Manual Single Input Row -->
-              <div class="joint-input-row">
-                <input type="text" class="joint-text-input" id="jointSeedInput" placeholder="Артист - Название (например, Queen - Bohemian Rhapsody)">
-                <button class="btn-minimal primary" id="jointAddSeedBtn" data-en="Add" data-ru="Добавить">Добавить</button>
-              </div>
-
-              <!-- Active Seed Chips & Counter -->
-              <div class="joint-seeds-meta" id="jointSeedsMeta">Выбрано сидов: 0 треков (перетащите файл сюда)</div>
-              <div class="joint-chips-container" id="jointActiveSeeds">
-                <!-- Dynamically populated seed chips -->
-              </div>
-
-              <!-- Filters & Tuning Section -->
-              <div class="joint-filters-section">
-                <div class="joint-filters-title" data-en="Recommendation Filters" data-ru="Настройки и фильтры подбора">Настройки и фильтры подбора</div>
-
-                <div class="joint-filter-row">
-                  <label class="joint-filter-label" data-en="Catalog popularity" data-ru="Популярность в каталоге">Популярность в каталоге:</label>
-                  <select class="joint-select" id="jointFilterPopularity">
-                    <option value="all" data-en="Balanced (All Tiers)" data-ru="Сбалансированно (все треки)">Сбалансированно (все треки)</option>
-                    <option value="underground" data-en="Lower third of catalog" data-ru="Нижняя треть каталога">Нижняя треть каталога</option>
-                    <option value="mid" data-en="Middle third of catalog" data-ru="Средняя треть каталога">Средняя треть каталога</option>
-                    <option value="hits" data-en="Upper third of catalog" data-ru="Верхняя треть каталога">Верхняя треть каталога</option>
-                  </select>
-                </div>
-
-                <div class="joint-filter-row">
-                  <label class="joint-filter-label" data-en="Artist Variety" data-ru="Артисты">Разнообразие:</label>
-                  <select class="joint-select" id="jointFilterArtistLimit">
-                    <option value="1" data-en="Up to 1 track per artist" data-ru="До 1 трека на артиста">До 1 трека на артиста</option>
-                    <option value="2" selected data-en="Standard (Up to 2 per artist)" data-ru="Стандарт (до 2 на артиста)">Стандарт (до 2 на артиста)</option>
-                    <option value="3" data-en="Deeper Discography (Up to 3)" data-ru="Глубже (до 3 на артиста)">Глубже (до 3 на артиста)</option>
-                  </select>
-                </div>
-
-                <div class="joint-filter-row">
-                  <label class="joint-filter-label" data-en="Audio Spectra" data-ru="Звуковые спектры">Спектр звука:</label>
-                  <select class="joint-select" id="jointFilterAudioOnly">
-                    <option value="all" data-en="All Candidates (Sound + Graph)" data-ru="Все треки (Звук + Граф)">Все треки (Звук + Граф)</option>
-                    <option value="audio_only" data-en="With measured audio features" data-ru="С измеренными аудиопризнаками">С измеренными аудиопризнаками</option>
-                  </select>
-                </div>
-
-                <div class="joint-filter-row">
-                  <label class="joint-filter-label" data-en="Local Library" data-ru="Локальная фонотека">Библиотека:</label>
-                  <select class="joint-select" id="jointFilterLocalOnly">
-                    <option value="all" data-en="Available catalog and library" data-ru="Доступный каталог и библиотека">Доступный каталог и библиотека</option>
-                    <option value="local_only" data-en="Only Tracks in Library" data-ru="Только из моей библиотеки">Только из моей библиотеки</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="joint-generate-box">
-                <button class="joint-btn-primary" id="jointGenerateBtn">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                  <span id="jointGenerateBtnText" data-en="Find up to 50 tracks" data-ru="Подобрать до 50 треков">Подобрать до 50 треков</span>
-                </button>
-              </div>
-            </div>
-
-
-            <!-- Right: Results & Actions -->
-            <div class="joint-card">
-              <div class="joint-card-header-row">
-                <div>
-                  <div class="joint-card-title" data-en="Recommendations" data-ru="Подобранные треки">Сгенерированный плейлист</div>
-                  <div class="joint-card-sub" id="jointResultsMeta">Ожидание запуска генерации...</div>
-                </div>
-                <button class="btn-minimal primary" id="jointSavePlaylistBtn" style="display: none;">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                  <span data-en="Save as Playlist & Play" data-ru="Сохранить как плейлист и слушать">Сохранить как плейлист</span>
-                </button>
-              </div>
-
-              <div class="joint-results-list" id="jointResultsList">
-                <div class="joint-empty-state">
-                  <div class="joint-empty-icon">🎧</div>
-                  <div class="joint-empty-title">Добавьте опорные треки</div>
-                  <div class="joint-empty-sub">Выберите 1–5 сид-треков слева и нажмите «Подобрать до 50 треков».</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
       </div>
     </main>
@@ -810,9 +639,10 @@
           <div class="seek-track" id="progressTrack">
             <div class="seek-fill" id="progressFill"></div>
             <div class="seek-thumb" id="progressThumb"></div>
+            <span class="seek-preview" id="seekPreview" aria-hidden="true" hidden></span>
             <div class="seek-moment-marker" id="progressMomentMarker" style="display: none;"></div>
           </div>
-          <span class="seek-time" id="totalTime">0:00</span>
+          <button type="button" class="seek-time seek-time-toggle" id="totalTime" aria-pressed="false">0:00</button>
           <button class="seek-moment-badge" id="seekMomentBadge" style="display: none;" title="Любимый момент (клик — перейти, правый клик — удалить)">
             <span class="seek-moment-icon">★</span>
             <span class="seek-moment-time" id="seekMomentTime">0:00</span>
@@ -1032,6 +862,17 @@
             </div>
             <div class="comfort-range"><input type="range" id="trackTransitionSlider" min="0" max="4" step="0.5" value="1"><output id="trackTransitionValue" for="trackTransitionSlider">1,0 с</output></div>
           </div>
+        </div>
+        <div class="settings-section" id="pulseflowSettings">
+          <div class="settings-section-header">
+            <div class="settings-section-title">PulseFlow · CLAP + FAISS</div>
+            <div class="settings-section-desc" data-ru="История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Первый анализ выполняется в фоне." data-en="History + PulseFlow uses completed listens, then audio to break ties. Smooth selects similar tracks; contrast alternates closer and more distant matches. Initial indexing runs in the background.">История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Первый анализ выполняется в фоне.</div>
+          </div>
+          <label for="pulseflowPolicy" data-ru="Режим подбора" data-en="Selection mode">Режим подбора</label>
+          <select id="pulseflowPolicy"><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
+          <p id="pulseflowStatus" role="status" aria-live="polite"></p>
+          <button type="button" class="btn-minimal primary" id="pulseflowIndex" data-ru="Обновить индекс фонотеки" data-en="Update library index">Обновить индекс фонотеки</button>
+          <button type="button" class="btn-minimal" id="pulseflowCancel" hidden data-ru="Остановить анализ" data-en="Stop indexing">Остановить анализ</button>
         </div>
         <div class="settings-section audio-analysis-settings-section" id="audioAnalysisSettingsSection">
           <div class="settings-section-head">
@@ -1384,11 +1225,10 @@
   <script src="auto-eq.js"></script>
   <script src="smart-volume.js"></script>
   <script src="comfort-utils.js"></script>
-  <script src="taste-graph.js"></script>
+  <script src="recommendation-model.js"></script>
   <script src="taste-model.js"></script>
   <script src="dj-worker-client.js"></script>
   <script src="queue-engine.js"></script>
-  <script src="joint-ai.js"></script>
   <script src="favorite-moments.js"></script>
   <script src="moments-reel.js"></script>
   <script src="listening-insights.js"></script>
@@ -1404,6 +1244,7 @@
   <script src="presence/engine.js"></script>
   <script src="presence-engine.js"></script>
   <script src="app.js"></script>
+  <script src="pulseflow-settings.js"></script>
   <script src="dj-explanation.js"></script>
   <script src="dj-panel.js"></script>
   <script src="font-settings.js"></script>

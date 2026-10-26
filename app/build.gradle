@@ -4,7 +4,7 @@ android {
  compileSdk 36
  defaultConfig {
   applicationId 'dev.mono.local'; minSdk 26; targetSdk 35
-  versionCode 23; versionName '1.7.6'
+  versionCode 24; versionName '1.7.7'
   testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
  }
  buildFeatures { buildConfig true }
@@ -24,7 +24,7 @@ dependencies {
 }
 
 // One source of truth: Android packages the exact same algorithms as desktop.
-def sharedMusic = ['audio-timbre.js','audio-profile.js','session-graph.js','taste-model.js',
+def sharedMusic = ['audio-timbre.js','audio-profile.js','session-graph.js','recommendation-model.js','taste-model.js',
                    'queue-engine.js','listening-insights.js','auto-eq.js','smart-volume.js',
                    'dj-state.js','mobile-engine.js']
 def generateMusicEngine = tasks.register('generateMusicEngine') {

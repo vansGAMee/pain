@@ -6,7 +6,7 @@
   for(const v of data.items.slice(0,8)){
    const profile=Audio.restore(JSON.stringify({v:v?.profile})).v;
    if(!Audio.texture(profile)||typeof v.id!=='string'||v.id.length>100||ids.has(v.id)||typeof v.name!=='string'||!v.name.trim())continue;
-   ids.add(v.id);items.push({id:v.id,name:v.name.trim().slice(0,80),source:String(v.source||'').slice(0,300),profile});
+   ids.add(v.id);items.push({id:v.id,name:v.name.trim().slice(0,80),source:String(v.source||'').slice(0,300),...(typeof v.trackId==='string'?{trackId:v.trackId.slice(0,300)}:{}),profile});
   }
   return {items,activeId:ids.has(data.activeId)?data.activeId:null,updatedAt:data.updatedAt};
  }

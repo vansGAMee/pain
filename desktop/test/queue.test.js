@@ -74,7 +74,7 @@ test('random shuffle visits every track in context without early repetition', ()
   assert.equal(visited.size, 5);
 });
 
-test('smart BPM matching prefers tracks with harmonic tempo and alternating artist', () => {
+test('unknown sound does not receive invented tempo or artist bonuses', () => {
   const cur = { id: 'cur', title: 'Cur Track', artist: 'Artist A', bpm: 120 };
   const candSameTempoDifferentArtist = { id: 'c1', title: 'T1', artist: 'Artist B', bpm: 122 };
   const candSameArtist = { id: 'c2', title: 'T2', artist: 'Artist A', bpm: 121 };
@@ -85,8 +85,8 @@ test('smart BPM matching prefers tracks with harmonic tempo and alternating arti
   const s3 = scoreSmartTransition(cur, candDistantTempo);
 
   // Different artist with close BPM should score higher than same artist
-  assert.ok(s1.score > s2.score, 'Alternating artist should be favored');
-  assert.ok(s1.score > s3.score, 'Close tempo should score higher than distant tempo');
+  assert.equal(s1.score,s2.score, 'No unvalidated artist coefficient');
+  assert.equal(s1.score,s3.score, 'Tempo alone cannot invent audio similarity');
 
   // Harmonic distance: 75 and 150 are double-time harmonics
   assert.equal(harmonicBpmDistance(75, 150), 0);
@@ -228,7 +228,7 @@ test('smart DJ transition scoring handles multi-track artist spacing, skip penal
   const sSame = scoreSmartTransition(cur, candSame, null, {}, { recentArtists: ['the beatles'] });
   const sFresh = scoreSmartTransition(cur, candFresh, null, {}, { recentArtists: ['the beatles'] });
 
-  assert.ok(sFresh.score > sSame.score, 'Fresh artist should score significantly higher than repeating artist');
+  assert.equal(sFresh.score,sSame.score,'No hand-selected artist penalty');
   assert.ok(Array.isArray(sFresh.reasons), 'Reasons array must be present');
   assert.ok(sFresh.reasons.length > 0, 'Should explain why track was picked');
 
@@ -248,7 +248,7 @@ test('smart DJ transition scoring handles multi-track artist spacing, skip penal
   stats.plays = stats.plays.map((p,i)=>({...p,started:Date.now()-(10-i)*60000,heard:p.coverage*180000,duration:180000,finished:p.completed?1:0}));
   const sBad = scoreSmartTransition(cur, badCandidate, stats, {});
   const sGood = scoreSmartTransition(cur, goodCandidate, stats, {});
-  assert.ok(sGood.score > sBad.score + 30, 'Completed track must be prioritized over skipped track');
+  assert.ok(sGood.score > sBad.score, 'Completed track must rank above a track without completions');
 });
 
 test('smart shuffle records lastTransition with explainable DJ rationale and track references', () => {

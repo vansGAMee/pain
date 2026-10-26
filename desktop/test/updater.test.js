@@ -1,6 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 const {Updater,isNewer,assetName,parseChecksum}=require('../src/updater');
+// Isolate the parent too: the host temp directory may itself contain .git.
+function installedFixture(t,prefix){
+ const parent=fs.mkdtempSync(path.join(os.tmpdir(),prefix)),root=path.join(parent,'app');
+ fs.mkdirSync(root);t.after(()=>fs.rmSync(parent,{recursive:true,force:true}));return root;
+}
 
 test('update versions, platform assets and checksums are strict',()=>{
  assert.equal(isNewer('v1.4.8','1.4.7'),true);assert.equal(isNewer('2.0.0','1.99.99'),true);
@@ -12,7 +17,7 @@ test('update versions, platform assets and checksums are strict',()=>{
 });
 
 test('release check selects exact assets and does not offer source checkout replacement',async t=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-updater-check-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const root=installedFixture(t,'pain-updater-check-');
  const release={tag_name:'v1.5.0',body:'## Исправления\n- Перемотка без задержки',html_url:'https://github.com/vansGAMee/pain/releases/tag/v1.5.0',assets:[
   {name:'Pain-v1.5.0-Linux.tar.gz',browser_download_url:'https://github.com/linux'},
   {name:'SHA256SUMS-v1.5.0.txt',browser_download_url:'https://github.com/sums'}]};
@@ -24,7 +29,7 @@ test('release check selects exact assets and does not offer source checkout repl
 });
 
 test('download must match release checksum before an installer is prepared',async t=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-updater-download-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const root=installedFixture(t,'pain-updater-download-');
  const bytes=Buffer.from('safe release archive'),filename='Pain-v1.5.0-Linux.tar.gz';
  const digest=crypto.createHash('sha256').update(bytes).digest('hex');
  const release={tag_name:'v1.5.0',html_url:'https://github.com/release',assets:[
@@ -50,7 +55,7 @@ test('download must match release checksum before an installer is prepared',asyn
 });
 
 test('failed or prerelease checks clear a previously installable release',async t=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-update-stale-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const root=installedFixture(t,'pain-update-stale-');
  const release={tag_name:'v1.5.1',assets:[{name:'Pain-v1.5.1-Linux.tar.gz'},{name:'SHA256SUMS-v1.5.1.txt'}]};
  let offline=false;
  const updater=new Updater({currentVersion:'1.5.0',platform:'linux',appRoot:root,dataDir:root,

@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const Taste = require('../src/taste-model');
 const { QueueEngine } = require('../src/queue-engine');
-const JointAI = require('../src/joint-ai');
+
 
 const LIB_PATH = path.join(__dirname, '../data/library.json');
 const STATS_PATH = path.join(__dirname, '../data/stats.json');
@@ -141,36 +141,4 @@ realTest('Реальная библиотека: исключение самог
   // Now unexclude and verify it is valid again
   queue.unexcludeTrack(topTrackId);
   assert.equal(queue.isExcluded(topTrackId), false, 'Трек должен быть разархивирован');
-});
-
-test('JointAI: generateJointPlaylist отфильтровывает исключённые треки', {
-  skip: !fs.existsSync(path.join(__dirname, '../joint-model/manifest.json')) ? 'Optional JointAI model is absent' : false
-}, async () => {
-  const localExcludedTrackId = 'local_999';
-
-  const mockLocalTracks = [
-    { id: localExcludedTrackId, title: 'In the End', artist: 'Linkin Park' }
-  ];
-
-  const seeds = [
-    { artist: 'Linkin Park', title: 'Numb' }
-  ];
-
-  const result = await JointAI.generateJointPlaylist(
-    seeds,
-    mockLocalTracks,
-    'joint-model',
-    {
-      targetCount: 10,
-      excludedTracks: new Set([localExcludedTrackId])
-    }
-  );
-
-  assert.ok(result.tracks.length > 0, 'Должен вернуть рекомендованные треки');
-  for (const t of result.tracks) {
-    if (t.matchedLocalTrack) {
-      assert.notEqual(String(t.matchedLocalTrack.id), localExcludedTrackId,
-        'Исключённый локальный трек не должен присутствовать в рекомендациях Joint AI');
-    }
-  }
 });

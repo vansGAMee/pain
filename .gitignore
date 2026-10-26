@@ -23,3 +23,10 @@ release-builds/
 desktop/package-lock.json
 desktop/joint-model/
 desktop/dist/
+
+# Local PulseFlow runtime, weights, derived index and private recovery copies
+desktop/.pulseflow-venv/
+desktop/data/pulseflow/
+desktop/data/recovery-*/
+__pycache__/
+*.pyc

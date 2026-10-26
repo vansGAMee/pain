@@ -18,7 +18,7 @@
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 
-  const Taste = typeof module === 'object' && module.exports ? require('./taste-model') : globalThis.TasteModel;
+  const Taste = typeof module === 'object' && module.exports ? require('./recommendation-model') : globalThis.RecommendationModel;
   const Sound = typeof module === 'object' && module.exports ? require('./audio-profile') : globalThis.AudioProfile;
   function validateVibeProfile(profile) {
     try {
@@ -208,6 +208,11 @@
       this.currentStartedAt = null;
       this.recommendationRevision = 0;
       this.vibeProfile = null;
+      this.pulseflowPolicy = options.pulseflowPolicy || (globalThis.DJWorker ? 'personal' : 'smooth');
+      this.pulseflowVibe = options.pulseflowVibe || null;
+      this.pulseflowPlan = null;
+      this.pulseflowEnabled = options.pulseflowEnabled ?? Boolean(globalThis.DJWorker);
+      this.pulseflowCounts = options.pulseflowCounts || null;
       this.sessionRootTrack = null;
       this.smartStep=0;this.smartSeed=Math.floor(Math.random()*0xffffffff);
       this.unplayedIndices = new Set();
@@ -224,11 +229,14 @@
 
     workerSnapshot() {
       return {
-        now: this.now(), stats: this.stats, bpmCache: this.bpmCache,
-        audioProfiles: this.audioProfiles, excludedTracks: [...this.excludedTracks],
+        now: this.now(), stats: this.pulseflowEnabled ? null : this.stats,
+        bpmCache: this.pulseflowEnabled ? {} : this.bpmCache,
+        audioProfiles: this.pulseflowEnabled ? {} : this.audioProfiles, excludedTracks: [...this.excludedTracks],
         shuffleMode: this.shuffleMode, loopMode: this.loopMode,
         tracks: this.tracks, context: this.context,
-        navigation: this.navigationSnapshot(), vibeProfile: this.vibeProfile
+        navigation: this.navigationSnapshot(), vibeProfile: this.vibeProfile,
+        pulseflowPolicy: this.pulseflowPolicy, pulseflowVibe: this.pulseflowVibe, pulseflowEnabled: this.pulseflowEnabled,
+        pulseflowCounts: this.pulseflowEnabled && this.pulseflowPolicy === 'personal' ? Object.fromEntries(this.completedCounts()) : null
       };
     }
 
@@ -238,7 +246,8 @@
         playedHistory: [...this.playedHistory], forwardHistory: [...this.forwardHistory],
         recentArtists: [...this.recentArtists], unplayedIndices: [...this.unplayedIndices],
         smartStep: this.smartStep, smartSeed: this.smartSeed,
-        sessionRootTrack: this.sessionRootTrack, lastTransition: this.lastTransition
+        sessionRootTrack: this.sessionRootTrack, lastTransition: this.lastTransition,
+        pulseflowPlan: this.pulseflowPlan
       };
     }
 
@@ -252,7 +261,13 @@
     }
 
     selectionKey() {
-      return JSON.stringify([this.recommendationRevision, this.shuffleMode, this.loopMode,
+      // CLAP does not consume live MFCC frames, likes, play counters or BPM.
+      // Invalidating on those updates discarded valid Python replies while
+      // playback was collecting audio. It also cloned megabytes per Next.
+      if (this.pulseflowEnabled) return JSON.stringify([this.pulseflowPolicy, this.pulseflowVibe,
+        this.shuffleMode, this.loopMode, this.navigationSnapshot(), [...this.excludedTracks],
+        this.tracks.map(t => [t.id, Sound.signature(t)]), this.pulseflowPolicy === 'personal' ? [...this.completedCounts()] : null]);
+      return JSON.stringify([this.pulseflowPolicy, this.pulseflowVibe, this.recommendationRevision, this.shuffleMode, this.loopMode,
         this.navigationSnapshot(), [...this.excludedTracks], this.vibeProfile,
         this.tracks.map(t => [t.id,t.title,t.artist,t.album,t.genre,t.favorite,t.bpm,Sound.signature(t)]), this.bpmCache]);
     }
@@ -284,7 +299,7 @@
         if(job.key !== this.selectionKey())return undefined;
         return result.trackId == null ? null : this.tracks.find(t => String(t.id) === String(result.trackId));
       } catch (_) {
-        return this.peekNext();
+        return this.frequencyChoose(this.smartCandidates())?.track || null;
       }
     }
 
@@ -292,8 +307,8 @@
       const generation = ++this._selectionGeneration;
       if(this.shuffleMode !== 'smart' || !this.selectInWorker)return this.next();
       if(this.loopMode === 'one' && this.currentIndex >= 0)return this.tracks[this.currentIndex];
-      if(this.forwardHistory.length > 0)return this.next();
       const tracks = this.tracks, index = this.currentIndex, visit = this.currentStartedAt, step = this.smartStep;
+      let refreshed = false;
       while(generation === this._selectionGeneration) {
         try {
           const job = this.workerSelection(), result = await job.promise;
@@ -302,6 +317,10 @@
           // New likes, skips, BPM or audio evidence need a fresh calculation.
           if(job.key !== this.selectionKey()) {
             if(this.shuffleMode !== 'smart')return undefined;
+            // Live audio frames can arrive faster than a slow worker finishes.
+            // Retry once, then keep playback moving with the cheap baseline.
+            if(refreshed)return this.next({fallback:true});
+            refreshed = true;
             continue;
           }
           Object.assign(this, result.navigation);
@@ -310,8 +329,9 @@
           this._notify();
           return this.getCurrentTrack();
         } catch (_) {
-          if(generation !== this._selectionGeneration)return undefined;
-          return this.next();
+          if(generation !== this._selectionGeneration || this.tracks !== tracks || this.currentIndex !== index || this.currentStartedAt !== visit || this.smartStep !== step)return undefined;
+          // A failed/overloaded worker must not move its expensive work to the UI.
+          return this.next({fallback:true});
         }
       }
       return undefined;
@@ -412,7 +432,11 @@
       return indices[Math.floor((((z^(z>>>14))>>>0)/4294967296)*indices.length)];
     }
 
-    setAudioProfile(id,profile){this.audioProfiles[id]=profile;this._taste=null;this.recommendationRevision++;}
+    setAudioProfile(id, profile) {
+      this.audioProfiles[id] = profile;
+      this._taste = null;
+      this.recommendationRevision++;
+    }
 
     setBpmCache(cache) {
       this.bpmCache = Object.assign(this.bpmCache, cache);
@@ -439,6 +463,7 @@
      * Initializes or switches the active context and tracks.
      */
     setContext(contextType, trackList, startIndex = 0, title = null, allowNew = false) {
+      this.pulseflowPlan = null;
       this.context = {
         type: contextType,
         allowNew: contextType === 'library' && allowNew,
@@ -473,6 +498,7 @@
 
     // Keep listened/unplayed identities when a device sync replaces track objects.
     refreshLibrary(library, includeNew = false) {
+      this.pulseflowPlan = null;
       const old=this.tracks,current=this.getCurrentTrack()?.id;
       const live=new Map((Array.isArray(library)?library:[]).filter(t=>t&&t.id!=null&&String(t.id)!=='').map(t=>[String(t.id),t]));
       const oldIds=new Set(old.map(t=>String(t.id)));
@@ -618,7 +644,38 @@
       return others.length ? others : allowed;
     }
 
-    next() {
+    completedCounts() {
+      if (!this.stats && this.pulseflowCounts) return new Map(Object.entries(this.pulseflowCounts));
+      const counts = new Map(), seen = new Set();
+      for (const play of this.stats?.plays || []) {
+        if (play?.track == null) continue;
+        if (!(play.finished === 1 || play.finished === true || play.completed === 1 || play.completed === true)) continue;
+        const time = Number(play.started || play.timestamp);
+        if (!Number.isFinite(time) || time <= 0 || time > this.now()) continue;
+        const key = JSON.stringify([String(play.track), time]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const id = String(play.track);
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+      return counts;
+    }
+
+    frequencyChoose(indices) {
+      const counts = this.completedCounts();
+      let index = -1, best = -1;
+      for (const i of indices) {
+        const track = this.tracks[i];
+        if (!track || this.isExcluded(track.id)) continue;
+        const count = counts.get(String(track.id)) || 0;
+        if (count > best) { best = count; index = i; }
+      }
+      return index < 0 ? null : {index, track:this.tracks[index],
+        reasons:['По истории прослушиваний'], bpm:this.getTrackBpm(this.tracks[index]),
+        explanation:{method:'frequency-fallback', plays:best}};
+    }
+
+    next(options = {}) {
       if (this.tracks.length === 0) return null;
 
       // Repeat One
@@ -663,7 +720,7 @@
         if (candidates.length === 0) {
           return null;
         } else {
-          const chosen = this.smartChoose(current, candidates);
+          const chosen = options.fallback ? this.frequencyChoose(candidates) : this.smartChoose(current, candidates);
           nextIndex = chosen ? chosen.index : candidates[0];
           if (chosen) {
             this.lastTransition = {
@@ -721,6 +778,9 @@
           const res = this._selectionJob.result;
           return res.trackId == null ? null : this.tracks.find(t => String(t.id) === String(res.trackId));
         }
+        // Synchronous media callbacks can use only a current worker answer.
+        // Stale answers may point to an excluded track or the previous queue.
+        if (this.selectInWorker) return null;
         const candidates = this.smartCandidates();
         if (candidates.length === 0) return null;
         const current = this.getCurrentTrack();
@@ -769,6 +829,7 @@
      * Directly jumps to a track in the current context by id or index.
      */
     jumpToTrack(trackId) {
+      this.pulseflowPlan = null;
       const idx = this.tracks.findIndex(t => t.id === trackId);
       if (idx !== -1) {
         this.lastTransition=null;

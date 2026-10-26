@@ -34,7 +34,7 @@ test('mutable likes, tempo, tags, file identity and reference changes invalidate
 test('feedback, audio, time expiry and refreshed library cannot reuse stale scores',()=>{
  const {q,tracks,time}=fixture();q.peekNext();let model=q._smartDecision.model;
  q.setStats({plays:[{track:'0',started:NOW-5000,heard:5000,duration:180000,skipped:1}]});q.peekNext();
- assert.notEqual(q._smartDecision.model,model);assert.equal(q._taste.searching,true);model=q._smartDecision.model;
+ assert.notEqual(q._smartDecision.model,model);assert.deepEqual(q._taste.outcomes.get('0'),[0,1]);model=q._smartDecision.model;
  q.setAudioProfile('1',profile(tracks[1],.9));q.peekNext();assert.notEqual(q._smartDecision.model,model);model=q._smartDecision.model;
  time(NOW+60000);q.peekNext();assert.notEqual(q._smartDecision.model,model);model=q._smartDecision.model;
  time(NOW-1000);q.peekNext();assert.notEqual(q._smartDecision.model,model);model=q._smartDecision.model;

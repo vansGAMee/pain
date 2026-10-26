@@ -6,7 +6,8 @@ const path = require('path');
 const dgram = require('dgram');
 const crypto = require('crypto');
 const { exec, spawn } = require('child_process');
-const { decodePcmServer, probeDuration } = require('./audio-decode');
+const { probeDuration } = require('./audio-decode');
+const analyzeFile = require('./audio-analysis-task');
 const activeAudioAnalyses = new Set();
 const MAX_CONCURRENT_AUDIO_ANALYSES = 2;
 
@@ -45,6 +46,8 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
+const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: getLibraryTracks,
+  resolveAudio: id => getResolvedAudioFilePath(id, true)});
 const desktopPreferences = require('./desktop-preferences')(DATA_DIR);
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
@@ -215,23 +218,29 @@ async function processPendingTrackUploads(base) {
   }
 }
 
-// Background auto-sync function
-async function triggerBackgroundAutoSync(device) {
+// Background auto-sync function with debounce
+let autoSyncTimeout = null;
+function triggerBackgroundAutoSync(device) {
   if (autoSyncBusy) return;
-  autoSyncBusy = true;
-  try {
-    const base = `http://${device.ip}:${device.port}`;
-    if (!hasAutoSynced || base !== lastSyncDevice || Date.now() - lastFullSync >= 300000) {
-      await phoneSync.synchronize(base);
-      hasAutoSynced = true;
-      lastFullSync = Date.now();
-      lastSyncDevice = base;
-    } else {
-      await phoneSync.flush(base);
-    }
-    await processPendingTrackUploads(base);
-  } catch (_) { /* Keep pending changes; the next discovery retries. */ }
-  finally { autoSyncBusy = false; }
+  if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+  autoSyncTimeout = setTimeout(async () => {
+    autoSyncTimeout = null;
+    if (autoSyncBusy) return;
+    autoSyncBusy = true;
+    try {
+      const base = `http://${device.ip}:${device.port}`;
+      if (!hasAutoSynced || base !== lastSyncDevice || Date.now() - lastFullSync >= 300000) {
+        await phoneSync.synchronize(base);
+        hasAutoSynced = true;
+        lastFullSync = Date.now();
+        lastSyncDevice = base;
+      } else {
+        await phoneSync.flush(base);
+      }
+      await processPendingTrackUploads(base);
+    } catch (_) { /* Keep pending changes; the next discovery retries. */ }
+    finally { autoSyncBusy = false; }
+  }, 1000);
 }
 
 // Fast ARP Table Scanner (executes in <10ms, discovers active LAN devices)
@@ -270,12 +279,16 @@ function checkLastKnownIp() {
 
 // Smart Batched Subnet Scanner
 let isScanningSubnet = false;
+let lastSubnetScan = 0;
 async function scanSubnetsSmart() {
   if (isScanningSubnet || resourceSaverActive) return;
-  // If we already have discovered devices active recently, no need to flood subnets
-  const recentDevice = discoveredDevices.find(d => Date.now() - (d.lastSeen || 0) < 60000);
+  // If we already have discovered devices active recently, or scanned recently, no need to flood subnets
+  const now = Date.now();
+  if (now - lastSubnetScan < 120000) return;
+  const recentDevice = discoveredDevices.find(d => now - (d.lastSeen || 0) < 60000);
   if (recentDevice) return;
   isScanningSubnet = true;
+  lastSubnetScan = now;
 
   try {
     const interfaces = os.networkInterfaces();
@@ -296,14 +309,17 @@ async function scanSubnetsSmart() {
     }
 
     for (const prefix of subnets) {
-      for (let start = 1; start <= 254; start += 25) {
-        const end = Math.min(start + 24, 254);
+      // Chunk in small batches (4 at a time to never saturate libuv) with event loop yields
+      for (let start = 1; start <= 254; start += 4) {
+        if (discoveredDevices.some(d => Date.now() - (d.lastSeen || 0) < 60000)) break;
+        const end = Math.min(start + 3, 254);
         const batch = [];
         for (let i = start; i <= end; i++) {
           const ip = `${prefix}.${i}`;
-          batch.push(probeDevice(ip, MOBILE_HTTP_PORT, 1200));
+          batch.push(probeDevice(ip, MOBILE_HTTP_PORT, 600));
         }
         await Promise.all(batch);
+        await new Promise(r => setImmediate(r));
       }
     }
   } catch (e) {
@@ -592,6 +608,8 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
+  if (pathname.startsWith('/api/pulseflow/')) { pulseflow.route(req, res, pathname); return; }
+
   if (pathname === '/api/desktop-preferences') {
     let local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
     try { if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) local = false; } catch (_) { local = false; }
@@ -713,9 +731,8 @@ const server = http.createServer((req, res) => {
       res.on('close', cancel);
       activeAudioAnalyses.add(trackId);
       try {
-        const pcm = await decodePcmServer(file, { signal: abort.signal });
+        const result = await analyzeFile(file, track, { signal: abort.signal });
         if (abort.signal.aborted) return;
-        const result = AudioAnalyzer.analyzePcm(pcm.left, pcm.right, pcm.sampleRate, track, pcm.sampling);
         if (!result || !AudioAnalyzer.complete(result.profile, track)) {
           reply(422, { error: 'Insufficient measurable audio for a complete profile' }); return;
         }
@@ -1501,10 +1518,6 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     filePath = path.join(__dirname, '..', safePath);
   }
 
-  // Check if it's in joint-model (AI weights)
-  if (safePath.startsWith('/joint-model/')) {
-    filePath = path.join(__dirname, '..', safePath);
-  }
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath).toLowerCase();
@@ -1553,6 +1566,12 @@ server.once('listening', () => {
     openWindow();
     desktopPreferences.start();
     startDiscovery();
+    if (process.env.PAIN_PULSEFLOW_AUTO_INDEX !== 'false') {
+      setTimeout(() => pulseflow.start().catch(() => {}), 15000).unref();
+      // Incremental cached embeddings make newly synced files available as well.
+      const pulseflowTimer = setInterval(() => pulseflow.start().catch(() => {}), 10 * 60 * 1000);
+      pulseflowTimer.unref(); server.once('close', () => clearInterval(pulseflowTimer));
+    }
     setTimeout(() => updater.check().catch(() => {}), 3000).unref();
 });
 
@@ -1579,4 +1598,6 @@ if(process.platform==='win32' && !process.versions?.electron){
 
 
 module.exports = server;
+server.pulseflow = pulseflow;
+server.on('close', () => pulseflow.close());
 server.desktopPreferences = desktopPreferences;

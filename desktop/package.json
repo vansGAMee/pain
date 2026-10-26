@@ -1,7 +1,7 @@
 {
   "name": "pain-desktop",
-  "version": "1.7.6",
-  "description": "Pain — Minimalist Audio Player & Sync Companion for Windows & Linux",
+  "version": "1.7.7",
+  "description": "Pain \u2014 Minimalist Audio Player & Sync Companion for Windows & Linux",
   "main": "src/main.js",
   "bin": "src/server.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "build:win": "electron-builder --win nsis zip --publish never",
     "build:linux": "electron-builder --linux AppImage tar.gz --publish never",
     "package:exe": "npx pkg . --target node18-win-x64 --output dist/Pain.exe && python3 ../tools/patch_windows_exe.py dist/Pain.exe",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "pulseflow:setup": "node tools/setup-pulseflow.cjs"
   },
   "build": {
     "appId": "dev.pain.desktop",
@@ -20,8 +21,8 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "joint-model/**/*",
-      "package.json"
+      "package.json",
+      "tools/setup-pulseflow.cjs"
     ],
     "directories": {
       "output": "dist/native"
@@ -52,6 +53,10 @@
         "owner": "vansGAMee",
         "repo": "pain"
       }
+    ],
+    "asarUnpack": [
+      "src/pulseflow/**/*",
+      "src/vendor/pulseflow/**/*"
     ]
   },
   "pkg": {

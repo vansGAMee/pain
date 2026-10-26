@@ -229,7 +229,7 @@ function evaluateQueue({ tracks, events, profiles, excluded, Taste, QueueEngine,
 
 function evaluate(options) {
   const before = snapshot(options.dataDir);
-  const Taste = require(path.join(options.sourceDir, 'taste-model.js'));
+  const Taste = require(path.join(options.sourceDir, 'recommendation-model.js'));
   const Audio = require(path.join(options.sourceDir, 'audio-profile.js'));
   const { QueueEngine } = require(path.join(options.sourceDir, 'queue-engine.js'));
   const tracks = readJson(options.dataDir, 'library.json').tracks || [];
@@ -242,7 +242,7 @@ function evaluate(options) {
   const context = { tracks, events, profiles, excluded, Taste, Audio, QueueEngine, options };
   const report = {
     protocolVersion: 1, configuration: { trainFraction: options.trainFraction, topK: options.topK, queueStarts: options.queueStarts, queueLength: options.queueLength, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    sourceSha256: Object.fromEntries(['taste-model.js', 'audio-profile.js', 'queue-engine.js', 'session-graph.js'].map(name => [name, hash(fs.readFileSync(path.join(options.sourceDir, name)))])),
+    sourceSha256: Object.fromEntries(['recommendation-model.js', 'audio-profile.js', 'queue-engine.js', 'session-graph.js'].map(name => [name, hash(fs.readFileSync(path.join(options.sourceDir, name)))])),
     data: { tracks: tracks.length, allowedTracks: tracks.filter(track => !excluded.has(String(track.id))).length, events: events.length, ...diagnostics,
       completedEvents: events.filter(isComplete).length, mediaCoverageEvents: events.filter(event => event.media_heard != null).length,
       firstEvent: events.length ? new Date(events[0].started).toISOString() : null, lastEvent: events.length ? new Date(events.at(-1).started).toISOString() : null },

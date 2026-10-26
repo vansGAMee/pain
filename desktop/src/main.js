@@ -8,6 +8,7 @@ if (process.platform === 'win32') app.setAppUserModelId('dev.pain.desktop');
 if (process.platform === 'linux') {
   app.setDesktopName('pain.desktop');
   app.commandLine?.appendSwitch('enable-features', 'WaylandWindowDecorations');
+  app.commandLine?.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
   if (process.env.XDG_SESSION_TYPE === 'wayland' || process.env.WAYLAND_DISPLAY) {
     app.commandLine?.appendSwitch('ozone-platform-hint', 'auto');
   }
@@ -72,7 +73,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => { if (app.isReady()) showWindow(); });
   app.on('activate', () => { if (mainWindow) showWindow(); else if (server) createWindow(); });
   app.on('before-quit', () => { quitting = true; });
-  app.on('will-quit', () => { tray?.destroy(); });
+  app.on('will-quit', () => { server?.pulseflow?.close(); tray?.destroy(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.whenReady().then(() => {
     process.env.OPEN_BROWSER = 'false';

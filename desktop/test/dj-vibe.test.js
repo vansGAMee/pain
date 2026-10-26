@@ -38,8 +38,8 @@ test('vibe is a validated snapshot, including after cache updates or removal of 
 test('vibe respects exclusions, quick skips, stable previews and a finite queue without early repeats',()=>{
  const {q,tracks,anchor}=fixture();q.setVibeProfile(anchor);q.setLoopMode('off');q.excludeTrack('nearA');
  q.setStats({plays:[{track:'nearB',started:NOW-5000,heard:5000,duration:180000,skipped:1}]});
- assert.ok(q.smartScore(tracks[0],tracks[2],{}).skipPenalty>60);
- assert.equal(q.peekNext().id,'far','saved sound must not override a strong acoustic rejection');
+ assert.equal(q.smartScore(tracks[0],tracks[2],{}).probability,1/3);
+ assert.notEqual(q.peekNext().id,'nearA','explicit exclusions apply to saved vibes');
  const seen=new Set(['current']);
  for(let i=0;i<2;i++){
   const preview=q.peekNext();const next=q.next();assert.equal(preview.id,next.id);

@@ -1,0 +1,115 @@
+{
+  "tracks": 769,
+  "dimensions": 512,
+  "upstreamComparisons": 1538,
+  "exactOrderAndScores": true,
+  "queryMedianMs": 4.2676819994085236,
+  "queryP95Ms": 5.292955349705153,
+  "queryMaxMs": 8.248795000326936,
+  "history": {
+    "events": 3682,
+    "trainEvents": 2945,
+    "heldOutEvents": 737,
+    "completedNextTrackQueries": 24,
+    "cutoff": 1792875658590,
+    "candidateCatalog": 706,
+    "methods": {
+      "pulseflowSmooth": {
+        "hit10": 0.0,
+        "hit20": 0.0
+      },
+      "pulseflowContrast": {
+        "hit10": 0.041666666666666664,
+        "hit20": 0.041666666666666664
+      },
+      "completedFrequency": {
+        "hit10": 0.125,
+        "hit20": 0.125
+      },
+      "frequencyPulseflowTies": {
+        "hit10": 0.125,
+        "hit20": 0.125
+      }
+    },
+    "limitations": [
+      "Current audio files are assumed to match the historical recordings; historical file versions are unavailable.",
+      "Current exclusions define the scope; historical exclusion changes are unavailable.",
+      "An offline next-track hit is not a listening-satisfaction measurement. No parameters were tuned on the holdout.",
+      "This historical suffix has been inspected before and informed the choice of default mode; this is not a fresh blind quality trial."
+    ]
+  },
+  "inputHashes": {
+    "library": "3c28dbf1756fa7f4dae18a0e66360f04ddb3465d6c768115c0b7376b1b4555a2",
+    "stats": "75ec6e53205d006704b1bacce208b17a9b01a4aa10c1f5f16a653c565bbde9d2"
+  },
+  "queues": {
+    "personal": {
+      "transitions": 240,
+      "uniqueTracks": 31,
+      "uniqueArtists": 27,
+      "adjacentArtistRepeats": 0
+    },
+    "smooth": {
+      "transitions": 240,
+      "uniqueTracks": 205,
+      "uniqueArtists": 164,
+      "adjacentArtistRepeats": 5
+    },
+    "contrast": {
+      "transitions": 240,
+      "uniqueTracks": 203,
+      "uniqueArtists": 170,
+      "adjacentArtistRepeats": 4
+    },
+    "frequency": {
+      "transitions": 240,
+      "uniqueTracks": 31,
+      "uniqueArtists": 27,
+      "adjacentArtistRepeats": 0
+    }
+  },
+  "boundedAudio": {
+    "exactEmbeddingMatch": true,
+    "actualAudioSeconds": 40.56,
+    "peakRSSMiB": 2783.2265625
+  },
+  "electron": {
+    "tracks": 769,
+    "measurements": [
+      {
+        "view": "library",
+        "maxTask": 144,
+        "maxHeartbeatDelay": 299.2999999988824
+      },
+      {
+        "view": "player",
+        "maxTask": 99,
+        "maxHeartbeatDelay": 111.39999999850988
+      },
+      {
+        "view": "home",
+        "maxTask": 114,
+        "maxHeartbeatDelay": 142.40000000037253
+      }
+    ],
+    "native": {
+      "mainDelay": 20.557991000001493,
+      "unresponsive": 0
+    },
+    "errors": [],
+    "crashes": []
+  },
+  "nodeTests": {
+    "passed": 400,
+    "failed": 0
+  },
+  "liveApp": {
+    "restarted": true,
+    "indexed": 769,
+    "failed": 0,
+    "libraryTracksPreserved": 769,
+    "favoritesPreserved": 50,
+    "historyRowsPreserved": 3683,
+    "originalPythonAPIResponds": true
+  }
+}
