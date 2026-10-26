@@ -74,9 +74,9 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
       };
       if (name === 'path') return path;
       if (name === 'fs') return { existsSync: () => false };
-      if (name === './server.js') {
+      if (name === './server-runtime') {
         assert.equal(env.OPEN_BROWSER, 'false');
-        calls.push('server'); return server;
+        calls.push('server'); return () => server;
       }
       throw new Error(`Unexpected native shell dependency: ${name}`);
     }

@@ -48,6 +48,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
     const q=window.painQueue;q.pulseflowPolicy=v==='home'?'personal':v==='player'?'contrast':'smooth';q.pulseflowPlan=null;q.cancelPendingSelection();
    },view);
    console.log('VIEW',view);
+   let expectedPreview=[];
    if(view==='home'&&process.env.PAIN_TEST_PULSEFLOW==='true'){
     await page.waitForSelector('.home-mix[aria-busy="false"] [data-home-action="mix"]');
     const oldIds=await page.locator('[data-home-action="mix"]').evaluateAll(rows=>rows.map(r=>r.dataset.id));
@@ -55,6 +56,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
     await page.waitForFunction(ids=>document.querySelector('.home-mix')?.getAttribute('aria-busy')==='false'&&
       [...document.querySelectorAll('[data-home-action="mix"]')].every(r=>!ids.includes(r.dataset.id)),oldIds);
     const selectedIds=await page.locator('[data-home-action="mix"]').evaluateAll(rows=>rows.map(r=>r.dataset.id));
+    expectedPreview=selectedIds.slice(1);
     await page.click('[data-home-action="mix-play"]');
     await page.waitForFunction(id=>window.painQueue.getCurrentTrack()?.id===id,selectedIds[0]);
     await page.waitForTimeout(300);
@@ -70,8 +72,11 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
     const before=await page.evaluate(()=>window.painQueue.getCurrentTrack()?.id);
     await page.click('#bottomNextBtn',{force:true});
     await page.waitForFunction(id=>window.painQueue.getCurrentTrack()?.id!==id,before);
-    if(beforeMix!==undefined)await page.waitForFunction(ids=>document.querySelector('.home-mix')?.getAttribute('aria-busy')==='false'&&
-      [...document.querySelectorAll('[data-home-action="mix"]')].map(r=>r.dataset.id).join(',')!==ids,beforeMix);
+    if(expectedPreview[i])assert.equal(await page.evaluate(()=>window.painQueue.getCurrentTrack()?.id),expectedPreview[i],'play the exact displayed order');
+    if(beforeMix!==undefined){
+     await page.waitForTimeout(300);
+     assert.equal(await page.locator('[data-home-action="mix"]').evaluateAll(rows=>rows.map(r=>r.dataset.id).join(',')),beforeMix,'Next preserves the selected mix');
+    }
     await page.waitForTimeout(300);
    }
    if(process.env.PAIN_TEST_PULSEFLOW==='true'){
@@ -112,14 +117,34 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
    return {status:response.status,...await response.json()};
   },library.tracks.find(t=>t.mime==='audio/mpeg').id);
   assert.equal(analysis.status,200);assert.equal(analysis.profile.analysis.method,'stratified-pcm-v1');
+  if(process.env.PAIN_TEST_TRACK_INFO==='true'){
+   const interesting=library.tracks.find(t=>/fontaines/i.test(t.artist)&&/^i love you$/i.test(t.title))||library.tracks.find(t=>/молчат дома/i.test(t.artist));
+   assert.ok(interesting,'use a real library song for the information panel');
+   await page.click('.nav-item[data-view="library"]');
+   await page.waitForSelector('#view-library.active');
+   await page.locator(`tr[data-track-id="${interesting.id}"]`).click();
+   await page.waitForFunction(id=>window.painQueue.getCurrentTrack()?.id===id,interesting.id);
+   assert.equal(await page.locator('#trackInfoPanel').isVisible(),true,'information column opens automatically');
+   await page.waitForSelector('#trackInfoArticles .track-info-article',{timeout:45000});
+   assert.ok(await page.locator('.track-info-article a[href^="https://"]').count());
+   await page.setViewportSize({width:1440,height:900});
+   const layout=await page.locator('.main-stage').boundingBox(),panel=await page.locator('#trackInfoPanel').boundingBox();
+   assert.ok(layout.x+layout.width<=panel.x+1,'reading column does not cover the main interface on a wide window');
+   await page.screenshot({path:'/tmp/pain-track-info-desktop.png'});
+   await page.setViewportSize({width:1000,height:780});
+   assert.ok((await page.locator('#trackInfoPanel').boundingBox()).x>=0);
+   await page.click('#trackInfoClose');
+   assert.equal(await page.locator('#trackInfoToggle').getAttribute('aria-expanded'),'false');
+   console.log('TRACK INFO',interesting.title,interesting.artist);
+  }
   const profile=await cdp.send('Profiler.stop');fs.writeFileSync('/tmp/pain-native-renderer-profile.json',JSON.stringify(profile.profile));
   const native=await app.evaluate(()=>globalThis.playbackMetrics);
   console.log(JSON.stringify({tracks:library.tracks.length,measurements,native,errors,crashes}));
   assert.deepEqual(errors,[]);assert.deepEqual(crashes,[]);assert.equal(native.unresponsive,0);
   assert.ok(measurements.every(m=>m.maxTask<2000),'renderer blocked for multiple seconds');
  }catch(error){
-  if(app)console.log('FAILURE STATE',await (await app.firstWindow()).evaluate(()=>({hash:location.hash,active:document.querySelector('.view.active')?.id,
-   mix:document.querySelector('.home-mix')?.outerHTML,current:window.painQueue?.getCurrentTrack()?.id,policy:window.painQueue?.pulseflowPolicy})).catch(()=>null));
+  if(app){const page=await app.firstWindow();await page.screenshot({path:'/tmp/pain-native-failure.png'}).catch(()=>{});console.log('FAILURE STATE',await page.evaluate(()=>({hash:location.hash,active:document.querySelector('.view-pane.active')?.id,
+   info:document.querySelector('#trackInfoPanel')?.outerHTML,current:window.painQueue?.getCurrentTrack()?.id,policy:window.painQueue?.pulseflowPolicy})).catch(()=>null));}
   throw error;
  }finally{if(app)await app.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

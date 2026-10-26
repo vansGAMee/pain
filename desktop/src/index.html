@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="stereo-theme.css">
   <link rel="stylesheet" href="form-theme.css">
   <link rel="stylesheet" href="font-settings.css">
+  <link rel="stylesheet" href="track-info.css">
 </head>
 <body>
 
@@ -328,6 +329,12 @@
             </div>
           </div>
 
+          <details class="duo-missing" id="duoMissing" hidden>
+            <summary data-en="Which audio files are missing?" data-ru="Каких аудиофайлов не хватает?">Каких аудиофайлов не хватает?</summary>
+            <textarea id="duoMissingList" rows="5" readonly aria-label="Недостающие треки"></textarea>
+            <button type="button" class="btn-minimal" id="duoCopyMissing" data-en="Copy list for a friend" data-ru="Скопировать список для друга">Скопировать список для друга</button>
+          </details>
+
           <div class="tracks-table-wrapper">
             <table class="tracks-table">
               <colgroup>
@@ -580,6 +587,10 @@
 
       </div>
     </main>
+    <aside class="track-info-panel" id="trackInfoPanel" aria-labelledby="trackInfoHeading" hidden>
+      <header class="track-info-header"><h2 id="trackInfoHeading">За музыкой</h2><button type="button" id="trackInfoClose" aria-label="Закрыть">×</button></header>
+      <div id="trackInfoBody"></div>
+    </aside>
 
     <!-- 3. PERSISTENT SPOTIFY-STYLE BOTTOM PLAYER BAR -->
     <footer class="bottom-player-bar" id="bottomPlayerBar">
@@ -653,6 +664,7 @@
 
       <!-- Right: Utility Controls (EQ, Big View, Volume) -->
       <div class="bottom-player-right">
+        <button type="button" class="ctrl-btn-subtle" id="trackInfoToggle" aria-controls="trackInfoPanel" aria-expanded="false" title="О треке и исполнителе"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M17 8h1M17 12h1M17 16h1"/></svg></button>
         <button class="ctrl-btn-subtle" id="bottomEqToggleBtn" title="Equalizer">
           <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
         </button>
@@ -1233,6 +1245,7 @@
   <script src="moments-reel.js"></script>
   <script src="listening-insights.js"></script>
   <script src="home-model.js"></script>
+  <script src="duo-playlist.js"></script>
   <script src="home-view.js"></script>
   <script src="profile-card.js"></script>
   <script src="presence/signals.js"></script>
@@ -1244,6 +1257,7 @@
   <script src="presence/engine.js"></script>
   <script src="presence-engine.js"></script>
   <script src="app.js"></script>
+  <script src="track-info.js"></script>
   <script src="pulseflow-settings.js"></script>
   <script src="dj-explanation.js"></script>
   <script src="dj-panel.js"></script>

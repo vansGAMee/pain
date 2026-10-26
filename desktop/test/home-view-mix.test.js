@@ -231,9 +231,9 @@ test('Clicking a mix track triggers playMix and subsequent click on playing trac
   assert.equal(resumeCalled, true, 'clicking currently playing track must toggle resume/pause');
 });
 
-test('each track change refreshes Home automatically, retaining the visible mix until ready', async () => {
+test('track changes and pause preserve the mix until an explicit refresh', async () => {
   const { HomeView, root, getMixCalls } = setupTestEnvironment();
-  const tracks = Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, title: `Song ${i}` }));
+  const tracks = Array.from({ length: 30 }, (_, i) => ({ id: `t${i}`, title: `Song ${i}` }));
   const data = { tracks, stats: {}, playlists: [], lang: 'ru', current: tracks[0], isPlaying: true,
     queue: { context: { title: 'Smart DJ' }, workerSnapshot: () => ({}), excludedTracks: new Set(), isExcluded: () => false } };
   const handlers = { cover: () => '', fallbackCover: () => '' };
@@ -245,11 +245,11 @@ test('each track change refreshes Home automatically, retaining the visible mix 
     assert.match(root.innerHTML, /data-home-action="mix" data-id=/, 'keep old rows while computing');
     assert.doesNotMatch(root.innerHTML, /Собираем подборку…/);
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(getMixCalls(), i + 1, 'even a track inside the mix triggers an update');
-    assert.ok(!root.innerHTML.includes(`data-home-action="mix" data-id="t${i - 1}"`), 'previous track leaves recommendations');
+    assert.equal(getMixCalls(), 1, 'track navigation must not replace the mix');
+    assert.ok(root.innerHTML.includes(`data-home-action="mix" data-id="t${i - 1}"`), 'the chosen sequence remains visible');
     HomeView.render({ ...data, current: tracks[i], isPlaying: false }, handlers);
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(getMixCalls(), i + 1, 'pause does not recalculate');
+    assert.equal(getMixCalls(), 1, 'pause does not recalculate');
   }
 });
 

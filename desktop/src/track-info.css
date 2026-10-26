@@ -1,0 +1,29 @@
+/* A quiet reading column: existing theme colours and type, no new app chrome. */
+.track-info-panel[hidden]{display:none}
+.track-info-panel{grid-column:3;grid-row:1;min-height:0;min-width:0;overflow-y:auto;background:var(--bg);color:var(--ink);padding:20px;border-left:1px solid var(--border);overscroll-behavior:contain}
+.track-info-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.track-info-header h2{font-size:15px;font-weight:600}
+.track-info-header button{border:0;background:none;color:var(--ink);font-size:24px;cursor:pointer;width:32px;height:32px}
+.track-info-panel button:focus-visible,.track-info-panel a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.track-info-cover{width:100%;height:160px;object-fit:contain;border-radius:12px;margin-bottom:20px;background:var(--card-bg)}
+.track-info-panel h2{font-size:24px;line-height:1.2;overflow-wrap:anywhere;margin-bottom:12px}
+.track-info-panel .track-info-header h2{font-size:15px;margin:0}
+.track-info-panel dl{margin:20px 0 28px;display:grid;gap:12px}
+.track-info-panel dl>div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px;font-size:12px;line-height:1.5}
+.track-info-panel dt{color:var(--ink-muted)}
+.track-info-panel dd{margin:0;overflow-wrap:anywhere}
+.track-info-article{padding:24px 0;border-top:1px solid var(--border)}
+.track-info-article h3{font-size:12px;font-weight:500;color:var(--ink-muted);margin-bottom:12px}
+.track-info-article h4{font-size:20px;font-weight:600;line-height:1.3;margin-bottom:14px}
+.track-info-article p{font-size:14px;line-height:1.75;margin:0 0 16px;white-space:normal;overflow-wrap:anywhere}
+.track-info-panel a{color:var(--accent);text-underline-offset:3px;font-size:12px}
+.track-info-status,.track-info-credit{font-size:12px;line-height:1.6;color:var(--ink-muted)}
+.track-info-article small{display:block;margin-top:8px;color:var(--ink-muted)}
+.track-info-story{margin:16px 0;border-left:2px solid var(--border-strong);padding-left:14px}
+.track-info-story summary{font-size:14px;line-height:1.5;font-weight:600;cursor:pointer;color:var(--accent);padding:8px 0}
+.track-info-story[open] summary{margin-bottom:10px}
+.track-info-open .bottom-player-bar{grid-column:1/-1}
+[data-theme="form"] .track-info-panel{border:1px solid #ffffff60;border-radius:20px;background:var(--form-surface);box-shadow:var(--form-relief)}
+@media(min-width:900px){.app-layout.track-info-open{grid-template-columns:260px minmax(0,1fr) clamp(240px,24vw,340px)}[data-theme="form"] .app-layout.track-info-open{grid-template-columns:112px minmax(0,1fr) clamp(240px,24vw,340px)}}
+@media(max-width:899px){.track-info-panel{position:fixed;right:12px;top:12px;bottom:calc(var(--bottom-bar-height) + 36px);width:min(360px,calc(100vw - 24px));z-index:90;border:1px solid var(--border-strong);border-radius:16px;box-shadow:0 12px 36px #0003}}
+.player-fullscreen .track-info-panel{display:none}

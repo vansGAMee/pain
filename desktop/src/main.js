@@ -72,7 +72,19 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => { if (app.isReady()) showWindow(); });
   app.on('activate', () => { if (mainWindow) showWindow(); else if (server) createWindow(); });
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', event => {
+    if(!quitting&&server?.shutdown){
+      quitting=true;event.preventDefault();
+      // Save the current play while HTTP is still available, including a quit
+      // from the tray. A stalled renderer must not prevent a normal exit.
+      const saved=mainWindow&&!mainWindow.isDestroyed()
+        ? mainWindow.webContents.executeJavaScript('window.PainPlayer?.flushListening()').catch(()=>{}) : Promise.resolve();
+      let timer;
+      Promise.race([saved,new Promise(resolve=>{timer=setTimeout(resolve,3000);})])
+        .finally(()=>{clearTimeout(timer);return server.shutdown();}).finally(()=>app.quit());
+    }
+    else quitting = true;
+  });
   app.on('will-quit', () => { server?.pulseflow?.close(); tray?.destroy(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.whenReady().then(() => {
@@ -112,7 +124,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       process.env.PAIN_DATA_DIR = baseDir;
     }
-    server = require('./server.js');
+    server = require('./server-runtime')();
+    server.on('backend-error',error=>{console.error('[Main] Backend unavailable:',error);});
     createWindow();
     server.on('activate-window', showWindow);
     server.desktopPreferences.attachShell(setTray);

@@ -33,9 +33,9 @@ const updaterOptions = {
   appRoot: path.join(__dirname, '..'),
   dataDir: DATA_DIR
 };
-const updater = process.versions.electron
+const updater = globalThis.painShell?.updater || (process.versions.electron
   ? require('./native-updater')(updaterOptions)
-  : new Updater(updaterOptions);
+  : new Updater(updaterOptions));
 const dataGuard = require('./data-guard');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 try { dataGuard.verifyAndRepair(DATA_DIR); } catch (err) { console.error('[DataGuard] Error verifying data:', err); }
@@ -48,7 +48,8 @@ if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 const phoneSync = new PhoneSync(DATA_DIR);
 const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: getLibraryTracks,
   resolveAudio: id => getResolvedAudioFilePath(id, true)});
-const desktopPreferences = require('./desktop-preferences')(DATA_DIR);
+const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
+const trackInfo = require('./track-info-service')(DATA_DIR);
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
@@ -609,6 +610,15 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname;
 
   if (pathname.startsWith('/api/pulseflow/')) { pulseflow.route(req, res, pathname); return; }
+  if (pathname.startsWith('/api/track-info/') && req.method === 'GET') {
+    let id;try{id=decodeURIComponent(pathname.slice('/api/track-info/'.length));}catch(_){res.writeHead(400);res.end();return;}
+    const track=getLibraryTracks().find(t=>String(t.id)===id);
+    if(!track){res.writeHead(404);res.end();return;}
+    const result=url.searchParams.get('local')==='1'?trackInfo.local(track):trackInfo(track,url.searchParams.get('lang')==='en'?'en':'ru');
+    result.then(data=>{
+      if(!res.destroyed){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));}
+    }).catch(()=>{if(!res.destroyed){res.writeHead(503);res.end('{}');}});return;
+  }
 
   if (pathname === '/api/desktop-preferences') {
     let local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);

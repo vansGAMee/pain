@@ -349,7 +349,10 @@
     }
   }) : null;
   window.painQueue = queue;
-  window.PainPlayer = { getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null };
+  window.PainPlayer = {
+    getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
+    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId):Promise.resolve();}
+  };
   let audioCtx = null;
   let sourceNode = null;
   let playingTrackSnapshot = null;
@@ -1245,6 +1248,7 @@
       cover:getCoverUrl,
       fallbackCover:getProceduralCoverSvg,
       navigate:switchView,
+      duo:handleDuoPlaylist,
       resume:togglePlay,
       playTrack:id=>{const track=state.tracks.find(t=>String(t.id)===id);if(track)playTrackById(track.id);},
       playMix:(track,tracks,items)=>{
@@ -1821,10 +1825,50 @@
   }
 
   // --- CUSTOM PLAYLISTS ---
+  function resolveDuoPlaylist(pl) {
+    if(pl.duo!==1||!Array.isArray(pl.sharedTracks))return null;
+    const resolved=DuoPlaylist.resolve(pl.sharedTracks,state.tracks);
+    pl.trackIds=resolved.ids;return resolved;
+  }
+
+  async function handleDuoPlaylist(action,scope,id){
+    const ru=state.lang==='ru';
+    try{
+      if(action==='duo-share'){
+        const pl=state.playlists.find(p=>p.id===id&&p.duo===1);
+        if(pl)DuoPlaylist.download(DuoPlaylist.pack(pl.sharedTracks,'playlist',pl.name));return;
+      }
+      const mine=DuoPlaylist.select(state.tracks,scope,scope==='history'?queue.completedCounts():undefined);
+      if(action==='duo-export'){
+        if(!mine.length){showToast(ru?'В выбранном списке пока пусто. Попробуйте «Избранное» или «Вся фонотека».':'This selection is empty. Try Favourites or Entire library.');return;}
+        DuoPlaylist.download(DuoPlaylist.pack(mine));return;
+      }
+      const input=document.createElement('input');input.type='file';input.accept='.json,application/json';
+      input.onchange=async()=>{
+        const file=input.files?.[0];if(!file)return;
+        try{
+          if(file.size>4*1024*1024)throw Error('File too large');
+          const received=DuoPlaylist.parse(await file.text());
+          if(received.kind==='selection'&&!mine.length)throw Error('Empty local selection');
+          const sharedTracks=received.kind==='playlist'?received.tracks:DuoPlaylist.combine(mine,received.tracks);
+          if(!sharedTracks.length)throw Error('Empty list');
+          const pl={id:'pl_'+crypto.randomUUID(),name:received.kind==='playlist'&&received.name?received.name:(ru?'Вместе':'Together'),duo:1,sharedTracks,trackIds:[]};
+          resolveDuoPlaylist(pl);
+          const response=await fetch('/api/playlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([...state.playlists,pl])});
+          if(!response.ok)throw Error('Save failed');
+          state.playlists.push(pl);renderPlaylistsSidebar();switchView('playlist',pl.id);
+          showToast(ru?'Общий список сохранён. Передать его другу можно внизу Главной.':'Combined list saved. Share it from the bottom of Home.');
+        }catch(_){showToast(ru?'Не удалось создать плейлист. Нужен файл PAIN до 4 МБ и непустой выбранный список.':'Could not create playlist. Use a PAIN file under 4 MB and a nonempty selection.');}
+      };
+      input.click();
+    }catch(_){showToast(ru?'Не удалось обработать список.':'Could not process the list.');}
+  }
+
   function renderPlaylistsSidebar() {
     DOM.sidebarPlaylistsList.innerHTML = '';
 
     state.playlists.forEach(pl => {
+      resolveDuoPlaylist(pl);
       const count = (pl.trackIds || []).length;
       const li = document.createElement('li');
       li.className = `custom-playlist-item ${state.activePlaylistId === pl.id ? 'active' : ''}`;
@@ -1852,14 +1896,27 @@
     }
 
     DOM.customPlaylistTitle.textContent = pl.name;
+    const duo=resolveDuoPlaylist(pl);
     const trackCount = (pl.trackIds || []).length;
     DOM.customPlaylistMeta.textContent = state.lang === 'ru'
       ? `${trackCount} треков · кастомный плейлист`
       : `${trackCount} tracks · custom playlist`;
+    if(duo)DOM.customPlaylistMeta.textContent=state.lang==='ru'
+      ? `Совместный · ${trackCount} доступны · ${duo.missing.length} нужно добавить в фонотеку · ${pl.sharedTracks.length} всего`
+      : `Together · ${trackCount} available · ${duo.missing.length} missing audio · ${pl.sharedTracks.length} total`;
+    const missing=document.getElementById('duoMissing'),list=document.getElementById('duoMissingList');
+    missing.hidden=!duo?.missing.length;
+    if(missing.dataset.playlist!==pl.id){missing.open=false;missing.dataset.playlist=pl.id;}
+    list.value=(duo?.missing||[]).map(t=>[t.artist,t.title].filter(Boolean).join(' — ')).join('\n');
+    list.setAttribute('aria-label',state.lang==='ru'?'Недостающие треки':'Missing tracks');
+    document.getElementById('duoCopyMissing').onclick=async()=>{
+      try{await navigator.clipboard.writeText(list.value);showToast(state.lang==='ru'?'Список скопирован — можно отправить другу.':'List copied — ready to send to your friend.');}
+      catch(_){list.focus();list.select();showToast(state.lang==='ru'?'Список выделен. Нажмите Ctrl+C, чтобы скопировать.':'List selected. Press Ctrl+C to copy.');}
+    };
 
     const plTracks = (pl.trackIds || []).map(id => state.tracks.find(t => t.id === id)).filter(Boolean);
     const contextInfo = { type: 'playlist', title: pl.name, id: pl.id };
-    renderTracksTable(DOM.playlistTableBody, plTracks, true, contextInfo);
+    renderTracksTable(DOM.playlistTableBody, plTracks, !duo, contextInfo);
   }
 
   function createNewPlaylist(name) {

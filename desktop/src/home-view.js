@@ -5,15 +5,12 @@
  const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const icon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
  let snapshot,actions,mix=[],mixKey='',mixPending=false,mixError=false,variation=0,ticket=0;
- let mixScope='',lastAnchor='',anchorRevision=0;
+ let mixScope='';
  const shown=new Set();
  function movePastMix(){for(const item of mix)shown.add(String(item.track.id));}
  function playSelectedMix(track,tracks){
-  // Starting a preview accepts that exact list; only subsequent navigation
-  // changes its anchor. Discard any refresh still running behind the click.
-  const id=String(track.id);
-  if(lastAnchor&&lastAnchor!==id)shown.add(lastAnchor);
-  lastAnchor=id;ticket++;mixPending=false;mixError=false;
+  // Starting a preview accepts that exact list, including during a pending refresh.
+  ticket++;mixPending=false;mixError=false;
   actions.playMix(track,tracks,mix);
  }
  function render(data,handlers){
@@ -26,17 +23,11 @@
   const artist=track=>track?.artist||t('Неизвестный исполнитель','Unknown artist');
   const current=data.current||m.recent[0]||data.tracks[0];
   const vibes=window.PainDJVibes?.list()||{items:[],activeId:null};
-  const isPlayingMix=Boolean(data.isPlaying&&(data.queue?.context?.title==='Smart DJ'||data.current&&mix.some(x=>String(x.track.id)===String(data.current.id))));
-  const scope=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])],
-   vibes.activeId,vibes.updatedAt,data.queue?.pulseflowPolicy]);
+  const isPlayingMix=Boolean(data.isPlaying&&data.current&&mix.some(x=>String(x.track.id)===String(data.current.id)));
+  const scope=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])]]);
   if(scope!==mixScope){mixScope=scope;shown.clear();}
   const anchor=String(current?.id||'');
-  if(anchor!==lastAnchor){
-   if(lastAnchor)shown.add(lastAnchor);
-   anchorRevision++;
-   lastAnchor=anchor;
-  }
-  const key=JSON.stringify([scope,variation,anchorRevision]);
+  const key=JSON.stringify([scope,variation]);
   if(key!==mixKey){
    mixKey=key;mixPending=true;mixError=false;const generation=++ticket;
    // Paint Home first; bounded existing DJ scoring runs once per mix, not per frame.
@@ -102,7 +93,7 @@
     <figure class="home-explored"><figcaption><strong>${t('Глубина фонотеки','Library explored')}</strong><span>${d.heardLibrary} ${t('из','of')} ${d.librarySize}</span></figcaption><div class="home-ring" style="--ring-value:${explored||0}"><span>${explored===null?'—':explored+'%'}</span></div><small>${t('Хотя бы 30 секунд или половина короткого трека','At least 30 seconds or half a short track')}</small></figure>
    </div>
    <div class="home-dj-layout">
-    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Подборка обновляется с каждым треком.','Your mix updates with every track.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending&&!mix.length?empty(t('Собираем подборку…','Building your mix…')):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):mix.length?rows(mix.map(x=>x.track),'mix',6):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(isPlayingMix?t('Пауза','Pause'):t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending&&!mix.length||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
+    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Треки играют по порядку. Новая подборка — по кнопке «Обновить».','Tracks play in order. Use Refresh for a new mix.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending&&!mix.length?empty(t('Собираем подборку…','Building your mix…')):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):mix.length?rows(mix.map(x=>x.track),'mix',6):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(isPlayingMix?t('Пауза','Pause'):t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending&&!mix.length||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
     ${section(t('Настроение на сегодня','A mood for today'),`<p class="home-section-note">${t('Сохранённое вами звучание — ориентир для следующего подбора.','Sounds you saved guide the next selection.')}</p><div class="home-vibes">${button(t('Свободный подбор','Free selection'),'vibe',!vibes.activeId?'is-selected':'','')}${vibes.items.map(v=>button(v.name,'vibe',v.id===vibes.activeId?'is-selected':'',v.id)).join('')}</div>${!vibes.items.length?empty(t('Сохраните вайб понравившегося трека, чтобы возвращаться к его звучанию.','Save a track’s vibe to return to its sound.')):''}${button(t('Сохранить текущий вайб','Save the current vibe'),'save-vibe','home-text-button','',!data.current)}<div class="home-fact"><h3>${t('Чуть больше о вас','A little more about you')}</h3><p>${outside===null?t('Факты появятся после первых прослушиваний.','Facts appear after your first listens.'):t(`${outside}% времени вы слушаете музыку за пределами избранного.`,`${outside}% of your listening time is spent outside your favourites.`)}</p><p>${t(`Музыка звучала в ${activeDays} из последних 28 дней.`,`Music played on ${activeDays} of the last 28 days.`)}</p></div>`)}</div>
    <div class="home-pair">${section(t('Недавно звучало','Recently played'),m.recent.length?rows(m.recent):empty(t('Здесь будет история полноценных прослушиваний.','Your meaningful listening history will appear here.')))}${section(t('Недавно открыты','Recently discovered'),`<p class="home-section-note">${t('Впервые в сохранённой истории за последние 30 дней.','First heard in your saved history within the last 30 days.')}</p>`+(m.fresh.length?rows(m.fresh):empty(t('Новые открытия ещё впереди.','Your next discoveries are ahead.'))))}</div>
    ${section(t('Всегда рядом','Always close'),m.favorites.length?`<div class="home-favorite-grid">${m.favorites.slice(0,6).map(track=>`<button type="button" class="home-favorite" data-home-action="track" data-id="${escape(track.id)}"><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></button>`).join('')}</div>`:empty(t('Отмечайте любимые треки сердцем — они появятся здесь.','Like your favourite tracks to keep them here.')),button(t('Всё избранное','All favourites'),'favorites','home-text-button'))}
@@ -185,6 +176,7 @@
        moments.length ? durationsHtml : ''
      );
    })()}
+   ${section(t('Совместный плейлист','A playlist for two'),`<p class="home-section-note">${t('Передайте другу файл со своим списком. Загрузите его файл — сначала пойдут песни, выбранные вами обоими, затем ваши треки по очереди. Без дублей.','Send your list to a friend. Import theirs to start with songs you both selected, then alternate your individual picks. No duplicates.')}</p><div class="home-actions"><select id="duoScope" class="sort-select" aria-label="${t('Какие треки передать','Tracks to share')}"><option value="history">${t('По истории прослушиваний','From listening history')}</option><option value="favorites">${t('Избранное','Favourites')}</option><option value="all">${t('Вся фонотека','Entire library')}</option></select>${button(t('Скачать мой список','Export my list'),'duo-export')}${button(t('Открыть файл друга','Open friend’s file'),'duo-import','home-primary')}</div><p class="home-section-note">${t('Без аккаунтов и облака. Файл содержит только список песен, без аудио и истории прослушиваний. Чтобы слушать отсутствующие песни, передайте музыкальные файлы отдельно и добавьте их в фонотеку.','No accounts or cloud. The file contains track metadata, not audio. Transfer missing audio separately and add it to your library to play it.')}</p>${data.playlists.filter(pl=>pl.duo===1).map(pl=>`<div class="home-actions">${button(pl.name,'playlist','home-text-button',pl.id)}${button(t('Передать общий список','Share combined list'),'duo-share','home-text-button',pl.id)}</div>`).join('')}`)}
    <footer class="home-footer"><span>${t('Только ваша музыка и ваша история.','Just your music and your history.')}</span>${button(t('Больше статистики','More listening insights'),'insights','home-text-button')}</footer>`;
   root.querySelectorAll('[data-home-action="vibe"]').forEach(b=>b.setAttribute('aria-pressed',String(b.classList.contains('is-selected'))));
   if(focusKey){const candidate=[...root.querySelectorAll('[data-home-action]')].find(b=>b.dataset.homeAction===focusKey[0]&&(b.dataset.id||'')===focusKey[1]);candidate?.focus({preventScroll:true});}
@@ -202,9 +194,9 @@
    const live=new Map(snapshot.tracks.map(t=>[String(t.id),t]));
    const tracks=mix.map(x=>live.get(String(x.track.id))).filter(t=>t&&!snapshot.queue.isExcluded(t.id));
    if(!tracks.length)return;
-   const isPlayingMix=snapshot.isPlaying&&(snapshot.queue?.context?.title==='Smart DJ'||snapshot.current&&tracks.some(t=>String(t.id)===String(snapshot.current.id)));
+   const isCurrentMix=snapshot.current&&tracks.some(t=>String(t.id)===String(snapshot.current.id));
    if(action==='mix-play'){
-    if(isPlayingMix){actions.resume();}
+    if(isCurrentMix){actions.resume();}
     else{const track=tracks[0];if(track)playSelectedMix(track,tracks);}
    }else{
     const track=tracks.find(t=>String(t.id)===id);
@@ -224,6 +216,7 @@
   else if(action==='resume')actions.resume();
   else if(action==='playlist')actions.navigate('playlist',id);
   else if(action==='new-playlist')document.getElementById('newPlaylistBtn').click();
+  else if(action.startsWith('duo-'))actions.duo?.(action,document.getElementById('duoScope')?.value||'favorites',id);
   else if(action==='save-vibe')document.getElementById('bottomTrackContext').click();
   else actions.navigate(action);
  });
@@ -244,7 +237,7 @@
      if (end) end.innerHTML = (isCurrent && playing) ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z" fill="currentColor"/></svg>' : icon;
    });
    const mixPlayBtn = root.querySelector('[data-home-action="mix-play"]');
-   if (mixPlayBtn && (snapshot.queue?.context?.title === 'Smart DJ' || mix.some(x => snapshot.current && String(x.track.id) === String(snapshot.current.id)))) {
+   if (mixPlayBtn && mix.some(x => snapshot.current && String(x.track.id) === String(snapshot.current.id))) {
      mixPlayBtn.textContent = playing ? (ru ? 'Пауза' : 'Pause') : (ru ? 'Слушать подборку' : 'Play the mix');
    }
   }
