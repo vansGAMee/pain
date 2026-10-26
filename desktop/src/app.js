@@ -1073,7 +1073,7 @@
 
   function getCoverUrl(track) {
     if (!track) return '/assets/app-icon.png';
-    return `/api/cover/${encodeURIComponent(track.id)}`;
+    return `/api/cover/${encodeURIComponent(track.id)}?online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}`;
   }
 
   function escapeXml(str) {
@@ -4177,6 +4177,7 @@
     document.getElementById('trackTransitionSlider').value = state.trackTransition;
     updateTrackTransitionUI();
     document.getElementById('reducedMotionSwitch').checked = state.reducedMotion;
+    document.getElementById('onlineCoversSwitch').checked = localStorage.getItem('pain_online_covers') === 'true';
     document.getElementById('saveHistorySwitch').checked = state.saveHistory;
     const homeMomentsEl = document.getElementById('homeMomentsSwitch');
     if (homeMomentsEl) homeMomentsEl.checked = state.homeMomentsEnabled;
@@ -5119,6 +5120,40 @@
       document.documentElement.toggleAttribute('data-reduced-motion', state.reducedMotion);
       try { localStorage.setItem('pain_reduced_motion', String(state.reducedMotion)); } catch (_) {}
     });
+    const coverSwitch = document.getElementById('onlineCoversSwitch');
+    const refreshedCovers = new Set();
+    const setCoverSearch = enabled => fetch(`/api/online-covers?enabled=${enabled ? 1 : 0}`, { method: 'POST' }).catch(() => {});
+    setCoverSearch(localStorage.getItem('pain_online_covers') === 'true');
+    coverSwitch.addEventListener('change', async e => {
+      const enabled = e.target.checked;
+      localStorage.setItem('pain_online_covers', String(enabled));
+      await setCoverSearch(enabled);
+      // Refresh only rendered images; keep lazy off-screen covers lazy.
+      document.querySelectorAll('img[src*="/api/cover/"]').forEach(img => {
+        const url = new URL(img.src);
+        url.searchParams.set('online', enabled ? '1' : '0');
+        img.src = url.href;
+      });
+    });
+    let checkingCovers = false;
+    setInterval(async () => {
+      if (checkingCovers || document.hidden || localStorage.getItem('pain_online_covers') !== 'true') return;
+      checkingCovers = true;
+      try {
+        const response = await fetch('/api/online-covers', { signal: AbortSignal.timeout(3000) });
+        if (!response.ok) return;
+        const { completed = [] } = await response.json();
+        if (localStorage.getItem('pain_online_covers') !== 'true') return;
+        const fresh = new Set(completed.filter(id => !refreshedCovers.has(id)));
+        if (!fresh.size) return;
+        document.querySelectorAll('img[src*="/api/cover/"]').forEach(img => {
+          const url = new URL(img.src);
+          const id = decodeURIComponent(url.pathname.slice('/api/cover/'.length));
+          if (fresh.has(id)) { url.searchParams.set('cached', '1'); img.src = url.href; }
+        });
+        fresh.forEach(id => refreshedCovers.add(id));
+      } catch (_) {} finally { checkingCovers = false; }
+    }, 5000);
     document.getElementById('saveHistorySwitch').addEventListener('change', e => {
       // Close only the audible part before the change; private listening never
       // becomes a skip or gets backfilled when history is enabled again.

@@ -11,6 +11,7 @@ const analyzeFile = require('./audio-analysis-task');
 const activeAudioAnalyses = new Set();
 const MAX_CONCURRENT_AUDIO_ANALYSES = 2;
 
+const findOnlineCover = require('./online-covers');
 const lyricsRoute = require('./lyrics-store');
 const parseRange = require('./range');
 const PhoneSync = require('./phone-sync');
@@ -1414,6 +1415,13 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
   </svg>`.trim();
 }
 
+  if (pathname === '/api/online-covers') {
+    if (req.method === 'POST') findOnlineCover.setEnabled(url.searchParams.get('enabled') === '1');
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ completed: findOnlineCover.status() }));
+    return;
+  }
+
   // Cover Art Endpoints
   if (pathname.startsWith('/api/cover/')) {
     const trackId = decodeURIComponent(pathname.substring('/api/cover/'.length));
@@ -1425,21 +1433,16 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
       return;
     }
 
-    let trackTitle = 'Pain', trackArtist = 'Audio';
-    try {
-      const libFile = path.join(DATA_DIR, 'library.json');
-      if (fs.existsSync(libFile)) {
-        const lib = JSON.parse(fs.readFileSync(libFile, 'utf8'));
-        const track = (lib.tracks || []).find(t => t.id === trackId);
-        if (track) {
-          trackTitle = track.title || 'Pain';
-          trackArtist = track.artist || 'Audio';
-        }
-      }
-    } catch (e) {}
-
+    const track = getLibraryTracks().find(t => t.id === trackId);
+    const trackTitle = track?.title || 'Pain';
+    const trackArtist = track?.artist || 'Audio';
+    // Never hold an image HTTP connection while waiting on the internet:
+    // Chromium needs the same connection pool to start/seek audio streams.
+    if (track && url.searchParams.get('online') === '1') {
+      findOnlineCover(track, coverFile).catch(() => {});
+    }
     const svg = generateProceduralCoverSvg(trackTitle, trackArtist);
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400' });
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(svg);
     return;
   }

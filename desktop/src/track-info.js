@@ -24,7 +24,7 @@
    [t('Длительность','Duration'),seconds?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:null],
    [t('Год','Year'),track.year],[t('Жанр','Genre'),track.genre]
   ].filter(([,v])=>v);
-  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoHistory"></div>`;
+  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoHistory"></div>`;
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
   panel.scrollTop=0;controller=new AbortController();
   fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
