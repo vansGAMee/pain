@@ -4179,7 +4179,6 @@ input:checked + .switch-slider:before {
 .comfort-range { display: flex; align-items: center; gap: 12px; width: 190px; max-width: 100%; flex: 0 0 auto; }
 html[data-resource-saver] .favorites-ambient-layer,
 html[data-resource-saver] .aura-orb,
-html[data-resource-saver] .vinyl-disc,
 html[data-resource-saver] .playing-eq-bar {
   display: none !important;
   animation: none !important;
@@ -4453,3 +4452,6 @@ html[data-reduced-motion] * {
 .duo-missing { margin: 0 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
 .duo-missing summary { cursor: pointer; font-size: 13px; color: var(--ink-secondary); }
 .duo-missing textarea { display: block; width: 100%; max-height: 240px; margin: 12px 0; padding: 10px; resize: vertical; font: inherit; font-size: 13px; line-height: 1.6; color: var(--ink); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+
+.performance-mode-select { max-width: 220px; padding: 8px 12px; border: 1px solid var(--border-color, #8886); border-radius: 8px; color: inherit; background: var(--bg-color, transparent); font: inherit; }
+html[data-performance-mode="maximum"] * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; transition: none !important; }

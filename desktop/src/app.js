@@ -43,7 +43,8 @@
       return Number.isFinite(saved) ? Math.max(0, Math.min(4, saved)) : 1;
     })(),
     reducedMotion: localStorage.getItem('pain_reduced_motion') === 'true',
-    resourceSaver: localStorage.getItem('pain_resource_saver') === 'true',
+    performanceMode: PerformanceMode.normalize(localStorage.getItem('pain_performance_mode')),
+    resourceSaver: PerformanceMode.get(localStorage.getItem('pain_performance_mode')).saver,
     cleanTitles: localStorage.getItem('pain_clean_titles') === 'true',
     saveHistory: localStorage.getItem('pain_save_history') !== 'false',
     lastVolume: 1.0,
@@ -354,6 +355,8 @@
     flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId):Promise.resolve();}
   };
   let audioCtx = null;
+  let audioObservationStops = [];
+  let bpmAnalysisController = null;
   let sourceNode = null;
   let playingTrackSnapshot = null;
   let transitionGainNode = null;
@@ -863,24 +866,37 @@
       transitionGainNode.connect(audioCtx.destination);
       applyEqualizerAudioGains();
       try { autoEqHeadroom = AutoEqualizer.createHeadroom(audioCtx, EQ_FREQUENCIES); } catch (_) {}
-      try {
-        const onProfile = (track, profile) => {
-            queue?.setAudioProfile(track.id, profile);
-            if (state.eq.auto && String(track.id) === String(state.currentTrackId)) applyAutoEqualizer(track, profile);
-            schedulePersistAudioProfiles();
-            if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 30000);
-          };
-        // Measure each source before the decks are mixed. A crossfade contains
-        // two recordings and must never be stored as either track's identity.
-        for (const [deck, source] of [[deckA, sourceNodeA], [deckB, sourceNodeB]]) {
-          if (deck && source) AudioProfile.observe(audioCtx, source, deck,
-            () => deckTrackSnapshots.get(deck), onProfile, audioProfiles);
-        }
-      } catch (_) {}
+      updateAudioObservers();
     } catch (err) {
       console.warn('Web Audio API Equalizer initialization deferred or unsupported:', err);
     }
   }
+
+  function updateAudioObservers() {
+    const allowed = state.performanceMode !== 'maximum' && !document.hidden;
+    if (!allowed) {
+      const stops = audioObservationStops; audioObservationStops = [];
+      for (const stop of stops) stop();
+      return;
+    }
+    if (!audioCtx || audioObservationStops.length) return;
+    const onProfile = (track, profile) => {
+      queue?.setAudioProfile(track.id, profile);
+      if (state.eq.auto && String(track.id) === String(state.currentTrackId)) applyAutoEqualizer(track, profile);
+      schedulePersistAudioProfiles();
+      if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 30000);
+    };
+    try {
+      for (const [deck, source] of [[deckA, sourceNodeA], [deckB, sourceNodeB]]) {
+        if (deck && source) audioObservationStops.push(AudioProfile.observe(audioCtx, source, deck,
+          () => deckTrackSnapshots.get(deck), onProfile, audioProfiles));
+      }
+    } catch (_) { for (const stop of audioObservationStops) stop(); audioObservationStops = []; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    updateAudioObservers();
+    if (document.hidden) bpmAnalysisController?.abort();
+  });
 
   function applyEqualizerAudioGains() {
     if (!audioCtx || !preampNode) return;
@@ -1073,7 +1089,7 @@
 
   function getCoverUrl(track) {
     if (!track) return '/assets/app-icon.png';
-    return `/api/cover/${encodeURIComponent(track.id)}?online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}`;
+    return `/api/cover/${encodeURIComponent(track.id)}?priority=${track.id === state.currentTrackId ? 1 : 0}&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}`;
   }
 
   function escapeXml(str) {
@@ -1255,7 +1271,7 @@
         playTrackInContext(track,state.tracks,{type:'library',title:'Smart DJ',allowNew:true});
         const start=tracks.findIndex(t=>String(t.id)===String(track.id));
         const decision=items?.[start]?.decision,details=decision?.explanation;
-        if(['pulseflow-clap-faiss','frequency-pulseflow-ties'].includes(details?.method)){
+        if(['pulseflow-clap-faiss','frequency-pulseflow-ties','pulseflow-uniform'].includes(details?.method)){
           queue.setShuffleMode('smart');state.shuffleMode='smart';
           queue.lastTransition=decision;
           queue.pulseflowPlan={seed:decision.fromTrack,policy:details.policy,personal:details.method==='frequency-pulseflow-ties',preview:true,vibeKey:JSON.stringify(queue.pulseflowVibe||null),
@@ -2565,22 +2581,26 @@
   }
 
   async function analyzeTrackBpmInBackground(track) {
-    if (state.resourceSaver) return;
+    if (state.resourceSaver || document.hidden) return;
     if (!track || !track.id || !queue) return;
     if (queue.bpmCache && queue.bpmCache[track.id]) return;
     if (track._bpmAnalyzing) return;
     track._bpmAnalyzing = true;
+    bpmAnalysisController?.abort();
+    const controller = bpmAnalysisController = new AbortController();
 
     try {
       const srcUrl = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
-      const resp = await fetch(srcUrl, { headers: { Range: 'bytes=0-320000' } });
+      const resp = await fetch(srcUrl, { headers: { Range: 'bytes=0-320000' }, signal: controller.signal });
       if (!resp.ok && resp.status !== 206) return;
       const arrayBuffer = await resp.arrayBuffer();
 
+      if (controller.signal.aborted || state.resourceSaver || document.hidden) return;
       const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
       if (!OfflineCtx) return;
       const offlineCtx = new OfflineCtx(1, 44100 * 12, 44100);
       const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+      if (state.resourceSaver || state.currentTrackId !== track.id) return;
       const pcmData = audioBuffer.getChannelData(0);
       const detectFn = QueueEngine?.detectBpmFromPcm || (QueueClass && QueueClass.detectBpmFromPcm);
       const detected = detectFn ? detectFn(pcmData, audioBuffer.sampleRate) : null;
@@ -4160,17 +4180,28 @@
     } catch (_) { status.textContent = state.lang === 'ru' ? 'Настройки запуска доступны в локальном приложении.' : 'Startup settings require the local app.'; }
   }
 
-  function initSettingsUI() {
-    for (const [id, key] of [['resourceSaverSwitch', 'resourceSaver'], ['cleanTitlesSwitch', 'cleanTitles']]) {
-      document.getElementById(id).checked = state[key];
-    }
+  function applyPerformanceMode(value) {
+    state.performanceMode = PerformanceMode.normalize(value);
+    state.resourceSaver = PerformanceMode.get(value).saver;
+    if (state.resourceSaver) bpmAnalysisController?.abort();
+    updateAudioObservers();
+    localStorage.setItem('pain_performance_mode', state.performanceMode);
+    document.documentElement.dataset.performanceMode = state.performanceMode;
     document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
-    if (state.resourceSaver) {
-      fetch('/api/resource-saver', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resourceSaver: true })
-      }).catch(() => {});
-    }
+    document.getElementById('performanceMode').value = state.performanceMode;
+    const hints = {
+      full: ['Все эффекты и фоновый анализ. Обложки загружаются по мере просмотра.', 'All effects and background analysis. Covers load as you browse.'],
+      balanced: ['Без декоративных анимаций и дополнительного анализа BPM. Реже проверяет телефон и новые обложки.', 'No decorative animation or extra BPM decoding. Fewer device and cover checks.'],
+      maximum: ['Без анимаций, размытия, фонового анализа звука и автоиндексации. Новые обложки — только для текущей песни. Активный поиск телефона отключён; ручная синхронизация доступна.', 'No animation, blur, background audio analysis or auto-indexing. New covers only for the current song. Active phone discovery off; manual sync available.']
+    };
+    document.getElementById('performanceModeHint').textContent = hints[state.performanceMode][state.lang === 'ru' ? 0 : 1];
+    fetch('/api/resource-saver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: state.performanceMode }) }).catch(() => {});
+    window.dispatchEvent(new CustomEvent('pain:performance', { detail: state.performanceMode }));
+  }
+
+  function initSettingsUI() {
+    document.getElementById('cleanTitlesSwitch').checked = state.cleanTitles;
+    applyPerformanceMode(state.performanceMode);
     initDesktopPreferences();
     document.getElementById('volumeLimitSlider').value = state.volumeLimit;
     document.getElementById('volumeLimitValue').textContent = state.volumeLimit + '%';
@@ -4204,7 +4235,7 @@
   function startDiscoveryPolling() {
     let lastPoll = 0;
     setInterval(async () => {
-      if (state.resourceSaver && Date.now() - lastPoll < 15000) return;
+      if (document.hidden || Date.now() - lastPoll < PerformanceMode.get(state.performanceMode).discoveryMs) return;
       lastPoll = Date.now();
       try {
         const res = await fetch('/api/devices');
@@ -5088,22 +5119,7 @@
       updateTrackTransitionUI();
       try { localStorage.setItem('pain_track_transition', String(state.trackTransition)); } catch (_) {}
     });
-    const resourceSaverInput = document.getElementById('resourceSaverSwitch');
-    if (resourceSaverInput) {
-      resourceSaverInput.addEventListener('change', e => {
-        state.resourceSaver = e.target.checked;
-        try { localStorage.setItem('pain_resource_saver', String(state.resourceSaver)); } catch (_) {}
-        document.documentElement.toggleAttribute('data-resource-saver', state.resourceSaver);
-        fetch('/api/resource-saver', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resourceSaver: state.resourceSaver })
-        }).catch(() => {});
-        showToast(state.lang === 'ru'
-          ? (state.resourceSaver ? 'Экономия ресурсов включена' : 'Экономия ресурсов отключена')
-          : (state.resourceSaver ? 'Resource saver enabled' : 'Resource saver disabled')
-        );
-      });
-    }
+    document.getElementById('performanceMode').addEventListener('change', e => applyPerformanceMode(e.target.value));
     const cleanTitlesInput = document.getElementById('cleanTitlesSwitch');
     if (cleanTitlesInput) {
       cleanTitlesInput.addEventListener('change', e => {
@@ -5132,18 +5148,19 @@
       document.querySelectorAll('img[src*="/api/cover/"]').forEach(img => {
         const url = new URL(img.src);
         url.searchParams.set('online', enabled ? '1' : '0');
+        url.searchParams.set('priority', decodeURIComponent(url.pathname.slice('/api/cover/'.length)) === state.currentTrackId ? '1' : '0');
         img.src = url.href;
       });
     });
-    let checkingCovers = false;
+    let checkingCovers = false, lastCoverPoll = 0;
     setInterval(async () => {
-      if (checkingCovers || document.hidden || localStorage.getItem('pain_online_covers') !== 'true') return;
+      if (checkingCovers || document.hidden || Date.now()-lastCoverPoll < PerformanceMode.get(state.performanceMode).coverPollMs) return;
+      lastCoverPoll = Date.now();
       checkingCovers = true;
       try {
         const response = await fetch('/api/online-covers', { signal: AbortSignal.timeout(3000) });
         if (!response.ok) return;
         const { completed = [] } = await response.json();
-        if (localStorage.getItem('pain_online_covers') !== 'true') return;
         const fresh = new Set(completed.filter(id => !refreshedCovers.has(id)));
         if (!fresh.size) return;
         document.querySelectorAll('img[src*="/api/cover/"]').forEach(img => {

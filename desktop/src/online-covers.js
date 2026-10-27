@@ -1,74 +1,125 @@
 'use strict';
 const fs = require('node:fs/promises');
 const matching = require('./cover-matching');
-const searchCache = new Map();
-let tail = Promise.resolve();
-let nextSearch = 0;
-const misses = new Map();
-const pending = new Map();
-const completed = new Set();
-let enabled = true;
-let generation = 0;
-let controller = new AbortController();
-// One search at a time, at most 20/minute (the provider's documented limit).
-module.exports = function findCover(track, file, alive = () => true) {
-  if (!enabled) return Promise.resolve(false);
-  const token = generation;
-  const signal = controller.signal;
-  const wanted = () => enabled && generation === token && alive();
-  const metadata = matching.metadata(track);
-  if (!metadata || misses.get(file) > Date.now()) return Promise.resolve(false);
-  if (pending.has(file)) return pending.get(file);
-  const job = tail.then(async () => {
-    if (!wanted()) return false;
-    try { await fs.access(file); return true; } catch (_) {}
-    try {
-      let match;
-      for (const query of matching.queries(metadata)) {
-        const key = JSON.stringify(query);
-        let results = searchCache.get(key);
+const path = require('node:path'), { createHash } = require('node:crypto');
+const { setTimeout: wait } = require('node:timers/promises');
+const requestSource = require('./source-fetch')();
+const searchCache = new Map(), misses = new Map(), pending = new Map(), completed = new Set();
+let nextSearch = 0, enabled = true, mode = 'balanced', controller = new AbortController(), running = false;
+let localMedia, catalog, cacheDir, activeJob;
+const intervals = { full: 3100, balanced: 6000, maximum: 15000 };
+async function saveImage(url, file, signal) {
+  const image = await requestSource(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
+  if (!image.ok || !image.headers.get('content-type')?.startsWith('image/')) return false;
+  const chunks = []; let size = 0;
+  for await (const chunk of image.body) {
+    size += chunk.length;
+    if (size > 2 * 1024 * 1024) return false;
+    chunks.push(chunk);
+  }
+  signal.throwIfAborted();
+  if (!size) return false;
+  await fs.writeFile(file, Buffer.concat(chunks), { flag: 'wx' }).catch(e => { if (e.code !== 'EEXIST') throw e; });
+  return true;
+}
+async function work(job) {
+  const { file, signal } = job;
+  const wanted = () => !signal.aborted && job.alive() && (mode !== 'maximum' || job.priority);
+  if (!wanted()) return false;
+  try { await fs.access(file); return true; } catch (_) {}
+  const local = localMedia ? await localMedia.read(job.track) : { track: job.track };
+  if (!wanted()) return false;
+  if (localMedia && await localMedia.cover(local, file, signal)) return true;
+  if (!enabled || !job.online) return false;
+  const track = local.track, metadata = matching.metadata(track);
+  let match;
+  if (metadata) {
+    for (const query of matching.queries(metadata)) {
+      try {
+        const key = JSON.stringify(query); let results = searchCache.get(key), saved;
+        const cacheFile = cacheDir && path.join(cacheDir, createHash('sha256').update(key).digest('hex')+'.json');
+        if (!results && cacheFile) {
+          try { saved = JSON.parse(await fs.readFile(cacheFile,'utf8')); if (Date.now()-saved.at < (saved.results.length ? 30 : 1)*86400000) results=saved.results; } catch (_) {}
+        }
         if (!results) {
-          await new Promise(resolve => setTimeout(resolve, Math.max(0, nextSearch - Date.now())));
-          if (!wanted()) return false;
-          nextSearch = Date.now() + 3100;
+          await wait(Math.max(0, nextSearch - Date.now()), undefined, { signal });
+          if (!wanted() || !enabled) return false;
+          nextSearch = Date.now() + intervals[mode];
           const url = new URL('https://itunes.apple.com/search');
           url.search = new URLSearchParams({ ...query, limit: '50' });
-          const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
-          if (!response.ok) throw new Error('Search unavailable');
-          results = (await response.json()).results || [];
-          if (searchCache.size >= 512) searchCache.delete(searchCache.keys().next().value);
-          searchCache.set(key, results);
+          try {
+            const response = await requestSource(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
+            if (!response.ok) throw Error('Source unavailable');
+            results = ((await response.json()).results || []).map(({artistName,trackName,collectionName,artworkUrl100}) => ({artistName,trackName,collectionName,artworkUrl100}));
+            if (cacheFile) { await fs.mkdir(cacheDir,{recursive:true}); await fs.writeFile(cacheFile,JSON.stringify({at:Date.now(),results})).catch(()=>{}); }
+          } catch (error) { if (saved?.results?.length) results=saved.results; else throw error; }
         }
+        if (searchCache.size >= 512) searchCache.delete(searchCache.keys().next().value);
+        searchCache.set(key, results);
         if (!wanted()) return false;
-        // Prefer the exact recording before trying a cleaned title or its album.
         match = results.find(item => item.artworkUrl100 && matching.norm(item.artistName) === matching.norm(metadata.artist) && matching.norm(item.trackName) === matching.norm(metadata.title));
         match ||= results.find(item => item.artworkUrl100 && matching.matches(item, metadata, query.entity === 'album'));
         if (match) break;
-      }
-      if (!match) { misses.set(file, Date.now() + 86400000); return false; }
+      } catch (_) { break; }
+    }
+  }
+  if (!wanted() || !enabled) return false;
+  if (match) {
+    try {
       const artwork = new URL(match.artworkUrl100);
-      if (artwork.protocol !== 'https:' || !artwork.hostname.endsWith('.mzstatic.com')) return false;
-      const image = await fetch(artwork, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
-      if (!image.ok || !image.headers.get('content-type')?.startsWith('image/')) return false;
-      const bytes = Buffer.from(await image.arrayBuffer());
-      if (bytes.length > 2 * 1024 * 1024 || !wanted()) return false;
-      // Never replace a cover saved manually while the search was running.
-      await fs.writeFile(file, bytes, { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
-      if (track.id) completed.add(track.id);
-      return true;
-    } catch (_) { if (wanted()) misses.set(file, Date.now() + 60000); return false; }
-  });
-  tail = job.catch(() => {});
-  pending.set(file, job);
-  return job.finally(() => pending.delete(file));
-};
-
-module.exports.setEnabled = value => {
+      if (artwork.protocol === 'https:' && artwork.hostname.endsWith('.mzstatic.com') && await saveImage(artwork,file,signal)) return true;
+    } catch (_) {}
+  }
+  const record = await catalog?.lookup(track, { signal });
+  if (!record || record.possible || !wanted() || !enabled) return false;
+  // Use release artwork only after the recording and performer were identified.
+  const releases = [...(record.releases || [])].sort((a,b) => Number(matching.norm(b.title) === matching.norm(metadata?.album)) - Number(matching.norm(a.title) === matching.norm(metadata?.album)));
+  const sizes = mode === 'maximum' ? [250] : [500,250];
+  const candidates=[];
+  for (const release of releases.slice(0,2)) {
+    if (/^[0-9a-f-]{36}$/i.test(release.id)) for (const size of sizes) candidates.push(`https://coverartarchive.org/release/${release.id}/front-${size}`);
+    const group=release['release-group']?.id;
+    if (/^[0-9a-f-]{36}$/i.test(group)) candidates.push(`https://coverartarchive.org/release-group/${group}/front-${sizes[0]}`);
+  }
+  for (const url of [...new Set(candidates)]) {
+    if (!wanted()) return false;
+    try { if (await saveImage(url,file,signal)) return true; } catch (_) {}
+  }
+  return false;
+}
+async function pump() {
+  if (running) return;
+  const jobs = [...pending.values()].filter(j => !j.started);
+  const job = jobs.find(j => j.priority) || jobs[0]; if (!job) return;
+  running = true; job.started = true; activeJob = job;
+  let result = false;
+  try { result = await work(job); } catch (_) {}
+  if (result) completed.add(job.track.id);
+  else if (!job.signal.aborted && job.online && (mode !== 'maximum' || job.priority)) misses.set(job.file, Date.now()+60000);
+  pending.delete(job.file); job.resolve(result); running = false; activeJob = null;
+  setImmediate(pump);
+}
+function findCover(track,file,alive=()=>true,options={}) {
+  const priority = !!options.priority, online = options.online !== false;
+  if (pending.has(file)) { const job = pending.get(file); job.priority ||= priority; job.online ||= online; if (priority && activeJob && activeJob !== job) activeJob.abort.abort(); return job.promise; }
+  if (misses.get(file)>Date.now() || (mode==='maximum'&&!priority) || pending.size>=64&&!priority) return Promise.resolve(false);
+  // A newly playing song may preempt an old thumbnail search immediately.
+  if (priority && activeJob) activeJob.abort.abort();
+  const abort = new AbortController();
+  let resolve; const promise = new Promise(r => { resolve=r; });
+  pending.set(file,{ track,file,alive,priority,online,promise,resolve,abort,signal:AbortSignal.any([controller.signal,abort.signal]) });
+  setImmediate(pump); return promise;
+}
+findCover.setEnabled = value => {
   enabled = value;
   if (!enabled) {
-    generation++;
-    controller.abort();
-    controller = new AbortController();
+    // Local embedded artwork is still allowed with internet search disabled.
+    for (const job of pending.values()) if (!job.started) job.online = false;
+    controller.abort(); controller = new AbortController();
+    for (const job of pending.values()) if (!job.started) job.signal = AbortSignal.any([controller.signal,job.abort.signal]);
   }
 };
-module.exports.status = () => [...completed];
+findCover.setMode = value => { if (Object.hasOwn(intervals,value)) { mode=value; if (mode==='maximum' && activeJob && !activeJob.priority) activeJob.abort.abort(); } };
+findCover.configure = services => { localMedia=services.localMedia; catalog=services.catalog; cacheDir=services.dataDir && path.join(services.dataDir,'cover-search'); };
+findCover.status = () => [...completed];
+module.exports = findCover;

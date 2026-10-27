@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import tempfile
 
-def patch_executable(input_exe, output_exe=None, icon_path=None, version="1.7.9.0"):
+def patch_executable(input_exe, output_exe=None, icon_path=None, version="1.8.0.0"):
     if output_exe is None:
         output_exe = input_exe
 

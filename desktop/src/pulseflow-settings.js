@@ -3,7 +3,7 @@
   if (!q || !status) return;
   const policy = document.getElementById('pulseflowPolicy'), start = document.getElementById('pulseflowIndex'), stop = document.getElementById('pulseflowCancel');
   const ru = () => localStorage.getItem('pain_lang') === 'ru';
-  try { const saved=localStorage.getItem('pain_pulseflow_policy');q.pulseflowPolicy=['smooth','contrast','personal'].includes(saved)?saved:'personal'; } catch (_) {}
+  try { const saved=localStorage.getItem('pain_pulseflow_policy');q.pulseflowPolicy=['smooth','contrast','personal','live'].includes(saved)?saved:'personal'; } catch (_) {}
   policy.value = q.pulseflowPolicy;
   policy.onchange = () => {
     q.pulseflowPolicy = policy.value; q.pulseflowPlan = null; q.cancelPendingSelection();

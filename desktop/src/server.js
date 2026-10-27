@@ -50,7 +50,10 @@ const phoneSync = new PhoneSync(DATA_DIR);
 const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: getLibraryTracks,
   resolveAudio: id => getResolvedAudioFilePath(id, true)});
 const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
-const trackInfo = require('./track-info-service')(DATA_DIR);
+const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
+const catalog = require('./music-catalog')(DATA_DIR);
+findOnlineCover.configure({ localMedia, catalog, dataDir: DATA_DIR });
+const trackInfo = require('./track-info-service')(DATA_DIR, { localMedia, catalog, getTracks:getLibraryTracks });
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
@@ -60,7 +63,12 @@ let hasAutoSynced = false;
 let autoSyncBusy = false;
 let lastFullSync=0,lastSyncDevice='';
 let udpSocket = null;
-let resourceSaverActive = false;
+let resourceSaverActive = true;
+let performanceMode = 'balanced', lastArpScan = 0, lastBroadcast = 0;
+try { performanceMode = require('./performance-mode').normalize(JSON.parse(fs.readFileSync(path.join(DATA_DIR,'performance-mode.json'),'utf8')).mode); } catch (_) {}
+resourceSaverActive = performanceMode !== 'full';
+findOnlineCover.setMode(performanceMode);
+pulseflow.setBackgroundAllowed(performanceMode !== 'maximum');
 let lastDjStatePostHash = '', lastDjStateResponseJson = null;
 
 // ==========================================
@@ -247,7 +255,9 @@ function triggerBackgroundAutoSync(device) {
 
 // Fast ARP Table Scanner (executes in <10ms, discovers active LAN devices)
 function scanArpTable() {
-  if (typeof resourceSaverActive !== 'undefined' && resourceSaverActive && Math.random() < 0.5) return;
+  if (typeof performanceMode !== 'undefined' && performanceMode === 'maximum') return;
+  if (typeof resourceSaverActive !== 'undefined' && resourceSaverActive && typeof lastArpScan !== 'undefined' && Date.now() - lastArpScan < 60000) return;
+  if (typeof lastArpScan !== 'undefined') lastArpScan = Date.now();
   try {
     const cmd = process.platform === 'win32' ? 'arp -a' : 'ip -4 neigh show 2>/dev/null || arp -an 2>/dev/null';
     exec(cmd, { timeout: 2000, windowsHide: true }, (err, stdout) => {
@@ -313,6 +323,7 @@ async function scanSubnetsSmart() {
     for (const prefix of subnets) {
       // Chunk in small batches (4 at a time to never saturate libuv) with event loop yields
       for (let start = 1; start <= 254; start += 4) {
+        if (resourceSaverActive) break;
         if (discoveredDevices.some(d => Date.now() - (d.lastSeen || 0) < 60000)) break;
         const end = Math.min(start + 3, 254);
         const batch = [];
@@ -332,7 +343,8 @@ async function scanSubnetsSmart() {
 
 // UDP Multi-Target Broadcast
 function broadcastDiscovery() {
-  if (!udpSocket) return;
+  if (!udpSocket || performanceMode === 'maximum' || Date.now()-lastBroadcast < (resourceSaverActive ? 15000 : 5000)) return;
+  lastBroadcast = Date.now();
   const message = Buffer.from('PAIN_DISCOVERY');
 
   udpSocket.send(message, 0, message.length, UDP_PORT, '255.255.255.255', () => {});
@@ -615,7 +627,9 @@ const server = http.createServer((req, res) => {
     let id;try{id=decodeURIComponent(pathname.slice('/api/track-info/'.length));}catch(_){res.writeHead(400);res.end();return;}
     const track=getLibraryTracks().find(t=>String(t.id)===id);
     if(!track){res.writeHead(404);res.end();return;}
-    const result=url.searchParams.get('local')==='1'?trackInfo.local(track):trackInfo(track,url.searchParams.get('lang')==='en'?'en':'ru');
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    const result=url.searchParams.get('local')==='1'?trackInfo.local(track,url.searchParams.get('lang')==='en'?'en':'ru'):trackInfo(track,url.searchParams.get('lang')==='en'?'en':'ru',{signal:abort.signal});
     result.then(data=>{
       if(!res.destroyed){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));}
     }).catch(()=>{if(!res.destroyed){res.writeHead(503);res.end('{}');}});return;
@@ -647,16 +661,20 @@ const server = http.createServer((req, res) => {
       req.on('end', () => {
         try {
           const json = JSON.parse(body);
-          resourceSaverActive = !!json.resourceSaver;
+          performanceMode = ['full','balanced','maximum'].includes(json.mode) ? json.mode : (json.resourceSaver ? 'balanced' : 'full');
+          resourceSaverActive = performanceMode !== 'full';
+          findOnlineCover.setMode(performanceMode);
+          pulseflow.setBackgroundAllowed(performanceMode !== 'maximum');
+          fs.promises.writeFile(path.join(DATA_DIR,'performance-mode.json'), JSON.stringify({mode:performanceMode})).catch(()=>{});
         } catch (_) {}
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, resourceSaver: resourceSaverActive }));
+        res.end(JSON.stringify({ ok: true, resourceSaver: resourceSaverActive, mode: performanceMode }));
       });
       return;
     }
     if (req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ resourceSaver: resourceSaverActive }));
+      res.end(JSON.stringify({ resourceSaver: resourceSaverActive, mode: performanceMode }));
       return;
     }
   }
@@ -1438,9 +1456,7 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     const trackArtist = track?.artist || 'Audio';
     // Never hold an image HTTP connection while waiting on the internet:
     // Chromium needs the same connection pool to start/seek audio streams.
-    if (track && url.searchParams.get('online') === '1') {
-      findOnlineCover(track, coverFile).catch(() => {});
-    }
+    if (track) findOnlineCover(track, coverFile, () => true, { online: url.searchParams.get('online') === '1', priority: url.searchParams.get('priority') === '1' }).catch(() => {});
     const svg = generateProceduralCoverSvg(trackTitle, trackArtist);
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(svg);
@@ -1580,9 +1596,9 @@ server.once('listening', () => {
     desktopPreferences.start();
     startDiscovery();
     if (process.env.PAIN_PULSEFLOW_AUTO_INDEX !== 'false') {
-      setTimeout(() => pulseflow.start().catch(() => {}), 15000).unref();
+      setTimeout(() => { if (performanceMode !== 'maximum') pulseflow.start({automatic:true}).catch(() => {}); }, 15000).unref();
       // Incremental cached embeddings make newly synced files available as well.
-      const pulseflowTimer = setInterval(() => pulseflow.start().catch(() => {}), 10 * 60 * 1000);
+      const pulseflowTimer = setInterval(() => { if (performanceMode !== 'maximum') pulseflow.start({automatic:true}).catch(() => {}); }, 10 * 60 * 1000);
       pulseflowTimer.unref(); server.once('close', () => clearInterval(pulseflowTimer));
     }
     setTimeout(() => updater.check().catch(() => {}), 3000).unref();

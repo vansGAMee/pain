@@ -11,6 +11,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
   // Electron packages unpack Python sources: Python cannot import from an asar.
   const bridge = path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'pulseflow', 'bridge.py');
   const pending = new Map();
+  let indexAutomatic = false, backgroundAllowed = true;
   let query, indexer, sequence = 0, lastError = null, starting = false, closed = false, indexGeneration = 0;
   const env = { ...process.env, OMP_NUM_THREADS: '2', OPENBLAS_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
     TOKENIZERS_PARALLELISM: 'false', HF_HOME: path.join(root, 'models'), PYTHONUNBUFFERED: '1' };
@@ -52,11 +53,12 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
     return { ...saved, installed, running, available: fs.existsSync(path.join(root, 'catalog.npz')),
       state: installed ? saved.state || 'empty' : 'not-installed', lastError };
   }
-  async function start() {
+  async function start({ automatic = false } = {}) {
+    if (automatic && !backgroundAllowed) return status();
     if (indexer || starting) return status();
     if (closed) throw new Error('PulseFlow stopped');
     if (!fs.existsSync(python)) throw new Error('Install the PulseFlow runtime: npm run pulseflow:setup');
-    starting = true;
+    starting = true; indexAutomatic = automatic;
     const generation = indexGeneration;
     try {
     await fs.promises.mkdir(root, { recursive: true });
@@ -67,7 +69,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
     const child = indexer = spawnPython('index', ['--manifest', file]);
     child.stdin.end(); lastError = null;
     child.on('error', error => { lastError = error.message; });
-    child.on('close', code => { if (indexer === child) indexer = null; if (code) lastError ||= 'PulseFlow indexing failed; see Settings and data/pulseflow/index.log'; });
+    child.on('close', code => { if (indexer === child) { indexer = null; if (code) lastError ||= 'PulseFlow indexing failed; see Settings and data/pulseflow/index.log'; } });
     return { ...(await status()), running: true, state: 'loading', total: manifest.length };
     } finally { starting = false; }
   }
@@ -99,5 +101,11 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
       res.end(JSON.stringify(await recommend(JSON.parse(body))));
     } catch (error) { lastError = error.message; res.writeHead(503); res.end(JSON.stringify({ error: error.message })); }
   }
-  return { route, close, status, start, recommend };
+  function setBackgroundAllowed(value) {
+    backgroundAllowed = value;
+    if (!value && indexAutomatic && (indexer || starting)) {
+      indexGeneration++; indexer?.kill(); indexer = null;
+    }
+  }
+  return { route, close, status, start, recommend, setBackgroundAllowed };
 };

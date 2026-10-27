@@ -126,7 +126,10 @@ for (const platform of ['linux', 'win32']) {
     ];
     for (const [index, activate] of activations.entries()) {
       window.show();
-      assert.equal(request(window, 'minimize'), false, 'minimizing must not hide the window in the tray');
+      assert.equal(request(window, 'minimize'), true, 'minimizing uses the enabled tray');
+      assert.equal(window.visible, false);
+      activate();
+      assert.equal(window.visible, true);
       assert.equal(request(window, 'close'), true);
       assert.equal(window.visible, false);
       window.minimized = true;

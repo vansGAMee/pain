@@ -84,3 +84,40 @@ test('an explicitly chosen Home mix finishes in displayed order and continues be
  });
  assert.equal(result.trackId,'9');assert.equal(q.tracks.length,24);
 });
+test('live mode resamples matching candidates from the current track without repeats',async()=>{
+ const q=queue();q.pulseflowPolicy='live';q.smartSeed=123;q.setExcludedTracks(['4']);
+ const seeds=[],seen=new Set(['0']);
+ for(let step=0;step<8;step++){
+  const previous=q.getCurrentTrack().id;
+  const result=await Player.next(q,async request=>{
+   seeds.push(request.seed);assert.equal(request.seed,previous);assert.equal(request.length,20);assert.equal(request.policy,'smooth');
+   assert.ok(!request.eligible.includes('4'));
+   return {tracks:request.eligible.slice(0,20).map(id=>({id,score:.8}))};
+  });
+  assert.ok(!seen.has(result.trackId));seen.add(result.trackId);
+  assert.equal(q.getLastTransition().explanation.method,'pulseflow-uniform');
+ }
+ assert.equal(seeds.length,8);
+});
+test('live mode varies by session but a prefetch snapshot gives the same next choice',async()=>{
+ const choices=new Set(),query=async()=>({tracks:tracks.slice(1,21).map(t=>({id:t.id,score:.8}))});
+ for(let seed=1;seed<=12;seed++){
+  const q=queue();q.pulseflowPolicy='live';q.smartSeed=seed;
+  const snapshot=q.workerSnapshot();
+  const preview=await Player.next(Queue.fromWorkerSnapshot(snapshot),query);
+  assert.equal(q.getCurrentTrack().id,'0');
+  assert.equal((await Player.next(Queue.fromWorkerSnapshot(snapshot),query)).trackId,preview.trackId);
+  choices.add(preview.trackId);
+ }
+ assert.ok(choices.size>1,'different sessions must not replay a fixed playlist');
+});
+test('a live Home preview is sampled once and plays in its displayed order',async()=>{
+ const q=queue();q.pulseflowPolicy='live';q.smartSeed=12;
+ const snapshot=q.navigationSnapshot();
+ const mix=await Player.mix(tracks,q,6,async request=>{
+  assert.equal(request.length,20);return {tracks:tracks.slice(1,21).map(t=>({id:t.id,score:.7}))};
+ });
+ assert.deepEqual(q.navigationSnapshot(),snapshot);assert.equal(new Set(mix.map(x=>x.track.id)).size,6);
+ q.pulseflowPlan={seed:tracks[0],policy:'smooth',personal:false,preview:true,vibeKey:'null',remaining:mix.map(x=>({id:x.track.id,score:.7}))};
+ for(const item of mix)assert.equal((await Player.next(q,async()=>{throw Error('Do not reshuffle chosen Home mix');})).trackId,item.track.id);
+});

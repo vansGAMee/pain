@@ -878,10 +878,10 @@
         <div class="settings-section" id="pulseflowSettings">
           <div class="settings-section-header">
             <div class="settings-section-title">PulseFlow · CLAP + FAISS</div>
-            <div class="settings-section-desc" data-ru="История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Первый анализ выполняется в фоне." data-en="History + PulseFlow uses completed listens, then audio to break ties. Smooth selects similar tracks; contrast alternates closer and more distant matches. Initial indexing runs in the background.">История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Первый анализ выполняется в фоне.</div>
+            <div class="settings-section-desc" data-ru="История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Живой Smart DJ выбирает случайно из подходящих по звучанию и перестраивает поиск после каждой песни. Первый анализ выполняется в фоне." data-en="History + PulseFlow uses completed listens, then audio to break ties. Smooth selects similar tracks; contrast alternates closer and more distant matches. Live Smart DJ samples matching tracks and searches again after each song. Initial indexing runs in the background.">История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Живой Smart DJ выбирает случайно из подходящих по звучанию и перестраивает поиск после каждой песни. Первый анализ выполняется в фоне.</div>
           </div>
           <label for="pulseflowPolicy" data-ru="Режим подбора" data-en="Selection mode">Режим подбора</label>
-          <select id="pulseflowPolicy"><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
+          <select id="pulseflowPolicy"><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="live" data-ru="Живой Smart DJ — больше неожиданности" data-en="Live Smart DJ — more surprises">Живой Smart DJ — больше неожиданности</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
           <p id="pulseflowStatus" role="status" aria-live="polite"></p>
           <button type="button" class="btn-minimal primary" id="pulseflowIndex" data-ru="Обновить индекс фонотеки" data-en="Update library index">Обновить индекс фонотеки</button>
           <button type="button" class="btn-minimal" id="pulseflowCancel" hidden data-ru="Остановить анализ" data-en="Stop indexing">Остановить анализ</button>
@@ -929,7 +929,7 @@
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
               <label for="onlineCoversSwitch" data-en="Find track covers online" data-ru="Искать обложки в интернете">Искать обложки в интернете</label>
-              <span class="fluid-row-hint" data-en="Search iTunes by artist and title as tracks appear. Saved covers remain when disabled." data-ru="Поиск в iTunes по исполнителю и названию при отображении треков. При отключении сохранённые обложки остаются.">Поиск в iTunes по исполнителю и названию при отображении треков. При отключении сохранённые обложки остаются.</span>
+              <span class="fluid-row-hint" data-en="Embedded artwork first, then iTunes and MusicBrainz. Disabling stops internet searches; saved covers remain." data-ru="Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.">Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineCoversSwitch"><span class="switch-slider round"></span></label></div>
           </div>
@@ -960,8 +960,12 @@
           </div>
           <p id="desktopPreferencesStatus" class="fluid-row-hint" role="status"></p>
           <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label"><label for="resourceSaverSwitch" data-en="Resource saver" data-ru="Экономия ресурсов">Экономия ресурсов</label><span class="fluid-row-hint" data-en="Stops decorative animation, skips extra BPM decoding and checks devices less often." data-ru="Останавливает декоративные анимации, отключает дополнительный анализ BPM и реже проверяет устройства.">Останавливает декоративные анимации, отключает дополнительный анализ BPM и реже проверяет устройства.</span></div>
-            <label class="switch-label"><input type="checkbox" id="resourceSaverSwitch"><span class="switch-slider round"></span></label>
+            <div class="fluid-row-label"><label for="performanceMode" data-en="Performance mode" data-ru="Режим производительности">Режим производительности</label><span id="performanceModeHint" class="fluid-row-hint" aria-live="polite"></span></div>
+            <select id="performanceMode" class="performance-mode-select">
+              <option value="full" data-en="Full effects" data-ru="Все эффекты">Все эффекты</option>
+              <option value="balanced" data-en="Balanced" data-ru="Сбалансированный">Сбалансированный</option>
+              <option value="maximum" data-en="Maximum savings" data-ru="Максимальная экономия">Максимальная экономия</option>
+            </select>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label"><label for="cleanTitlesSwitch" data-en="Hide download sites in titles" data-ru="Убирать сайты из названий">Убирать сайты из названий</label><span class="fluid-row-hint" data-en="Hides source links at the end of track titles. Files and tags stay unchanged; audio ads are not removed." data-ru="Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.">Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.</span></div>
@@ -1263,6 +1267,7 @@
   <script src="presence/memory.js"></script>
   <script src="presence/engine.js"></script>
   <script src="presence-engine.js"></script>
+  <script src="performance-mode.js"></script>
   <script src="app.js"></script>
   <script src="track-info.js"></script>
   <script src="pulseflow-settings.js"></script>

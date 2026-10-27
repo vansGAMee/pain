@@ -35,6 +35,10 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
    BrowserWindow.getAllWindows()[0].on('unresponsive',()=>globalThis.playbackMetrics.unresponsive++);
   });
   await page.reload();await page.waitForFunction(n=>window.painQueue?.tracks.length===n,library.tracks.length);
+  if(process.env.PAIN_TEST_POLICY){
+   await page.selectOption('#pulseflowPolicy',process.env.PAIN_TEST_POLICY,{force:true});
+   await page.reload();await page.waitForFunction(policy=>window.painQueue?.pulseflowPolicy===policy,process.env.PAIN_TEST_POLICY);
+  }
   await page.evaluate(()=>location.hash='library');
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:Number(process.env.PAIN_CPU_SLOWDOWN)||4});
   await page.locator(`tr[data-track-id="${library.tracks.find(t=>t.mime==='audio/mpeg').id}"]`).click();
@@ -44,9 +48,9 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
   const measurements=[];
   for(const view of process.env.PAIN_TEST_VIEWS?.split(',')||['library','player','home']){
    await page.evaluate(v=>{window.longTasks=[];window.heartbeat.max=0;location.hash=v;},view);
-   if(process.env.PAIN_TEST_PULSEFLOW==='true')await page.evaluate(v=>{
-    const q=window.painQueue;q.pulseflowPolicy=v==='home'?'personal':v==='player'?'contrast':'smooth';q.pulseflowPlan=null;q.cancelPendingSelection();
-   },view);
+   if(process.env.PAIN_TEST_PULSEFLOW==='true')await page.evaluate(({v,policy})=>{
+    const q=window.painQueue;q.pulseflowPolicy=policy||(v==='home'?'personal':v==='player'?'contrast':'smooth');q.pulseflowPlan=null;q.cancelPendingSelection();
+   },{v:view,policy:process.env.PAIN_TEST_POLICY});
    console.log('VIEW',view);
    let expectedPreview=[];
    if(view==='home'&&process.env.PAIN_TEST_PULSEFLOW==='true'){
@@ -81,7 +85,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
    }
    if(process.env.PAIN_TEST_PULSEFLOW==='true'){
     const method=await page.evaluate(()=>window.painQueue.getLastTransition()?.explanation?.method);
-    const expected=view==='home'?'frequency-pulseflow-ties':'pulseflow-clap-faiss';
+    const expected=process.env.PAIN_TEST_POLICY==='live'?'pulseflow-uniform':view==='home'?'frequency-pulseflow-ties':'pulseflow-clap-faiss';
     if(method!==expected){
       console.log('PULSEFLOW STATUS',await page.evaluate(()=>fetch('/api/pulseflow/status').then(r=>r.json())));
       console.log('PULSEFLOW LOG',fs.existsSync(path.join(root,'data/pulseflow/serve.log'))?fs.readFileSync(path.join(root,'data/pulseflow/serve.log'),'utf8'):'not started');
@@ -118,15 +122,25 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
   },library.tracks.find(t=>t.mime==='audio/mpeg').id);
   assert.equal(analysis.status,200);assert.equal(analysis.profile.analysis.method,'stratified-pcm-v1');
   if(process.env.PAIN_TEST_TRACK_INFO==='true'){
-   const interesting=library.tracks.find(t=>/fontaines/i.test(t.artist)&&/^i love you$/i.test(t.title))||library.tracks.find(t=>/молчат дома/i.test(t.artist));
+   const interesting=process.env.PAIN_TEST_INFO_TRACK?library.tracks.find(t=>t.id===process.env.PAIN_TEST_INFO_TRACK):library.tracks.find(t=>/fontaines/i.test(t.artist)&&/^i love you$/i.test(t.title))||library.tracks.find(t=>/молчат дома/i.test(t.artist));
    assert.ok(interesting,'use a real library song for the information panel');
    await page.click('.nav-item[data-view="library"]');
    await page.waitForSelector('#view-library.active');
    await page.locator(`tr[data-track-id="${interesting.id}"]`).click();
    await page.waitForFunction(id=>window.painQueue.getCurrentTrack()?.id===id,interesting.id);
    assert.equal(await page.locator('#trackInfoPanel').isVisible(),true,'information column opens automatically');
+   await page.waitForSelector('#trackInfoContext .track-info-article');
    await page.waitForSelector('#trackInfoArticles .track-info-article',{timeout:45000});
    assert.ok(await page.locator('.track-info-article a[href^="https://"]').count());
+   if(interesting.id==='media:29027'){
+    assert.ok(await page.locator('#trackInfoArticles a[href$="/wiki/6arelyhuman"]').count(),'find the second credited artist');
+    assert.ok((await page.locator('#trackInfoContext').innerText()).includes('Sped Up'),'connect the other version in the real library');
+    const recordSection=page.locator('#trackInfoArticles .track-info-article').filter({has:page.locator('a[href^="https://musicbrainz.org/"]')});
+    if(await recordSection.count()){
+     const record=await recordSection.innerText();
+     assert.ok(record.includes('Slowed & Reverbed'));assert.ok(!record.includes('Sped Up'),'do not substitute another edition');
+    }else console.log('CATALOG unavailable; verified biography and local context remain available');
+   }
    await page.setViewportSize({width:1440,height:900});
    const layout=await page.locator('.main-stage').boundingBox(),panel=await page.locator('#trackInfoPanel').boundingBox();
    assert.ok(layout.x+layout.width<=panel.x+1,'reading column does not cover the main interface on a wide window');
@@ -135,6 +149,9 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
    assert.ok((await page.locator('#trackInfoPanel').boundingBox()).x>=0);
    await page.click('#trackInfoClose');
    assert.equal(await page.locator('#trackInfoToggle').getAttribute('aria-expanded'),'false');
+   await page.click('#trackInfoToggle');
+   await page.waitForSelector('#trackInfoContext .track-info-article');
+   await page.waitForFunction(()=>[...document.querySelectorAll('audio')].some(a=>!a.paused&&a.currentTime>1));
    console.log('TRACK INFO',interesting.title,interesting.artist);
   }
   const profile=await cdp.send('Profiler.stop');fs.writeFileSync('/tmp/pain-native-renderer-profile.json',JSON.stringify(profile.profile));

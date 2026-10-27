@@ -1,4 +1,4 @@
-/* Player navigation around upstream playlists. No scoring takes place here. */
+/* Player navigation around upstream playlists; optional uniform sampling, no new scores. */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.PulseFlowPlayer = factory();
@@ -10,6 +10,7 @@
     if (!response.ok) throw new Error(result.error || 'PulseFlow unavailable');
     return result;
   }
+  const isLive = q => q.pulseflowPolicy === 'live';
   const policyOf = q => q.pulseflowPolicy === 'contrast' ? 'contrast' : 'smooth';
   function seedOf(q, tracks) {
     if (q.pulseflowVibe) {
@@ -24,9 +25,20 @@
   function choice(q, row, seed, policy) {
     const index = q.tracks.findIndex(t => String(t.id) === String(row.id));
     const personal = q.pulseflowPolicy === 'personal';
-    return { index, track: q.tracks[index], reasons: [personal ? 'История + PulseFlow' : policy === 'contrast' ? 'PulseFlow: contrast' : 'PulseFlow: smooth'],
-      explanation: { method: personal ? 'frequency-pulseflow-ties' : 'pulseflow-clap-faiss', policy,
+    return { index, track: q.tracks[index], reasons: [isLive(q) ? 'Живой Smart DJ' : personal ? 'История + PulseFlow' : policy === 'contrast' ? 'PulseFlow: contrast' : 'PulseFlow: smooth'],
+      explanation: { method: isLive(q) ? 'pulseflow-uniform' : personal ? 'frequency-pulseflow-ties' : 'pulseflow-clap-faiss', policy,
         ...(personal ? {plays:q.completedCounts().get(String(row.id)) || 0} : {}), score: row.score, seedId: seed.id, referenceTitle: seed.title } };
+  }
+  // Uniform sampling without replacement using the queue's existing seeded RNG.
+  // Copy the RNG cursor so preview/prefetch never advances real navigation.
+  function sample(rows, q, length) {
+    const remaining = [...new Map(rows.map(row=>[String(row.id),row])).values()], selected = [];
+    const rng = { smartSeed:q.smartSeed, smartStep:q.smartStep, randomChoice:q.randomChoice };
+    while (remaining.length && selected.length < length) {
+      const index = rng.randomChoice(remaining.map((_,i)=>i));
+      selected.push(remaining.splice(index,1)[0]); rng.smartStep++;
+    }
+    return selected;
   }
   async function next(q, query = request) {
     q.forwardHistory = q.forwardHistory.filter(i => !q.isExcluded(q.tracks[i]?.id));
@@ -48,6 +60,7 @@
     const eligible = new Set(candidates);
     let plan = q.pulseflowPlan;
     if (!plan || plan.policy !== policy || plan.vibeKey !== vibeKey || Boolean(plan.personal) !== personal) plan = null;
+    if (isLive(q) && !plan?.preview) plan = null;
     if (plan) plan = { ...plan, remaining: plan.remaining.filter(t => allEligible.has(String(t.id))) };
     // A Home playlist was explicitly chosen by the listener: finish its displayed
     // order, then continue normal selection over the rest of the library.
@@ -59,7 +72,8 @@
       // Upstream default playlist length is 20. Keep the returned sequence:
       // requesting length=1 on every Next would erase the contrast alternation.
       const result = await query({ seed: String(seed.id), eligible: [...eligible], length: 20, policy });
-      plan = { seed, policy, personal, vibeKey, remaining: result.tracks };
+      const rows = isLive(q) ? sample(result.tracks.filter(row=>eligible.has(String(row.id))), q, 1) : result.tracks;
+      plan = { seed, policy, personal, vibeKey, remaining: rows };
     }
     const row = plan.remaining[0];
     if (!row) throw new Error('No indexed audio in the eligible queue');
@@ -91,9 +105,10 @@
       }
       return result;
     }
-    const result = await query({ seed: String(seed.id), eligible: allowed.map(t => String(t.id)), length, policy });
+    const result = await query({ seed: String(seed.id), eligible: allowed.map(t => String(t.id)), length: isLive(q) ? 20 : length, policy });
     const library = new Map(allowed.map(t => [String(t.id), t]));
-    return result.tracks.map(row => {
+    const rows = isLive(q) ? sample(result.tracks.filter(row=>library.has(String(row.id))),q,length) : result.tracks;
+    return rows.map(row => {
       const track = library.get(String(row.id));
       if (!track) throw new Error('PulseFlow returned an ineligible track');
       const chosen = choice(q, row, seed, policy);

@@ -47,8 +47,8 @@ function createWindow() {
   const hideToTray = event => {
     if (!quitting && tray && !tray.isDestroyed()) { event.preventDefault(); mainWindow.hide(); }
   };
-  // Minimize remains visible to the window manager; only Close uses the tray.
   mainWindow.on('close', hideToTray);
+  mainWindow.on('minimize', hideToTray);
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.once('ready-to-show', showWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

@@ -11,6 +11,22 @@
   const paragraphs=text=>String(text||'').split('\n').filter(Boolean).map(p=>`<p>${escape(p)}</p>`).join('');
   return `<section class="track-info-article"><h3>${labels[article.kind]||''}</h3><h4>${escape(article.title)}</h4>${paragraphs(article.text)}${(article.stories||[]).map(story=>`<details class="track-info-story" open><summary>${escape(story.heading)}</summary>${paragraphs(story.text)}</details>`).join('')}<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${t('Читать в Википедии','Read on Wikipedia')}${article.language==='en'?' · EN':''}</a>${article.offline?`<small>${t('Сохранённая версия','Saved version')}</small>`:''}</section>`;
  }
+ function catalogSection(record){
+  if(!record||!/^https:\/\/musicbrainz\.org\/recording\/[0-9a-f-]+$/i.test(record.source||''))return '';
+  const releases=record.releases||[],first=record['first-release-date'];
+  const tags=(record.tags||[]).map(tag=>tag.name).filter(Boolean).slice(0,5);
+  const facts=[
+   [t('Исполнитель в каталоге','Catalog artist'),record.artist],
+   [t('Первый известный выпуск','Earliest documented release'),first],
+   [t('Издания с этой записью','Releases featuring this recording'),[...new Set(releases.map(r=>r.title))].slice(0,3).join(' · ')],
+   [t('Жанры и теги слушателей','Listener genres and tags'),tags.join(' · ')]
+  ].filter(([,value])=>value);
+  return `<section class="track-info-article"><h3>${record.possible?t('Возможная запись: совпали название и длительность','Possible recording: title and duration match'):record.relatedVersion?t('Другая версия этой песни в каталоге','Another edition of this song in the catalog'):t('Паспорт записи','Inside the recording')}</h3><h4>${escape(record.title)}</h4><dl>${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl><a href="${escape(record.source)}" target="_blank" rel="noopener noreferrer">MusicBrainz · ${t('участники и издания','credits and releases')}</a></section>`;
+ }
+ function contextSection(card){
+  const sources={title:t('По пометке в названии','From the version label'),library:t('Из твоей фонотеки','From your library'),history:t('Из сохранённой истории','From your listening history')};
+  return `<section class="track-info-article"><h3>${escape(card.heading)}</h3>${String(card.text||'').split('\n').filter(Boolean).map(p=>`<p>${escape(p)}</p>`).join('')}<small>${sources[card.source]||''}</small></section>`;
+ }
  async function render(){
   clearTimeout(timer);controller?.abort();const generation=++ticket;
   if(panel.hidden)return;
@@ -24,26 +40,33 @@
    [t('Длительность','Duration'),seconds?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:null],
    [t('Год','Year'),track.year],[t('Жанр','Genre'),track.genre]
   ].filter(([,v])=>v);
-  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoHistory"></div>`;
+  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
   panel.scrollTop=0;controller=new AbortController();
-  fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
+  fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1&lang=${ru()?'ru':'en'}`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
    if(!history||generation!==ticket)return;
+   document.getElementById('trackInfoContext').innerHTML=(history.cards||[]).map(contextSection).join('');
    const date=stamp=>new Date(stamp).toLocaleDateString(ru()?'ru-RU':'en-US',{day:'numeric',month:'long',year:'numeric'});
    const facts=[[t('Прослушиваний','Listens'),history.plays]];
    if(history.heard)facts.push([t('Вместе с песней','Time together'),`${Math.round(history.heard/60000)} ${t('мин','min')}`]);
    if(history.first)facts.push([t('Впервые в истории','First in your history'),date(history.first)]);
    if(history.last)facts.push([t('Последний раз','Last listened'),date(history.last)]);
    if(Number.isFinite(history.moment))facts.push([t('Любимый момент','Favourite moment'),`${Math.floor(history.moment/60)}:${String(Math.floor(history.moment%60)).padStart(2,'0')}`]);
-   document.getElementById('trackInfoHistory').innerHTML=`<section class="track-info-article"><h3>${t('Ваша история с этой песней','Your history with this song')}</h3><dl>${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl></section>`;
+   const meta=history.metadata||{},audio=history.audio;
+   const fileFacts=[[t('Исполнитель в файле','Artist in file'),meta.artist],[t('Альбом в файле','Album in file'),meta.album],[t('Год записи в тегах','Year in file tags'),meta.year],[t('Жанр в тегах','Genre in file tags'),meta.genre]];
+   if(audio){fileFacts.push([t('Формат звука','Audio format'),[audio.codec?.toUpperCase(),audio.sampleRate?`${audio.sampleRate/1000} kHz`:null,audio.bitrate?`${Math.round(audio.bitrate/1000)} kbps`:null].filter(Boolean).join(' · ')]);}
+   const localDetails=fileFacts.filter(([,v])=>v);
+   const detailsHtml=localDetails.length?`<section class="track-info-article"><h3>${t('Что хранится в аудиофайле','Inside your audio file')}</h3><dl>${localDetails.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl></section>`:'';
+   document.getElementById('trackInfoHistory').innerHTML=detailsHtml+`<section class="track-info-article"><h3>${t('Ваша история с этой песней','Your history with this song')}</h3><dl>${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl></section>`;
   }).catch(()=>{});
   try{
    const response=await fetch(`/api/track-info/${encodeURIComponent(track.id)}?lang=${ru()?'ru':'en'}`,{signal:controller.signal});
    if(!response.ok)throw new Error('Unavailable');
    const data=await response.json();if(generation!==ticket)return;
    const articles=(data.articles||[]).map(section).join('');
-   document.getElementById('trackInfoArticles').innerHTML=articles?`${articles}<p class="track-info-credit">${t('Текст: Википедия, сокращённые отрывки.','Text: Wikipedia, shortened excerpts.')} <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA</a></p>`:
-    `<p class="track-info-status">${data.unavailable?t('Источник сейчас недоступен. Сведения из файла показаны выше.','The source is unavailable. File details are shown above.'):data.missingArtist?t('По названию и имени файла подтверждённой статьи не найдено. Указанный в тегах исполнитель поможет уточнить поиск.','No matching article found by title or filename. Artist tags help identify the recording.'):t('Подтверждённой статьи пока нет. Сведения из файла показаны выше.','No matching article yet. File details are shown above.')}</p><button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button>`;
+   const catalog=catalogSection(data.catalog);
+   document.getElementById('trackInfoArticles').innerHTML=(articles?`${articles}<p class="track-info-credit">${t('Текст: Википедия, сокращённые отрывки.','Text: Wikipedia, shortened excerpts.')} <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA</a></p>`:
+    `<details class="track-info-story"><summary>${data.unavailable?t('Онлайн-источники пока недоступны','Online sources are currently unavailable'):t('Отдельная статья пока не найдена','No matching article yet')}</summary><p class="track-info-status">${t('Ниже — контекст из названия, фонотеки и сохранённой истории.','Below is context from the title, your library and listening history.')}</p><button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button></details>`)+catalog;
   }catch(error){if(generation!==ticket||error.name==='AbortError')return;document.getElementById('trackInfoArticles').innerHTML=`<p class="track-info-status">${t('Не удалось загрузить историю. Проверьте подключение.','Could not load the story. Check your connection.')}</p><button type="button" class="btn-minimal" data-info-retry>${t('Повторить','Retry')}</button>`;}
  }
  function open(value){panel.hidden=!value;document.querySelector('.app-layout').classList.toggle('track-info-open',value);button.setAttribute('aria-expanded',String(value));if(value)render();else{++ticket;clearTimeout(timer);controller?.abort();button.focus();}}

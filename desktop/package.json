@@ -1,6 +1,6 @@
 {
   "name": "pain-desktop",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "description": "Pain \u2014 Minimalist Audio Player & Sync Companion for Windows & Linux",
   "main": "src/main.js",
   "bin": "src/server.js",

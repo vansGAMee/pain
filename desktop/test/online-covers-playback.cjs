@@ -18,6 +18,17 @@ const assert = require('node:assert/strict');
     app = await _electron.launch({ executablePath: require('electron'), args: [path.resolve(__dirname, '..')], env });
     const page = await app.firstWindow();
     const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      window.activeAnalysers=0;
+      const create=AudioContext.prototype.createAnalyser;
+      AudioContext.prototype.createAnalyser=function(){
+        const node=create.call(this),disconnect=node.disconnect.bind(node);let disposed=false;
+        window.activeAnalysers++;
+        node.disconnect=(...args)=>{if(!disposed){disposed=true;window.activeAnalysers--;}return disconnect(...args);};
+        return node;
+      };
+    });
+    await page.reload();
     await page.waitForFunction(n => window.painQueue?.tracks.length === n, library.tracks.length);
     await page.evaluate(() => { location.hash = 'library'; });
     await page.evaluate(() => {
@@ -36,14 +47,39 @@ const assert = require('node:assert/strict');
       await page.locator(`tr[data-track-id="${track.id}"]`).click();
       await page.waitForFunction(id => window.painQueue.getCurrentTrack()?.id === id && [...document.querySelectorAll('audio')].some(a => !a.paused && a.currentTime > 0.5 && a.readyState >= 2), track.id, { timeout: 8000 });
     }
+    const modes=[],analysers={};
+    for (const mode of ['full','balanced','maximum']) {
+      await page.evaluate(value => {
+        const input=document.getElementById('performanceMode');input.value=value;input.dispatchEvent(new Event('change'));
+      },mode);
+      await page.waitForFunction(async value => (await fetch('/api/resource-saver').then(r=>r.json())).mode===value,mode);
+      assert.equal(await page.locator('html').getAttribute('data-performance-mode'),mode);
+      await page.locator('#bottomNextBtn').click();
+      await page.waitForFunction(()=>[...document.querySelectorAll('audio')].some(a=>!a.paused&&a.currentTime>.5),null,{timeout:8000});
+      modes.push(mode);analysers[mode]=await page.evaluate(()=>window.activeAnalysers);
+    }
+    assert.ok(analysers.maximum<analysers.full,JSON.stringify(analysers));
+    await page.reload();
+    await page.waitForFunction(()=>document.documentElement.dataset.performanceMode==='maximum');
+    await page.evaluate(()=>location.hash='library');
+    await page.locator(`tr[data-track-id="${tracks[0].id}"]`).click();
+    await page.waitForFunction(()=>[...document.querySelectorAll('audio')].some(a=>!a.paused&&a.currentTime>.5));
     await page.evaluate(() => {
       const toggle = document.getElementById('onlineCoversSwitch');
       toggle.checked = false; toggle.dispatchEvent(new Event('change'));
     });
     await page.waitForTimeout(1000);
     assert.equal(await page.evaluate(() => [...document.querySelectorAll('audio')].some(a => !a.paused && a.currentTime > 1)), true);
+    await page.evaluate(()=>fetch('/api/desktop-preferences',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'preferences'},body:JSON.stringify({tray:true})}).then(r=>{if(!r.ok)throw Error('Tray unavailable');}));
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].minimize());
+    await page.waitForTimeout(500);
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false,'minimize hides to the tray');
+    await app.evaluate(({app})=>app.emit('activate'));
+    await page.waitForTimeout(300);
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true,'activation restores the player');
+    assert.equal(await page.evaluate(()=>[...document.querySelectorAll('audio')].some(a=>!a.paused&&a.currentTime>1)),true,'tray never stops playback');
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ tracks: library.tracks.length, coverReplyMs: Math.round(elapsed), playbackAndSwitching: 'passed', disablingWhilePlaying: 'passed', errors }));
+    console.log(JSON.stringify({ tracks: library.tracks.length, coverReplyMs: Math.round(elapsed), playbackAndSwitching: 'passed', disablingWhilePlaying: 'passed', modes, analysers, tray:'passed', errors }));
   } finally {
     if (app) await app.close();
     fs.rmSync(root, { recursive: true, force: true });

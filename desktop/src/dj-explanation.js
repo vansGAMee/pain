@@ -1,6 +1,7 @@
 /* Translate the recorded decision, never recompute or invent a selection reason. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.DJExplanation=factory();})(globalThis,()=>{
   const copy={
+    'Живой Smart DJ':['Случайный выбор из подходящих по звучанию кандидатов PulseFlow. Уже проигранные и исключённые треки отфильтрованы.','Uniform choice among matching PulseFlow candidates. Played and excluded tracks are filtered out.','Live Smart DJ'],
     'История + PulseFlow':['Сначала частота завершённых прослушиваний; при одинаковой частоте — оригинальный PulseFlow по звучанию.','Completed-listen frequency first; original PulseFlow selects by audio within equal counts.','History + PulseFlow'],
     'PulseFlow: smooth':['Оригинальный PulseFlow: ближайшие треки по CLAP-эмбеддингам звука и косинусному сходству в FAISS.','Original PulseFlow: nearest audio CLAP embeddings by FAISS cosine similarity.','PulseFlow: smooth'],
     'PulseFlow: contrast':['Оригинальный PulseFlow: чередование ближних и дальних результатов внутри найденного набора FAISS.','Original PulseFlow: alternating nearer and farther results within the retrieved FAISS candidate set.','PulseFlow: contrast'],
