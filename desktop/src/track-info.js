@@ -27,6 +27,23 @@
   const sources={title:t('По пометке в названии','From the version label'),library:t('Из твоей фонотеки','From your library'),history:t('Из сохранённой истории','From your listening history')};
   return `<section class="track-info-article"><h3>${escape(card.heading)}</h3>${String(card.text||'').split('\n').filter(Boolean).map(p=>`<p>${escape(p)}</p>`).join('')}<small>${sources[card.source]||''}</small></section>`;
  }
+ function showGenres(data){
+  const box=document.getElementById('trackInfoGenres');if(!box)return;
+  const names=data?.names||[],tags=data?.tags||[];if(!names.length&&!tags.length){box.innerHTML='';return;}
+  const labels={store:t('Жанр каталога · Apple Music','Catalog genre · Apple Music'),file:t('Жанры из тегов файла','Genres from file tags'),recording:t('Жанры записи · MusicBrainz','Recording genres · MusicBrainz'),album:t('Жанры альбома · MusicBrainz','Album genres · MusicBrainz'),original:t('Жанры оригинальной песни · MusicBrainz','Original song genres · MusicBrainz')};
+  let source='';try{const u=new URL(data.source);if(u.protocol==='https:'&&/^(?:(?:ru|en)\.wikipedia\.org|musicbrainz\.org|music\.apple\.com|itunes\.apple\.com|www\.deezer\.com)$/.test(u.hostname))source=u.href;}catch(_){}
+  const label=(labels[data.scope]||t('Опубликованные жанры записи','Published recording genres')).replace('MusicBrainz',source.includes('wikipedia.org')?t('Википедия','Wikipedia'):source.includes('deezer.com')?'Deezer':'MusicBrainz');
+  box.innerHTML=`${names.length?`<div class="track-genres">${names.map(name=>`<span>${escape(name)}</span>`).join('')}</div>`:''}<small class="track-genres-source">${escape(label)}${source?` · <a href="${escape(source)}" target="_blank" rel="noopener noreferrer">${t('Источник','Source')}</a>`:''}</small>${tags.length?`<details class="track-info-story" open><summary>${t('Теги записи / издания','Recording / release tags')} · ${tags.length}</summary><div class="track-genres">${tags.map(tag=>`<span>${escape(tag)}</span>`).join('')}</div></details>`:''}`;
+  if(tags.length&&/^https:\/\/musicbrainz\.org\/(?:recording|release-group)\/[0-9a-f-]+$/i.test(data.tagSource||'')){
+   const link=document.createElement('a');link.href=data.tagSource;link.target='_blank';link.rel='noopener noreferrer';link.textContent=t('Источник тегов · MusicBrainz','Tag source · MusicBrainz');box.querySelector('details').appendChild(link);
+  }
+  const sources=(data.genreSources||[]).filter(s=>s.names?.length);
+  if(sources.length>1)box.innerHTML+=`<details class="track-info-story"><summary>${t('Откуда жанры','Genre sources')} · ${sources.length}</summary>${sources.map(s=>{
+   let u;try{u=new URL(s.source);}catch(_){return '';}
+   if(u.protocol!=='https:'||!/^(?:(?:ru|en)\.wikipedia\.org|musicbrainz\.org|music\.apple\.com|itunes\.apple\.com|www\.deezer\.com)$/.test(u.hostname))return '';
+   return `<p><a href="${escape(u.href)}" target="_blank" rel="noopener noreferrer">${escape(u.hostname)} · ${escape(s.scope==='album'?t('издание','release'):t('запись','recording'))}</a><br>${s.names.map(escape).join(', ')}</p>`;
+  }).join('')}</details>`;
+ }
  async function render(){
   clearTimeout(timer);controller?.abort();const generation=++ticket;
   if(panel.hidden)return;
@@ -40,12 +57,13 @@
    [t('Длительность','Duration'),seconds?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:null],
    [t('Год','Year'),track.year],[t('Жанр','Genre'),track.genre]
   ].filter(([,v])=>v);
-  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
+  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoGenres"></div><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
   panel.scrollTop=0;controller=new AbortController();
   fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1&lang=${ru()?'ru':'en'}`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
    if(!history||generation!==ticket)return;
    document.getElementById('trackInfoContext').innerHTML=(history.cards||[]).map(contextSection).join('');
+   showGenres(history.genres);
    const date=stamp=>new Date(stamp).toLocaleDateString(ru()?'ru-RU':'en-US',{day:'numeric',month:'long',year:'numeric'});
    const facts=[[t('Прослушиваний','Listens'),history.plays]];
    if(history.heard)facts.push([t('Вместе с песней','Time together'),`${Math.round(history.heard/60000)} ${t('мин','min')}`]);
@@ -75,5 +93,6 @@
  body.addEventListener('click',event=>{if(event.target.closest('[data-info-retry]'))render();});
  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){open(false);event.stopPropagation();}});
  window.addEventListener('pain:track',event=>{if(!panel.hidden&&event.detail?.id!==lastId){controller?.abort();++ticket;clearTimeout(timer);timer=setTimeout(render,250);}});
+ window.addEventListener('pain:genres',event=>{if(!panel.hidden&&event.detail?.id===lastId)showGenres(event.detail);});
  open(true);
 })();

@@ -16,6 +16,8 @@
   <link rel="stylesheet" href="form-theme.css">
   <link rel="stylesheet" href="font-settings.css">
   <link rel="stylesheet" href="track-info.css">
+  <link rel="stylesheet" href="genre-profile.css">
+  <link rel="stylesheet" href="insight-charts.css">
 </head>
 <body>
 
@@ -324,6 +326,7 @@
               <div class="hero-meta" id="customPlaylistMeta">0 tracks</div>
               <div class="playlist-actions-row">
                 <button class="btn-minimal primary" id="playPlaylistBtn" data-en="Play All" data-ru="Слушать всё">Play All</button>
+                <button class="btn-minimal" id="addPlaylistTracksBtn" data-en="Add songs" data-ru="Добавить треки">Добавить треки</button>
                 <button class="btn-minimal danger-outline" id="deletePlaylistBtn" data-en="Delete Playlist" data-ru="Удалить плейлист">Delete Playlist</button>
               </div>
             </div>
@@ -452,6 +455,15 @@
             </div>
           </div>
 
+          <section class="genre-profile" id="genreProfile" aria-labelledby="genreProfileHeading">
+            <div class="genre-profile-heading">
+              <div><h2 id="genreProfileHeading" data-ru="Твой музыкальный спектр" data-en="Your musical spectrum">Твой музыкальный спектр</h2><p class="chart-sub" data-ru="Из музыки, которой ты действительно уделяешь время." data-en="From the music you actually spend time with.">Из музыки, которой ты действительно уделяешь время.</p></div>
+              <div class="genre-range" role="group" aria-label="Период / Period"><button type="button" data-genre-range="all" aria-pressed="true" data-ru="Всё время" data-en="All time">Всё время</button><button type="button" data-genre-range="28" aria-pressed="false" data-ru="28 дней" data-en="28 days">28 дней</button></div>
+            </div>
+            <div id="genreProfileBody" aria-busy="true"><p class="chart-sub" data-ru="Собираем твой профиль…" data-en="Loading your profile…">Собираем твой профиль…</p></div>
+            <p id="genreProfileStatus" class="chart-sub" aria-live="polite"></p>
+          </section>
+
           <!-- Charts Grid: 7-Day Pulse & 24-Hour Clock -->
           <div class="insights-charts-grid">
             <div class="chart-card">
@@ -513,6 +525,14 @@
               </div>
             </div>
           </div>
+          <section class="insight-gallery" id="insightGallery" aria-labelledby="insightGalleryTitle" aria-busy="false">
+            <div class="insight-gallery-heading">
+              <div><h2 id="insightGalleryTitle" data-ru="История в деталях" data-en="Your history in detail">История в деталях</h2><p data-ru="20 графиков о том, как слушаешь, открываешь и возвращаешься к музыке." data-en="20 charts about how you listen, discover and return to music.">20 графиков о том, как слушаешь, открываешь и возвращаешься к музыке.</p></div>
+              <div class="insight-gallery-controls"><div role="group" aria-label="Период / Period"><button type="button" data-insight-range="28" aria-pressed="false" data-ru="28 дней" data-en="28 days">28 дней</button><button type="button" data-insight-range="90" aria-pressed="false" data-ru="90 дней" data-en="90 days">90 дней</button><button type="button" data-insight-range="all" aria-pressed="true" data-ru="Всё время" data-en="All time">Всё время</button></div><button type="button" data-insight-replay title="Повторить анимацию / Replay animation" aria-label="Повторить анимацию / Replay animation">↻</button></div>
+            </div>
+            <div class="insight-gallery-filters" role="group" aria-label="Графики / Charts"><button type="button" data-insight-group="all" aria-pressed="true" data-ru="Все графики" data-en="All charts">Все графики</button><button type="button" data-insight-group="time" aria-pressed="false" data-ru="Ритм жизни" data-en="Life rhythm">Ритм жизни</button><button type="button" data-insight-group="discovery" aria-pressed="false" data-ru="Открытия" data-en="Discovery">Открытия</button><button type="button" data-insight-group="listening" aria-pressed="false" data-ru="Как слушаешь" data-en="Listening">Как слушаешь</button><button type="button" data-insight-group="habits" aria-pressed="false" data-ru="Привычки" data-en="Habits">Привычки</button></div>
+            <div class="insight-gallery-grid" id="insightGalleryGrid"></div><p id="insightGalleryStatus" aria-live="polite"></p>
+          </section>
         </section>
 
         <!-- VIEW 6: DEVICES & SYNC -->
@@ -935,6 +955,20 @@
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
+              <label for="onlineGenresSwitch" data-en="Find song genres online" data-ru="Искать жанры песен в интернете">Искать жанры песен в интернете</label>
+              <span class="fluid-row-hint" data-en="File tags first, then Wikipedia, MusicBrainz, Apple Music and Deezer. Searches run in the background; saved results remain when disabled." data-ru="Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.">Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineGenresSwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="showTrackGenresSwitch" data-en="Show song genres and tags" data-ru="Показывать жанры и теги трека">Показывать жанры и теги трека</label>
+              <span class="fluid-row-hint" data-en="Show or hide the genre and tag block in the song sidebar." data-ru="Показать или скрыть блок жанров и тегов в боковой карточке песни.">Показать или скрыть блок жанров и тегов в боковой карточке песни.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="showTrackGenresSwitch" checked><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
               <label for="saveHistorySwitch" data-en="Save listening history" data-ru="Сохранять историю">Сохранять историю</label>
               <span class="fluid-row-hint" data-en="When off, new listens and skips do not affect statistics or taste. Existing history and likes stay." data-ru="Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.">Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.</span>
             </div>
@@ -1155,6 +1189,14 @@
     </div>
   </div>
 
+  <dialog class="playlist-picker" id="playlistTrackPicker" aria-labelledby="playlistPickerTitle">
+    <header><h2 id="playlistPickerTitle">Добавить треки</h2><button type="button" class="modal-close-btn" id="playlistPickerClose" aria-label="Закрыть / Close">×</button></header>
+    <input class="modal-input playlist-picker-search" id="playlistPickerSearch" type="search" placeholder="Поиск по песне, исполнителю или альбому" aria-label="Поиск треков / Search songs">
+    <div class="playlist-picker-tools"><span id="playlistPickerCount" aria-live="polite"></span><button type="button" class="btn-minimal" id="playlistPickerSelect" data-ru="Выбрать найденное" data-en="Select matches">Выбрать найденное</button></div>
+    <div class="playlist-picker-list" id="playlistPickerList"></div>
+    <footer><button type="button" class="btn-minimal" id="playlistPickerCancel" data-ru="Отмена" data-en="Cancel">Отмена</button><button type="button" class="btn-minimal primary" id="playlistPickerConfirm" disabled>Добавить</button></footer>
+  </dialog>
+
   <!-- 6. ADD TO PLAYLIST MODAL -->
   <div class="modal-backdrop" id="addToPlaylistModalBackdrop" style="display: none;">
     <div class="simple-modal-card">
@@ -1270,6 +1312,8 @@
   <script src="performance-mode.js"></script>
   <script src="app.js"></script>
   <script src="track-info.js"></script>
+  <script src="genre-profile.js"></script>
+  <script src="insight-charts.js"></script>
   <script src="pulseflow-settings.js"></script>
   <script src="dj-explanation.js"></script>
   <script src="dj-panel.js"></script>

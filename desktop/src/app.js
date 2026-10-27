@@ -1229,6 +1229,7 @@
     renderCurrentView();
     if(state.theme==='form')document.querySelector('.views-viewport').scrollTop=0;
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
+    window.dispatchEvent(new CustomEvent('pain:view',{detail:viewName}));
   }
 
   function renderCurrentView() {
@@ -1451,6 +1452,8 @@
         openAddToPlaylistModal(track.id);
         return;
       }
+      const removeBtn=e.target.closest('.row-playlist-remove');
+      if(removeBtn){e.stopPropagation();removeBtn.disabled=true;changePlaylistTracks(contextInfo?.id,[track.id],true).finally(()=>{removeBtn.disabled=false;});return;}
 
       const uncacheBtn = e.target.closest('.row-uncache-btn');
       if (uncacheBtn) {
@@ -1539,7 +1542,7 @@
     appendBatch(firstBatchSize);
   }
 
-  function createTrackRow(track, index, enableDragAndDrop) {
+  function createTrackRow(track, index, enableDragAndDrop,contextInfo) {
     const isCurrent = state.currentTrackId === track.id;
     const isPlayingCurrent = isCurrent && state.isPlaying;
     const durationSec = Math.max(0, Number(track.duration) || 0) / 1000;
@@ -1584,9 +1587,9 @@
         <button class="row-more-btn" title="${state.lang === 'ru' ? 'В плейлист' : 'Add to Playlist'}">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-        <button class="row-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
+        ${contextInfo?.type==='playlist'?`<button class="row-playlist-remove" title="${state.lang==='ru'?'Убрать из плейлиста':'Remove from playlist'}" aria-label="${state.lang==='ru'?'Убрать из плейлиста':'Remove from playlist'}">×</button>`:`<button class="row-uncache-btn" title="${state.lang === 'ru' ? 'Удалить из кэша' : 'Delete from Cache'}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-        </button>
+        </button>`}
       </td>
     `;
     return tr;
@@ -1611,7 +1614,7 @@
     }
 
     appendTrackBatches(container, trackList,
-      (track, index) => createTrackRow(track, index, enableDragAndDrop), 24);
+      (track, index) => createTrackRow(track, index, enableDragAndDrop,contextInfo), 24);
   }
 
   function ensureGridDelegation(container) {
@@ -1935,18 +1938,72 @@
     renderTracksTable(DOM.playlistTableBody, plTracks, !duo, contextInfo);
   }
 
-  function createNewPlaylist(name) {
+  async function createNewPlaylist(name) {
     if (!name || !name.trim()) return;
     const newPl = {
-      id: 'pl_' + Date.now(),
+      id: 'pl_' + crypto.randomUUID(),
       name: name.trim(),
       trackIds: []
     };
     state.playlists.push(newPl);
-    savePlaylistsToServer();
+    if(!await savePlaylistsToServer()){state.playlists=state.playlists.filter(p=>p.id!==newPl.id);return false;}
     renderPlaylistsSidebar();
     switchView('playlist', newPl.id);
+    openPlaylistTrackPicker(newPl.id);return true;
   }
+
+  let playlistMutation=false,pickerPlaylistId=null,pickerSelected=new Set(),pickerRows=[],pickerTimer;
+  const picker=document.getElementById('playlistTrackPicker'),pickerList=document.getElementById('playlistPickerList'),pickerSearch=document.getElementById('playlistPickerSearch'),pickerConfirm=document.getElementById('playlistPickerConfirm');
+  const playlistTrackKey=t=>JSON.stringify([t.artist,t.title].map(s=>String(s||'').trim().normalize('NFKC').toLowerCase().replace(/\s+/g,' ')));
+  async function changePlaylistTracks(id,ids,remove=false){
+    if(playlistMutation)return false;const current=state.playlists.find(p=>p.id===id);if(!current)return false;
+    playlistMutation=true;
+    try{
+      const selected=new Set(ids.map(String)),byId=new Map(state.tracks.map(t=>[String(t.id),t])),tracks=[...selected].map(id=>byId.get(id)).filter(Boolean),next={...current};
+      if(current.duo===1){
+        const keys=new Set(tracks.map(playlistTrackKey));
+        next.sharedTracks=remove?(current.sharedTracks||[]).filter(t=>!keys.has(playlistTrackKey(t))):DuoPlaylist.pack([...(current.sharedTracks||[]),...tracks]).tracks;
+        next.trackIds=DuoPlaylist.resolve(next.sharedTracks,state.tracks).ids;
+      }else{
+        const list=remove?(current.trackIds||[]).filter(value=>!selected.has(String(value))):[...(current.trackIds||[]),...tracks.map(t=>t.id)];
+        next.trackIds=[...new Map(list.map(value=>[String(value),value])).values()];
+      }
+      const playlists=state.playlists.map(p=>p.id===id?next:p);
+      const response=await fetch('/api/playlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(playlists)});
+      if(!response.ok)throw Error('Playlist save failed');
+      state.playlists=playlists;renderPlaylistsSidebar();if(state.currentView==='playlist'&&state.activePlaylistId===id)renderCustomPlaylistView();
+      showToast(state.lang==='ru'?(remove?'Трек убран из плейлиста.':`Добавлено треков: ${tracks.length}.`):(remove?'Removed from playlist.':`Songs added: ${tracks.length}.`));return true;
+    }catch(error){showToast(state.lang==='ru'?'Не удалось сохранить плейлист. Попробуйте ещё раз.':'Could not save the playlist. Please try again.');return false;}
+    finally{playlistMutation=false;}
+  }
+  function updatePickerCount(){
+    const ru=state.lang==='ru';document.getElementById('playlistPickerCount').textContent=ru?`Выбрано: ${pickerSelected.size}`:`Selected: ${pickerSelected.size}`;
+    pickerConfirm.textContent=(ru?'Добавить':'Add')+(pickerSelected.size?' · '+pickerSelected.size:'');pickerConfirm.disabled=!pickerSelected.size||playlistMutation;
+  }
+  function renderPlaylistPicker(){
+    cancelTrackRender(pickerList);pickerList.replaceChildren();const query=pickerSearch.value.trim().toLocaleLowerCase(),pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
+    pickerRows=state.tracks.filter(t=>!query||[t.title,t.artist,t.album].some(s=>String(s||'').toLocaleLowerCase().includes(query)));
+    if(!pickerRows.length){pickerList.textContent=state.lang==='ru'?'Ничего не найдено. Попробуйте другой запрос.':'No matches. Try another search.';return;}
+    appendTrackBatches(pickerList,pickerRows,track=>{
+      const row=document.createElement('label');row.className='playlist-pick-row';const added=already.has(String(track.id));
+      row.innerHTML=`<input type="checkbox" value="${escapeHtml(track.id)}" ${added||pickerSelected.has(String(track.id))?'checked':''} ${added?'disabled':''}><span><strong>${escapeHtml(displayTrackTitle(track))}</strong><small>${escapeHtml(track.artist||'—')}</small></span><span>${added?(state.lang==='ru'?'В плейлисте':'Added'):formatTime(Number(track.duration||0)/1000)}</span>`;return row;
+    },24);updatePickerCount();
+  }
+  function openPlaylistTrackPicker(id){
+    const pl=state.playlists.find(p=>p.id===id);if(!pl)return;pickerPlaylistId=id;pickerSelected=new Set();pickerSearch.value='';
+    document.getElementById('playlistPickerTitle').textContent=(state.lang==='ru'?'Добавить в «':'Add to “')+pl.name+(state.lang==='ru'?'»':'”');
+    pickerSearch.placeholder=state.lang==='ru'?'Песня, исполнитель или альбом':'Song, artist or album';renderPlaylistPicker();picker.showModal();pickerSearch.focus();
+  }
+  document.getElementById('addPlaylistTracksBtn').onclick=()=>openPlaylistTrackPicker(state.activePlaylistId);
+  document.getElementById('playlistPickerClose').onclick=document.getElementById('playlistPickerCancel').onclick=()=>picker.close();
+  picker.addEventListener('close',()=>{clearTimeout(pickerTimer);cancelTrackRender(pickerList);document.getElementById('addPlaylistTracksBtn')?.focus();});
+  pickerSearch.addEventListener('input',()=>{clearTimeout(pickerTimer);pickerTimer=setTimeout(renderPlaylistPicker,120);});
+  pickerList.addEventListener('change',event=>{const input=event.target.closest('input[type="checkbox"]');if(!input)return;if(input.checked)pickerSelected.add(input.value);else pickerSelected.delete(input.value);updatePickerCount();});
+  document.getElementById('playlistPickerSelect').onclick=()=>{
+    const pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
+    for(const track of pickerRows)if(!already.has(String(track.id)))pickerSelected.add(String(track.id));renderPlaylistPicker();
+  };
+  pickerConfirm.onclick=async()=>{pickerConfirm.disabled=true;if(await changePlaylistTracks(pickerPlaylistId,[...pickerSelected]))picker.close();updatePickerCount();};
 
   function deleteActivePlaylist() {
     if (!state.activePlaylistId) return;
@@ -1978,14 +2035,9 @@
           <span>${escapeHtml(pl.name)}</span>
           <span style="font-size: 11px; opacity: 0.7;">${hasTrack ? '✓ Added' : '+ Add'}</span>
         `;
-        btn.addEventListener('click', () => {
-          if (!pl.trackIds) pl.trackIds = [];
-          if (!pl.trackIds.includes(trackId)) {
-            pl.trackIds.push(trackId);
-            savePlaylistsToServer();
-            renderPlaylistsSidebar();
-          }
-          closeAddToPlaylistModal();
+        btn.addEventListener('click', async () => {
+          if(hasTrack){closeAddToPlaylistModal();return;}btn.disabled=true;
+          if(await changePlaylistTracks(pl.id,[trackId]))closeAddToPlaylistModal();else btn.disabled=false;
         });
         DOM.addToPlaylistList.appendChild(btn);
       });
@@ -2001,13 +2053,15 @@
 
   async function savePlaylistsToServer() {
     try {
-      await fetch('/api/playlists', {
+      const response=await fetch('/api/playlists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(state.playlists)
       });
+      if(!response.ok)throw Error('Save failed');return true;
     } catch (e) {
       console.warn('Failed to save playlists:', e);
+      showToast(state.lang==='ru'?'Не удалось сохранить плейлист.':'Could not save the playlist.');return false;
     }
   }
 
@@ -2048,6 +2102,7 @@
 
   // --- INSIGHTS / STATS VIEW ---
   function renderInsights() {
+    window.dispatchEvent(new Event('pain:insights'));
     const details = ListeningInsights.build(state.tracks, state.stats);
     const plays = details.plays;
     const now = new Date();
@@ -5323,11 +5378,11 @@
       if (e.target === DOM.newPlaylistModalBackdrop) closeNewPlaylistModal();
     });
 
-    DOM.newPlaylistConfirmBtn.addEventListener('click', () => {
+    DOM.newPlaylistConfirmBtn.addEventListener('click', async () => {
       const name = DOM.newPlaylistNameInput.value;
       if (name.trim()) {
-        createNewPlaylist(name);
-        closeNewPlaylistModal();
+        DOM.newPlaylistConfirmBtn.disabled=true;
+        try{if(await createNewPlaylist(name))closeNewPlaylistModal();}finally{DOM.newPlaylistConfirmBtn.disabled=false;}
       }
     });
 

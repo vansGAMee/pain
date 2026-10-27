@@ -27,7 +27,7 @@ function matches(page,name,artist,loose=false){
  if(title!==expected&&!(loose&&filenameParts.includes(title)))return false;
  return !artist||names(artist).some(a=>normalize(page.extract).includes(normalize(a)));
 }
-module.exports=function createInfoService(dir,{fetcher=fetch,localMedia,catalog,getTracks=()=>[]}={}){
+module.exports=function createInfoService(dir,{fetcher=fetch,localMedia,catalog,genres,getTracks=()=>[]}={}){
  const pending=new Map();
  const request=require('./source-fetch')({fetcher});
  async function article(name,artist,lang,loose=false,signal){
@@ -111,7 +111,7 @@ module.exports=function createInfoService(dir,{fetcher=fetch,localMedia,catalog,
   ]);
   const plays=(stats.plays||[]).filter(p=>p&&String(p.track)===String(track.id));
   const details=require('./listening-insights').build([track],{plays,slices:stats.slices});
-  return {cards:require('./track-context').build(media.track,getTracks(),details,lang),metadata:media.metadata||{},audio:media.audio||null,plays:details.behavior.qualified,heard:details.totalMs,first:details.plays[0]?.started||null,
+  return {genres:genres?.entry(track)||{names:require('./genre-profile-model').normalize(media.metadata?.genre||track.genre),scope:'file'},cards:require('./track-context').build(media.track,getTracks(),details,lang),metadata:media.metadata||{},audio:media.audio||null,plays:details.behavior.qualified,heard:details.totalMs,first:details.plays[0]?.started||null,
    last:details.plays.at(-1)?.started||null,moment:moments[String(track.id)]??null};
  };
  return info;

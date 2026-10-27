@@ -7,12 +7,13 @@ const { EventEmitter } = require('node:events');
 
 const source = fs.readFileSync(require.resolve('../src/main'), 'utf8');
 
-async function launch({ platform = 'linux', lock = true, ready = true, listening = true, trayEnabled = true, trayFailure } = {}) {
+async function launch({ platform = 'linux', lock = true, ready = true, listening = true, trayEnabled = true, trayFailure,wayland=false } = {}) {
   const calls = [], windows = [], trays = [], trayErrors = [], opened = [];
   const app = new EventEmitter(), server = new EventEmitter();
   const env = { PAIN_USER_DATA_DIR: '/isolated/pain-profile' };
+  if(wayland)env.WAYLAND_DISPLAY='wayland-test';
   const paths = { appData: '/isolated/app-data' };
-  let resolveReady, isReady = false, setTray;
+  let resolveReady, isReady = false, setTray,trayHost;
   const readyPromise = new Promise(resolve => { resolveReady = resolve; });
   app.setName = () => {};
   app.setPath = (key, value) => { paths[key] = value; };
@@ -78,6 +79,7 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
         assert.equal(env.OPEN_BROWSER, 'false');
         calls.push('server'); return () => server;
       }
+      if(name==='./linux-tray-host')return options=>{trayHost=options;return ()=>{};};
       throw new Error(`Unexpected native shell dependency: ${name}`);
     }
   });
@@ -85,7 +87,7 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
     isReady = true; resolveReady(); await readyPromise; await Promise.resolve();
   }
   if (ready) await becomeReady();
-  return { app, server, calls, windows, trays, trayErrors, opened, becomeReady, setTray: enabled => setTray(enabled) };
+  return { app, server, calls, windows, trays, trayErrors, opened, becomeReady, setTray: enabled => setTray(enabled),get trayHost(){return trayHost;} };
 }
 
 function request(window, eventName) {
@@ -93,6 +95,11 @@ function request(window, eventName) {
   window.emit(eventName, event);
   return event.defaultPrevented;
 }
+test('Wayland: an absent host keeps the window reachable and a new host replaces the stale icon',async()=>{
+ const s=await launch({wayland:true}),window=s.windows[0],old=s.trays[0];window.hide();
+ s.trayHost.onMissing();assert.equal(window.visible,true);assert.equal(request(window,'minimize'),false);
+ s.trayHost.onReady();assert.equal(old.destroyed,true);assert.equal(s.trays.length,2);assert.equal(request(window,'minimize'),true);
+});
 
 for (const platform of ['linux', 'win32']) {
   test(`${platform}: duplicate launch exits before Electron readiness, server or window creation`, async () => {

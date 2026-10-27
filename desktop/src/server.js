@@ -52,8 +52,14 @@ const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: 
 const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
 const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
 const catalog = require('./music-catalog')(DATA_DIR);
+const storeCatalog=require('./store-search');storeCatalog.configure(DATA_DIR);
+const loadGenreStats=()=>fs.promises.readFile(path.join(DATA_DIR,'stats.json'),'utf8').then(JSON.parse);
+const wikiGenres=require('./wiki-track-genres')(DATA_DIR);
+const deezerGenres=require('./deezer-genres')(DATA_DIR);
+const genres=require('./genre-service')(DATA_DIR,{localMedia,catalog,store:storeCatalog,wiki:wikiGenres,deezer:deezerGenres,getTracks:getLibraryTracks,loadStats:loadGenreStats});
 findOnlineCover.configure({ localMedia, catalog, dataDir: DATA_DIR });
-const trackInfo = require('./track-info-service')(DATA_DIR, { localMedia, catalog, getTracks:getLibraryTracks });
+const trackInfo = require('./track-info-service')(DATA_DIR, { localMedia, catalog, genres, getTracks:getLibraryTracks });
+const genreProfiles=new Map();
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
 const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
@@ -69,6 +75,8 @@ try { performanceMode = require('./performance-mode').normalize(JSON.parse(fs.re
 resourceSaverActive = performanceMode !== 'full';
 findOnlineCover.setMode(performanceMode);
 pulseflow.setBackgroundAllowed(performanceMode !== 'maximum');
+genres.setMode(performanceMode);
+setTimeout(()=>genres.seed().catch(()=>{}),15000).unref();
 let lastDjStatePostHash = '', lastDjStateResponseJson = null;
 
 // ==========================================
@@ -460,6 +468,7 @@ function getLibraryTracks() {
       libraryFileMtime = stat.mtimeMs;
       const parsed = JSON.parse(fs.readFileSync(libFile, 'utf8'));
       libraryTracksCache = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+      setImmediate(()=>genres.seed().catch(()=>{}));
     }
     return libraryTracksCache;
   } catch (e) {
@@ -623,6 +632,32 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname;
 
   if (pathname.startsWith('/api/pulseflow/')) { pulseflow.route(req, res, pathname); return; }
+  if(pathname==='/api/genres'||pathname.startsWith('/api/genres/track/')||pathname==='/api/taste-profile'){
+    const send=data=>{if(!res.destroyed){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}};
+    (async()=>{
+      await genres.ready;
+      if(pathname==='/api/genres'){
+        if(req.method==='POST')return send(await genres.setEnabled(url.searchParams.get('enabled')==='1'));
+        return send(genres.status());
+      }
+      if(req.method!=='GET'){res.writeHead(405);res.end();return;}
+      if(pathname.startsWith('/api/genres/track/')){
+        const id=decodeURIComponent(pathname.slice('/api/genres/track/'.length)),track=getLibraryTracks().find(t=>String(t.id)===id);
+        if(!track){res.writeHead(404);res.end();return;}
+        await genres.enqueue(track,true);return send({id,...(genres.entry(track)||{names:require('./genre-profile-model').normalize(track.genre),scope:'file'})});
+      }
+      const range=url.searchParams.get('range')==='28'?'28':'all';
+      const stamps=await Promise.all(['stats.json','library.json'].map(name=>fs.promises.stat(path.join(DATA_DIR,name)).then(s=>s.mtimeMs).catch(()=>0)));
+      const key=JSON.stringify([stamps,genres.status().revision,new Date().toDateString()]);
+      let saved=genreProfiles.get(range);
+      if(saved?.key!==key){
+        const [stats,entries]=await Promise.all([loadGenreStats().catch(()=>({})),genres.snapshot()]);
+        const tracks=getLibraryTracks(),details=require('./listening-insights').build(tracks,stats);
+        saved={key,data:require('./genre-profile-model').build(tracks,details,entries,range)};genreProfiles.set(range,saved);
+      }
+      send({...saved.data,status:genres.status()});
+    })().catch(()=>{if(!res.destroyed){res.writeHead(503);res.end('{}');}});return;
+  }
   if (pathname.startsWith('/api/track-info/') && req.method === 'GET') {
     let id;try{id=decodeURIComponent(pathname.slice('/api/track-info/'.length));}catch(_){res.writeHead(400);res.end();return;}
     const track=getLibraryTracks().find(t=>String(t.id)===id);
@@ -665,6 +700,7 @@ const server = http.createServer((req, res) => {
           resourceSaverActive = performanceMode !== 'full';
           findOnlineCover.setMode(performanceMode);
           pulseflow.setBackgroundAllowed(performanceMode !== 'maximum');
+          genres.setMode(performanceMode);
           fs.promises.writeFile(path.join(DATA_DIR,'performance-mode.json'), JSON.stringify({mode:performanceMode})).catch(()=>{});
         } catch (_) {}
         res.writeHead(200, { 'Content-Type': 'application/json' });

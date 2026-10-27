@@ -15,14 +15,18 @@ if (process.platform === 'linux') {
 }
 
 let mainWindow = null, tray = null, server = null, quitting = false;
+let trayWanted=false,trayHostReady=true,stopTrayHost;
+const wayland=process.platform==='linux'&&(process.env.XDG_SESSION_TYPE==='wayland'||!!process.env.WAYLAND_DISPLAY);
 const icon = path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png');
 function showWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show(); mainWindow.focus();
 }
-function setTray(enabled) {
-  if (enabled && !tray) {
+function setTray(enabled,refresh=false) {
+  trayWanted=enabled;
+  if (enabled && (!tray || refresh)) {
+    const previous=tray;
     const next = new Tray(icon);
     try {
       next.setToolTip('PAIN');
@@ -33,6 +37,7 @@ function setTray(enabled) {
       ]));
       next.on('click', showWindow); next.on('double-click', showWindow);
       tray = next;
+      previous?.destroy();
     } catch (error) { next.destroy(); throw error; }
   } else if (!enabled && tray) {
     showWindow(); tray.destroy(); tray = null;
@@ -45,7 +50,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true }
   });
   const hideToTray = event => {
-    if (!quitting && tray && !tray.isDestroyed()) { event.preventDefault(); mainWindow.hide(); }
+    if (!quitting && tray && !tray.isDestroyed() && (!wayland||trayHostReady)) { event.preventDefault(); mainWindow.hide(); }
   };
   mainWindow.on('close', hideToTray);
   mainWindow.on('minimize', hideToTray);
@@ -85,7 +90,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     else quitting = true;
   });
-  app.on('will-quit', () => { server?.pulseflow?.close(); tray?.destroy(); });
+  app.on('will-quit', () => { stopTrayHost?.();server?.pulseflow?.close(); tray?.destroy(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.whenReady().then(() => {
     process.env.OPEN_BROWSER = 'false';
@@ -129,5 +134,9 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     server.on('activate-window', showWindow);
     server.desktopPreferences.attachShell(setTray);
+    if(process.platform==='linux')stopTrayHost=require('./linux-tray-host')({
+      onReady(){trayHostReady=true;if(trayWanted)try{setTray(true,true);}catch(error){console.warn('[Tray] Could not restore icon:',error.message);}},
+      onMissing(){trayHostReady=false;if(trayWanted&&wayland)showWindow();}
+    });
   });
 }

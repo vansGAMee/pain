@@ -21,7 +21,7 @@
    if(!intervals.has(key))intervals.set(key,[]);
    intervals.get(key).push([s.at,Math.min(now,s.at+s.ms)]);
   }
-  const days=new Map(),hours=Array(24).fill(0),trackTime=new Map();let totalMs=0;
+  const days=new Map(),hours=Array(24).fill(0),weekdayHours=Array.from({length:7},()=>Array(24).fill(0)),dayHours=new Map(),trackTime=new Map(),trackDays=new Map(),playTime=new Map();let totalMs=0;
   function add(start,end,track){
    totalMs+=end-start;trackTime.set(track,(trackTime.get(track)||0)+end-start);
    while(start<end){
@@ -29,16 +29,21 @@
     const stop=Math.min(end,next.getTime()),ms=stop-start;
     if(ms<=0)break;
     const key=dayKey(start);days.set(key,(days.get(key)||0)+ms);hours[date.getHours()]+=ms;start=stop;
+    weekdayHours[date.getDay()][date.getHours()]+=ms;
+    if(!dayHours.has(key))dayHours.set(key,Array(24).fill(0));dayHours.get(key)[date.getHours()]+=ms;
+    if(!trackDays.has(key))trackDays.set(key,new Map());
+    const byTrack=trackDays.get(key);byTrack.set(track,(byTrack.get(track)||0)+ms);
    }
   }
   for(const [key,p] of rows){
    const spans=(intervals.get(key)||[[p.started,Math.min(now,p.started+p.heard)]]).sort((a,b)=>a[0]-b[0]);
-   let merged=null;
+   let merged=null,heard=0;
    for(const span of spans){
     if(merged&&span[0]<=merged[1])merged[1]=Math.max(merged[1],span[1]);
-    else{if(merged)add(...merged,p.track);merged=span.slice();}
+    else{if(merged){add(...merged,p.track);heard+=merged[1]-merged[0];}merged=span.slice();}
    }
-   if(merged)add(...merged,p.track);
+   if(merged){add(...merged,p.track);heard+=merged[1]-merged[0];}
+   playTime.set(key,heard);
   }
   const today=new Date(now),monthStart=new Date(today.getFullYear(),today.getMonth(),today.getDate()-29).getTime();
   const calendar=Array.from({length:28},(_,i)=>{const date=new Date(today.getFullYear(),today.getMonth(),today.getDate()-27+i),key=dayKey(date);return {day:key,at:date.getTime(),ms:days.get(key)||0};});
@@ -75,7 +80,7 @@
   if(!activeSet.has(dayKey(cursor)))cursor.setDate(cursor.getDate()-1);
   while(activeSet.has(dayKey(cursor))){streak++;cursor.setDate(cursor.getDate()-1);}
   const behavior={qualified,completed,early,other,replayed,newPlays:counts.size,streak,longestStreak,counts:Object.fromEntries(counts)};
-  return {plays,totalMs,days,hours,calendar,ritual,comeback,record,discoveries,retained:retained.size,behavior,
+  return {plays,totalMs,days,hours,calendar,ritual,comeback,record,discoveries,retained:retained.size,behavior,trackTime,trackDays,weekdayHours,dayHours,playTime,
    heardLibrary:heardLibrary.size,librarySize:library.size,outsideFavorites,knownTime};
  }
  return {build,dayKey};

@@ -1,12 +1,11 @@
 'use strict';
 const fs = require('node:fs/promises');
 const matching = require('./cover-matching');
-const path = require('node:path'), { createHash } = require('node:crypto');
-const { setTimeout: wait } = require('node:timers/promises');
+const store=require('./store-search');
 const requestSource = require('./source-fetch')();
-const searchCache = new Map(), misses = new Map(), pending = new Map(), completed = new Set();
-let nextSearch = 0, enabled = true, mode = 'balanced', controller = new AbortController(), running = false;
-let localMedia, catalog, cacheDir, activeJob;
+const misses = new Map(), pending = new Map(), completed = new Set();
+let enabled = true, mode = 'balanced', controller = new AbortController(), running = false;
+let localMedia, catalog, activeJob;
 const intervals = { full: 3100, balanced: 6000, maximum: 15000 };
 async function saveImage(url, file, signal) {
   const image = await requestSource(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
@@ -36,26 +35,7 @@ async function work(job) {
   if (metadata) {
     for (const query of matching.queries(metadata)) {
       try {
-        const key = JSON.stringify(query); let results = searchCache.get(key), saved;
-        const cacheFile = cacheDir && path.join(cacheDir, createHash('sha256').update(key).digest('hex')+'.json');
-        if (!results && cacheFile) {
-          try { saved = JSON.parse(await fs.readFile(cacheFile,'utf8')); if (Date.now()-saved.at < (saved.results.length ? 30 : 1)*86400000) results=saved.results; } catch (_) {}
-        }
-        if (!results) {
-          await wait(Math.max(0, nextSearch - Date.now()), undefined, { signal });
-          if (!wanted() || !enabled) return false;
-          nextSearch = Date.now() + intervals[mode];
-          const url = new URL('https://itunes.apple.com/search');
-          url.search = new URLSearchParams({ ...query, limit: '50' });
-          try {
-            const response = await requestSource(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
-            if (!response.ok) throw Error('Source unavailable');
-            results = ((await response.json()).results || []).map(({artistName,trackName,collectionName,artworkUrl100}) => ({artistName,trackName,collectionName,artworkUrl100}));
-            if (cacheFile) { await fs.mkdir(cacheDir,{recursive:true}); await fs.writeFile(cacheFile,JSON.stringify({at:Date.now(),results})).catch(()=>{}); }
-          } catch (error) { if (saved?.results?.length) results=saved.results; else throw error; }
-        }
-        if (searchCache.size >= 512) searchCache.delete(searchCache.keys().next().value);
-        searchCache.set(key, results);
+        const results=await store.search(query,{signal,interval:intervals[mode]});
         if (!wanted()) return false;
         match = results.find(item => item.artworkUrl100 && matching.norm(item.artistName) === matching.norm(metadata.artist) && matching.norm(item.trackName) === matching.norm(metadata.title));
         match ||= results.find(item => item.artworkUrl100 && matching.matches(item, metadata, query.entity === 'album'));
@@ -120,6 +100,6 @@ findCover.setEnabled = value => {
   }
 };
 findCover.setMode = value => { if (Object.hasOwn(intervals,value)) { mode=value; if (mode==='maximum' && activeJob && !activeJob.priority) activeJob.abort.abort(); } };
-findCover.configure = services => { localMedia=services.localMedia; catalog=services.catalog; cacheDir=services.dataDir && path.join(services.dataDir,'cover-search'); };
+findCover.configure = services => { localMedia=services.localMedia; catalog=services.catalog; store.configure(services.dataDir); };
 findCover.status = () => [...completed];
 module.exports = findCover;

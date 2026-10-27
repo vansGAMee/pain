@@ -13,6 +13,10 @@ desktop/data/*.json
 desktop/data/*.txt
 desktop/data/lyrics/
 desktop/data/track-info/
+desktop/data/cover-search/
+desktop/data/media-metadata/
+desktop/data/music-catalog/
+desktop/data/deezer-cache/
 desktop/data/backups/
 desktop/downloads/*
 !desktop/downloads/.gitkeep
