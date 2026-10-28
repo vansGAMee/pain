@@ -53,4 +53,13 @@ public class CompanionStoreTest {
    int status=c.getResponseCode();if(status!=200)return new JSONObject().put("http",status);try(var in=c.getInputStream()){return new JSONObject(new String(Io.read(in,4*1024*1024),java.nio.charset.StandardCharsets.UTF_8));}
   }finally{c.disconnect();}
  }
+ @Test public void streamedUploadPreservesCompleteAudioAndRejectsInterruptedReplacement()throws Exception{
+  java.io.File fixture=new java.io.File(app.getCacheDir(),"upload-fixture.wav");RepositoryTest.writeWav(fixture,3);byte[] bytes=java.nio.file.Files.readAllBytes(fixture.toPath());String name="sync-check-"+UUID.randomUUID()+".wav";
+  java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:8865/api/upload-track?filename="+name).openConnection();java.io.File saved=null;
+  try{c.setRequestMethod("POST");c.setDoOutput(true);c.setFixedLengthStreamingMode(bytes.length);c.setConnectTimeout(5000);c.setReadTimeout(15000);c.setRequestProperty("Content-Type","audio/wav");try(var out=c.getOutputStream()){out.write(bytes);}assertEquals(200,c.getResponseCode());
+   JSONObject result;try(var in=c.getInputStream()){result=new JSONObject(new String(Io.read(in,1024*1024),java.nio.charset.StandardCharsets.UTF_8));}saved=new java.io.File(android.net.Uri.parse(result.getString("uri")).getPath());assertArrayEquals(bytes,java.nio.file.Files.readAllBytes(saved.toPath()));
+   try(java.net.Socket socket=new java.net.Socket("127.0.0.1",8865)){var out=socket.getOutputStream();out.write(("POST /api/upload-track?filename="+name+" HTTP/1.1\r\nContent-Length: "+bytes.length+"\r\nContent-Type: audio/wav\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));out.write(bytes,0,512);out.flush();}
+   Thread.sleep(150);assertArrayEquals(bytes,java.nio.file.Files.readAllBytes(saved.toPath()));assertEquals(0,app.getCacheDir().listFiles((dir,file)->file.startsWith("sync-upload-")).length);io(()->null);InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+  }finally{c.disconnect();fixture.delete();if(saved!=null)saved.delete();}
+ }
 }

@@ -25,7 +25,9 @@ public final class SyncServer {
   public static final int UDP_PORT = 8866;
 
   private final MonoApp app;
-  private final ExecutorService threadPool = Executors.newCachedThreadPool();
+  private final ExecutorService threadPool = Executors.newFixedThreadPool(4);
+  private final ThreadPoolExecutor clients=new ThreadPoolExecutor(8,8,30,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16));
+  private final java.util.Set<Socket> activeClients=ConcurrentHashMap.newKeySet();
   private ServerSocket serverSocket;
   private DatagramSocket udpSocket;
   private volatile boolean running = false;
@@ -55,7 +57,8 @@ public final class SyncServer {
         while (running && !serverSocket.isClosed()) {
           try {
             Socket client = serverSocket.accept();
-            threadPool.execute(() -> handleClient(client));
+            activeClients.add(client);
+            try{clients.execute(() -> handleClient(client));}catch(RejectedExecutionException busy){activeClients.remove(client);client.close();}
           } catch (IOException e) {
             if (!running) break;
           }
@@ -113,6 +116,7 @@ public final class SyncServer {
     try {
       if (serverSocket != null) serverSocket.close();
     } catch (Exception ignored) {}
+    for(Socket socket:activeClients)try{socket.close();}catch(IOException ignored){}
     try {
       if (udpSocket != null) udpSocket.close();
     } catch (Exception ignored) {}
@@ -169,7 +173,7 @@ public final class SyncServer {
          OutputStream out = socket.getOutputStream()) {
 
       socket.setSoTimeout(30000);
-      SyncHttp.Request request = SyncHttp.read(in);
+      try(SyncHttp.Request request = SyncHttp.read(in,app.getCacheDir())){
       String method = request.method, path = request.path;
       String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
 
@@ -252,8 +256,10 @@ public final class SyncServer {
       } else {
         sendResponse(out, 404, "Not Found", "text/plain", "Not Found");
       }
+      }
     } catch (Exception ignored) {}
     finally {
+      activeClients.remove(socket);
       try {
         socket.close();
       } catch (Exception ignored) {}
@@ -261,7 +267,7 @@ public final class SyncServer {
   }
 
   private void handleUploadTrack(SyncHttp.Request request, OutputStream out) throws IOException {
-    if (request.rawBody == null || request.rawBody.length < 512) {
+    if ((request.bodyFile==null?request.rawBody.length:request.bodyFile.length()) < 512) {
       sendResponse(out, 400, "Bad Request", "application/json", "{\"error\":\"Empty or invalid audio payload\"}");
       return;
     }
@@ -292,6 +298,7 @@ public final class SyncServer {
       filename = "track_" + System.currentTimeMillis() + ".mp3";
     }
     String safeName = filename.replaceAll("[/\\\\?%*:|\"<>]", "_").trim();
+    if(safeName.equals(".")||safeName.equals("..")){sendResponse(out,400,"Bad Request","application/json","{\"error\":\"Invalid filename\"}");return;}
     if (safeName.isEmpty()) safeName = "track_" + System.currentTimeMillis() + ".mp3";
 
     File musicDir = app.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
@@ -303,24 +310,15 @@ public final class SyncServer {
     File dest = new File(musicDir, safeName);
     File tmpDest = new File(musicDir, safeName + "." + UUID.randomUUID().toString() + ".tmp");
 
-    try (FileOutputStream fos = new FileOutputStream(tmpDest)) {
-      fos.write(request.rawBody);
+    if(request.bodyFile==null||!request.bodyFile.renameTo(tmpDest))try (FileOutputStream fos = new FileOutputStream(tmpDest)) {
+      if(request.bodyFile==null)fos.write(request.rawBody);
+      else try(InputStream in=new FileInputStream(request.bodyFile)){byte[] buffer=new byte[65536];for(int n;(n=in.read(buffer))!=-1;)fos.write(buffer,0,n);}
       fos.flush();
     }
 
-    if (dest.exists()) {
-      try { dest.delete(); } catch (Exception ignored) {}
-    }
-    if (!tmpDest.renameTo(dest)) {
-      try (FileInputStream fis = new FileInputStream(tmpDest);
-           FileOutputStream fos = new FileOutputStream(dest)) {
-        byte[] buf = new byte[65536];
-        int n;
-        while ((n = fis.read(buf)) != -1) fos.write(buf, 0, n);
-        fos.flush();
-      }
-      try { tmpDest.delete(); } catch (Exception ignored) {}
-    }
+    try{java.nio.file.Files.move(tmpDest.toPath(),dest.toPath(),java.nio.file.StandardCopyOption.ATOMIC_MOVE,java.nio.file.StandardCopyOption.REPLACE_EXISTING);}
+    catch(java.nio.file.AtomicMoveNotSupportedException unsupported){java.nio.file.Files.move(tmpDest.toPath(),dest.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);}
+    finally{tmpDest.delete();}
 
     String title = params.get("title");
     if (title == null || title.trim().isEmpty()) {
@@ -511,6 +509,7 @@ public final class SyncServer {
     String header = "HTTP/1.1 " + code + " " + msg + "\r\n"
         + "Content-Type: " + mime + "; charset=utf-8\r\n"
         + "Content-Length: " + bytes.length + "\r\n"
+        + "X-Content-Type-Options: nosniff\r\n"
         + "Access-Control-Allow-Origin: *\r\n"
         + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
         + "Access-Control-Allow-Headers: Content-Type\r\n"

@@ -40,7 +40,7 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
       calls.push('window'); windows.push(this);
       this.options = options; this.visible = options.show !== false;
       this.destroyed = false; this.minimized = false; this.focusCount = 0;
-      this.webContents = { setWindowOpenHandler: handler => { this.openHandler = handler; } };
+      this.webContents = Object.assign(new EventEmitter(),{ setWindowOpenHandler: handler => { this.openHandler = handler; } });
     }
     isDestroyed() { return this.destroyed; }
     isMinimized() { return this.minimized; }
@@ -66,6 +66,7 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
     destroy() { this.destroyed = true; }
   }
   vm.runInNewContext(source, {
+    URL,
     __dirname: path.dirname(require.resolve('../src/main')),
     process: { platform, env, execPath: '/isolated/Pain', versions: { electron: 'test' } },
     require(name) {
@@ -198,9 +199,18 @@ test('native renderer is isolated and popup links cannot create extra windows or
   const window = shell.windows[0];
   assert.equal(window.options.webPreferences.nodeIntegration, false);
   assert.equal(window.options.webPreferences.contextIsolation, true);
+  assert.equal(window.options.webPreferences.sandbox,true);
+  assert.equal(window.options.webPreferences.webSecurity,true);
   for (const url of ['https://example.com/music', 'http://example.com', 'file:///tmp/script', 'powershell:command', 'javascript:alert(1)']) {
     assert.equal(window.openHandler({ url }).action, 'deny');
   }
   assert.deepEqual(shell.opened, ['https://example.com/music', 'http://example.com']);
   assert.equal(shell.windows.length, 1);
+});
+test('external navigation and redirects cannot replace the trusted player window',async()=>{
+ const shell=await launch(),window=shell.windows[0];
+ for(const kind of ['will-navigate','will-redirect'])for(const url of ['https://example.com/music','file:///tmp/script','javascript:alert(1)','http://localhost:9999']){
+  const event={defaultPrevented:false,preventDefault(){this.defaultPrevented=true;}};window.webContents.emit(kind,event,url);assert.equal(event.defaultPrevented,true,url);
+ }
+ const local={preventDefault(){throw Error('Player navigation was blocked');}};window.webContents.emit('will-navigate',local,'http://localhost:3013/profile');assert.equal(shell.windows.length,1);
 });

@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs/promises'), path = require('node:path'), { createHash } = require('node:crypto');
 const matching = require('./cover-matching');
-const agent = 'PAIN/1.7.8 (https://github.com/vansGAMee/pain)';
+const agent = `PAIN/${require('../package.json').version} (https://github.com/vansGAMee/pain)`;
 const artist = record => (record['artist-credit'] || []).map(c => c.name || c.artist?.name || '').join(', ');
 function choose(records, track) {
   const meta = matching.metadata(track);
@@ -49,10 +49,10 @@ module.exports = function createCatalog(dir, { fetcher = fetch } = {}) {
       }catch(error){if(cached)return cached.value;throw error;}
     })().finally(()=>pending.delete(key));pending.set(key,job);return job;
   }
-  async function lookup(track, { signal } = {}) {
+  async function lookup(track, { signal, official = false } = {}) {
     const meta = matching.metadata(track), name = meta?.title || matching.title(track.title);
     if (!name || !/\p{L}/u.test(name)) return null;
-    const key = createHash('sha256').update(JSON.stringify([4,track.title,name,meta?.artist,meta?.album,track.duration])).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify([4,track.title,name,meta?.artist,meta?.album,track.duration,...(official?['official']:[])])).digest('hex');
     if (pending.has(key)) return pending.get(key);
     const file = path.join(dir, 'music-catalog', key + '.json');
     const job = (async () => {
@@ -61,8 +61,8 @@ module.exports = function createCatalog(dir, { fetcher = fetch } = {}) {
       try {
         const request = (async () => {
           const quote = v => '"'+String(v).replace(/[\\"]/g,'\\$&')+'"';
-          const query = `recording:${quote(name)}${meta ? ' AND ('+matching.artists(meta.artist).slice(0,3).map(a=>'artist:'+quote(a)).join(' OR ')+')' : ''}`;
-          const url = 'https://musicbrainz.org/ws/2/recording/?'+new URLSearchParams({query,fmt:'json',limit:'25'});
+          const query = `recording:${quote(name)}${meta ? ' AND ('+matching.artists(meta.artist).slice(0,3).map(a=>'artist:'+quote(a)).join(' OR ')+')' : ''}${official?' AND status:official':''}`;
+          const url = 'https://musicbrainz.org/ws/2/recording/?'+new URLSearchParams({query,fmt:'json',limit:official?'100':'25'});
           const result = choose((await requestJson(url,signal)).recordings || [],track);
           return result ? { ...result, possible: !meta, relatedVersion: matching.norm(result.title) !== matching.norm(track.title), artist: artist(result), source: `https://musicbrainz.org/recording/${result.id}` } : null;
         })();
@@ -93,6 +93,29 @@ module.exports = function createCatalog(dir, { fetcher = fetch } = {}) {
       if(found.length)return {names:found,tags:ownTags.length?ownTags:tags(data),tagSource:ownTags.length?record.source:`https://musicbrainz.org/release-group/${id}`,scope:'album',source:`https://musicbrainz.org/release-group/${id}`};
     }
     return ownTags.length?base:null;
+  }
+  async function rating(track,{signal}={}){
+    const record=await lookup(track,{signal,official:true});signal?.throwIfAborted();
+    // Do not present the original song's score as the rating of a remix/edit,
+    // or attach a namesake recording to a file with no verified artist.
+    if(!record||record.possible||record.relatedVersion||!/^[0-9a-f-]{36}$/i.test(record.id||''))return {rating:null,reason:'not-found'};
+    const key='rating-recording-'+record.id,file=path.join(dir,'music-catalog',key+'.json');
+    if(pending.has(key))return pending.get(key);
+    const job=(async()=>{
+      let cached;
+      try{cached=JSON.parse(await fs.readFile(file,'utf8'));if(Date.now()-cached.at<86400000)return cached.value;}catch(_){}
+      try{
+        const data=await requestJson(`https://musicbrainz.org/ws/2/recording/${record.id}?inc=ratings+artist-credits&fmt=json`,signal);
+        if(data.id!==record.id||matching.norm(data.title)!==matching.norm(record.title)||!matching.matches({artistName:artist(data),trackName:data.title},matching.metadata(track)))throw Error('Recording identity changed');
+        const value=data.rating?.value,votes=data.rating?.['votes-count'];
+        if(value!==null&&value!==undefined&&(typeof value!=='number'||!Number.isFinite(value)||value<0||value>5))throw Error('Invalid recording rating');
+        if(!Number.isSafeInteger(votes)||votes<0)throw Error('Invalid recording vote count');
+        // Public MusicBrainz aggregate ratings use 0–5 (not the 0–100
+        // submission API). Displaying /10 is an exact scale conversion.
+        const result=value!=null&&votes>0?{rating:{value:value*2,original:value,votes,source:record.source,fetchedAt:Date.now()}}:{rating:null,reason:'unrated'};
+        await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,JSON.stringify({at:Date.now(),value:result})).catch(()=>{});return result;
+      }catch(error){signal?.throwIfAborted();return cached?{...cached.value,offline:true}:{rating:null,reason:'unavailable'};}
+    })().finally(()=>pending.delete(key));pending.set(key,job);return job;
   }
   let bulk={},genreRevision=0;
   const bulkReady=fs.readFile(path.join(dir,'track-catalog-genres.json'),'utf8').then(JSON.parse).then(data=>{bulk=data;}).catch(()=>{});
@@ -129,6 +152,6 @@ module.exports = function createCatalog(dir, { fetcher = fetch } = {}) {
       const target=path.join(dir,'track-catalog-genres.json');await fs.writeFile(target+'.tmp',JSON.stringify(bulk));await fs.rename(target+'.tmp',target);
     }
   }
-  return { lookup, genres, prefetchGenres, cachedGenres, bulkReady, genreRevision:()=>genreRevision };
+  return { lookup, rating, genres, prefetchGenres, cachedGenres, bulkReady, genreRevision:()=>genreRevision };
 };
 module.exports.choose = choose;

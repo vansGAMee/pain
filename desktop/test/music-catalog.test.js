@@ -39,3 +39,28 @@ test('genres use canonical positive genre votes, then the verified album; arbitr
  assert.deepEqual(result.names,['post-punk']);assert.equal(result.scope,'album');assert.ok(result.source.endsWith(gid));
  assert.deepEqual(result.tags,['seen live'],'community tags are available separately from the canonical genres');
 });
+test('recording ratings convert the public five-point scale exactly and persist offline',async t=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),dir=await fs.mkdtemp(path.join(os.tmpdir(),'pain-ratings-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const id='12345678-1234-1234-1234-123456789012',track={title:'Song',artist:'Artist'},record={...recording('Artist'),id};let requests=0;
+ const catalog=require('../src/music-catalog')(dir,{fetcher:async url=>{requests++;if(url.includes('query=')){const params=new URL(url).searchParams;assert.ok(params.get('query').includes('status:official'));assert.equal(params.get('limit'),'100');}return {ok:true,json:async()=>url.includes('query=')?{recordings:[record]}:{...record,rating:{value:4.2,'votes-count':17}}};}});
+ const [a,b]=await Promise.all([catalog.rating(track),catalog.rating(track)]);assert.deepEqual(a,b);assert.equal(a.rating.value,8.4);assert.equal(a.rating.original,4.2);assert.equal(a.rating.votes,17);assert.equal(requests,2,'concurrent views share metadata and score requests');
+ assert.deepEqual(await catalog.rating(track),a);assert.equal(requests,2);
+ const file=path.join(dir,'music-catalog','rating-recording-'+id+'.json'),cached=JSON.parse(await fs.readFile(file));cached.at=0;await fs.writeFile(file,JSON.stringify(cached));
+ const offline=require('../src/music-catalog')(dir,{fetcher:async()=>{throw Error('Offline');}});assert.deepEqual(await offline.rating(track),{...a,offline:true});
+});
+test('ratings reject missing votes, broken scales, wrong identities, and original-song fallbacks',async t=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+ const id='12345678-1234-1234-1234-123456789012',record={...recording('Artist'),id};
+ for(const [name,detail,track,reason]of [
+  ['unrated',{...record,rating:{value:null,'votes-count':0}},{title:'Song',artist:'Artist'},'unrated'],
+  ['no votes',{...record,rating:{value:5,'votes-count':0}},{title:'Song',artist:'Artist'},'unrated'],
+  ['submission scale',{...record,rating:{value:90,'votes-count':3}},{title:'Song',artist:'Artist'},'unavailable'],
+  ['wrong record',{...record,title:'Other song',rating:{value:5,'votes-count':3}},{title:'Song',artist:'Artist'},'unavailable'],
+  ['edit cannot borrow original',{...record,rating:{value:5,'votes-count':3}},{title:'Song - Slowed',artist:'Artist'},'not-found'],
+  ['ambiguous artist',{...record,rating:{value:5,'votes-count':3}},{title:'Song',duration:123000},'not-found']
+ ]){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pain-rating-edge-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const catalog=require('../src/music-catalog')(dir,{fetcher:async url=>({ok:true,json:async()=>url.includes('query=')?{recordings:[record]}:detail})});
+  assert.deepEqual(await catalog.rating(track),{rating:null,reason},name);
+ }
+});

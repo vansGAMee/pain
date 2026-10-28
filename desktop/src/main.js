@@ -47,7 +47,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100, height: 780, minWidth: 900, minHeight: 650,
     show: false, backgroundColor: '#EFEDE6', title: 'PAIN', icon,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox:true, webSecurity:true, allowRunningInsecureContent:false }
   });
   const hideToTray = event => {
     if (!quitting && tray && !tray.isDestroyed() && (!wayland||trayHostReady)) { event.preventDefault(); mainWindow.hide(); }
@@ -56,10 +56,17 @@ function createWindow() {
   mainWindow.on('minimize', hideToTray);
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.once('ready-to-show', showWindow);
+  const openExternal=url=>{try{const parsed=new URL(url);if(['http:','https:'].includes(parsed.protocol))shell.openExternal(url).catch(()=>{});}catch(_){}};
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+    openExternal(url);
     return { action: 'deny' };
   });
+  const protectNavigation=(event,url)=>{
+    try{if(new URL(url).origin===`http://localhost:${server.address().port}`)return;}catch(_){}
+    event.preventDefault();openExternal(url);
+  };
+  mainWindow.webContents.on('will-navigate',protectNavigation);
+  mainWindow.webContents.on('will-redirect',protectNavigation);
   mainWindow.webContents.on?.('render-process-gone', (event, details) => {
     console.error('[Main] Renderer process gone:', details);
     if (details.reason !== 'clean-exit' && !quitting && mainWindow && !mainWindow.isDestroyed()) {

@@ -18,6 +18,11 @@
 .track-info-article p{font-size:14px;line-height:1.75;margin:0 0 16px;white-space:normal;overflow-wrap:anywhere}
 .track-info-panel a{color:var(--accent);text-underline-offset:3px;font-size:12px}
 .track-info-status,.track-info-credit{font-size:12px;line-height:1.6;color:var(--ink-muted)}
+.track-rating{display:flex;align-items:center;gap:16px;border-top:1px solid var(--border);padding:18px 0;margin:4px 0 12px;min-height:56px}
+.track-rating-score{display:flex;align-items:baseline;gap:5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.track-rating-score strong{font-size:32px;line-height:1;letter-spacing:-1px;font-weight:600;color:var(--ink)}
+.track-rating-score span,.track-rating small{font-size:11px;color:var(--ink-muted);line-height:1.5}
+.track-rating small{display:block;margin-top:4px}
 .track-info-article small{display:block;margin-top:8px;color:var(--ink-muted)}
 .track-info-story{margin:16px 0;border-left:2px solid var(--border-strong);padding-left:14px}
 .track-info-story summary{font-size:14px;line-height:1.5;font-weight:600;cursor:pointer;color:var(--accent);padding:8px 0}

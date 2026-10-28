@@ -4,6 +4,16 @@
  const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const ru=()=>localStorage.getItem('pain_lang')!=='en',t=(a,b)=>ru()?a:b;
  let controller,timer,ticket=0,lastId;
+ function showRating(data){
+  const box=document.getElementById('trackInfoRating');if(!box)return;
+  const r=data?.rating;let source;
+  try{const u=new URL(r?.source);if(u.protocol==='https:'&&u.hostname==='musicbrainz.org'&&/^\/recording\/[0-9a-f-]{36}$/i.test(u.pathname))source=u.href;}catch(_){}
+  if(!r||!source||!Number.isFinite(r.value)||r.value<0||r.value>10||!Number.isSafeInteger(r.votes)||r.votes<1){
+   box.innerHTML=`<div><small class="track-info-status">${data?.reason==='unavailable'?t('MusicBrainz сейчас недоступен','MusicBrainz is currently unavailable'):data?.reason==='not-found'?t('Точная запись с оценкой пока не найдена','No exact rated recording found yet'):t('У этой записи пока нет оценок в MusicBrainz','This recording has no MusicBrainz ratings yet')}</small>${data?.reason==='unavailable'||data?.reason==='not-found'?`<button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button>`:''}</div>`;return;
+  }
+  const score=r.value.toLocaleString(ru()?'ru-RU':'en-US',{maximumFractionDigits:1,minimumFractionDigits:1});
+  box.innerHTML=`<div class="track-rating-score"><strong>${score}</strong><span>/ 10</span></div><div><a href="${escape(source)}" target="_blank" rel="noopener noreferrer">MusicBrainz</a><small>${t('Оценка слушателей · голосов: ','Listener rating · votes: ')}${r.votes.toLocaleString(ru()?'ru-RU':'en-US')}${data.offline?' · '+t('сохранено','saved'):''}</small></div>`;
+ }
  function safeLink(value){try{const u=new URL(value);return u.protocol==='https:'&&/^(ru|en)\.wikipedia\.org$/.test(u.hostname)?u.href:null;}catch(_){return null;}}
  function section(article){
   const url=safeLink(article.url);if(!url)return '';
@@ -58,8 +68,11 @@
    [t('Год','Year'),track.year],[t('Жанр','Genre'),track.genre]
   ].filter(([,v])=>v);
   body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoGenres"></div><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
+  const rating=document.createElement('section');rating.id='trackInfoRating';rating.className='track-rating';rating.setAttribute('aria-live','polite');rating.innerHTML=`<small class="track-info-status">${t('Ищем оценку записи…','Finding the recording rating…')}</small>`;
+  body.insertBefore(rating,body.querySelector('dl'));
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
   panel.scrollTop=0;controller=new AbortController();
+  fetch(`/api/track-rating/${encodeURIComponent(track.id)}`,{signal:controller.signal}).then(r=>r.ok?r.json():{reason:'unavailable'}).then(data=>{if(generation===ticket)showRating(data);}).catch(error=>{if(generation===ticket&&error.name!=='AbortError')showRating({reason:'unavailable'});});
   fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1&lang=${ru()?'ru':'en'}`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
    if(!history||generation!==ticket)return;
    document.getElementById('trackInfoContext').innerHTML=(history.cards||[]).map(contextSection).join('');
