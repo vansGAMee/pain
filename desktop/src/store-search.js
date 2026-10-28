@@ -10,11 +10,12 @@ async function remember(track,value){
  if(directory){genreSaving=genreSaving.catch(()=>{}).then(async()=>{await fs.mkdir(directory,{recursive:true});const file=path.join(directory,'song-genres.json');await fs.writeFile(file+'.tmp',JSON.stringify(genreCache));await fs.rename(file+'.tmp',file);});await genreSaving;}
  return genreCache[genreKey(track)];
 }
-async function search(query,{signal,interval=3100,genres=false}={}){
+async function search(query,{signal,interval=3100,genres=false,cachedOnly=false}={}){
  const key=JSON.stringify(query),file=directory&&path.join(directory,createHash('sha256').update(key).digest('hex')+'.json');
  const job=tail.then(async()=>{
   signal?.throwIfAborted();let saved=memory.get(key);
   if(!saved&&file)try{saved=JSON.parse(await fs.readFile(file,'utf8'));}catch(_){}
+  if(cachedOnly)return saved?.results||[];
   const fresh=saved&&Date.now()-saved.at<(saved.results.length?30:1)*86400000&&(!genres||saved.version===2);
   if(fresh)return saved.results;
   try{

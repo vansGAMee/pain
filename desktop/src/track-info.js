@@ -7,12 +7,12 @@
  function showRating(data){
   const box=document.getElementById('trackInfoRating');if(!box)return;
   const r=data?.rating;let source;
-  try{const u=new URL(r?.source);if(u.protocol==='https:'&&u.hostname==='musicbrainz.org'&&/^\/recording\/[0-9a-f-]{36}$/i.test(u.pathname))source=u.href;}catch(_){}
+  try{const u=new URL(r?.source);if(u.protocol==='https:'&&((['musicbrainz.org','critiquebrainz.org'].includes(u.hostname)&&/^\/recording\/[0-9a-f-]{36}$/i.test(u.pathname))||(u.hostname==='www.besteveralbums.com'&&u.pathname==='/thechart.php'&&/^\d+$/.test(u.searchParams.get('t')||''))))source=u.href;}catch(_){}
   if(!r||!source||!Number.isFinite(r.value)||r.value<0||r.value>10||!Number.isSafeInteger(r.votes)||r.votes<1){
-   box.innerHTML=`<div><small class="track-info-status">${data?.reason==='unavailable'?t('MusicBrainz сейчас недоступен','MusicBrainz is currently unavailable'):data?.reason==='not-found'?t('Точная запись с оценкой пока не найдена','No exact rated recording found yet'):t('У этой записи пока нет оценок в MusicBrainz','This recording has no MusicBrainz ratings yet')}</small>${data?.reason==='unavailable'||data?.reason==='not-found'?`<button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button>`:''}</div>`;return;
+   box.innerHTML=`<div><small class="track-info-status">${data?.reason==='unavailable'?t('Источники оценок сейчас недоступны','Rating sources are currently unavailable'):t('У этой записи пока нет подтверждённой оценки','No verified rating for this recording yet')}</small><button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button></div>`;return;
   }
   const score=r.value.toLocaleString(ru()?'ru-RU':'en-US',{maximumFractionDigits:1,minimumFractionDigits:1});
-  box.innerHTML=`<div class="track-rating-score"><strong>${score}</strong><span>/ 10</span></div><div><a href="${escape(source)}" target="_blank" rel="noopener noreferrer">MusicBrainz</a><small>${t('Оценка слушателей · голосов: ','Listener rating · votes: ')}${r.votes.toLocaleString(ru()?'ru-RU':'en-US')}${data.offline?' · '+t('сохранено','saved'):''}</small></div>`;
+  box.innerHTML=`<div class="track-rating-score"><strong>${score}</strong><span>/ 10</span></div><div><a href="${escape(source)}" target="_blank" rel="noopener noreferrer">${escape(r.name||'MusicBrainz')}</a><small>${t('Оценка слушателей · голосов: ','Listener rating · votes: ')}${r.votes.toLocaleString(ru()?'ru-RU':'en-US')}${data.offline?' · '+t('сохранено','saved'):''}</small>${r.edition?`<small>${t('Издание: ','Release: ')}${escape(r.edition)}</small>`:''}</div>`;
  }
  function safeLink(value){try{const u=new URL(value);return u.protocol==='https:'&&/^(ru|en)\.wikipedia\.org$/.test(u.hostname)?u.href:null;}catch(_){return null;}}
  function section(article){

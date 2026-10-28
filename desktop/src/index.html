@@ -1007,6 +1007,10 @@
           </div>
           <p id="desktopPreferencesStatus" class="fluid-row-hint" role="status"></p>
           <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="discordPresenceSwitch" data-en="Show music in Discord" data-ru="Показывать музыку в Discord">Показывать музыку в Discord</label><span id="discordPresenceStatus" class="fluid-row-hint" role="status">Название песни, исполнитель и прогресс в статусе «Слушает PAIN».</span></div>
+            <label class="switch-label"><input type="checkbox" id="discordPresenceSwitch"><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label"><label for="performanceMode" data-en="Performance mode" data-ru="Режим производительности">Режим производительности</label><span id="performanceModeHint" class="fluid-row-hint" aria-live="polite"></span></div>
             <select id="performanceMode" class="performance-mode-select">
               <option value="full" data-en="Full effects" data-ru="Все эффекты">Все эффекты</option>
@@ -1326,6 +1330,7 @@
   <script src="performance-mode.js"></script>
   <script src="app.js"></script>
   <script src="track-info.js"></script>
+  <script src="discord-presence-ui.js"></script>
   <script src="genre-profile.js"></script>
   <script src="insight-charts.js"></script>
   <script src="pulseflow-settings.js"></script>

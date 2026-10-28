@@ -17,6 +17,7 @@ server.on('activate-window',()=>parentPort.postMessage({event:'activate-window'}
 parentPort.on('message',message=>{
  if(message.preferences){preferences=message.preferences;return;}
  if(message.method==='shutdown'){
+  server.discordPresence?.close();
   server.pulseflow.close();server.close();server.closeAllConnections();process.exit(0);
  }
  const job=pending.get(message.id);if(!job)return;pending.delete(message.id);
