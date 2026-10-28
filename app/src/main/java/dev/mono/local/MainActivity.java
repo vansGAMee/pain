@@ -45,7 +45,7 @@ public final class MainActivity extends Activity {
 
   private String state(String key,boolean value){return app.prefs.getBoolean(key,value)?"включено":"выключено";}
   private String themeName() {
-    return switch(app.prefs.getString("theme","paper")){case "dark"->"Графит";case "mist"->"Туман";default->"Тёплая бумага";};
+    return switch(app.prefs.getString("theme","paper")){case "dark"->"Графит";case "mist"->"Туман";case "night"->"Ночь";default->"Тёплая бумага";};
   }
   private boolean isRu() {
     return app.prefs.getString("lang", "ru").equals("ru");
@@ -72,6 +72,7 @@ public final class MainActivity extends Activity {
   private long rangeStart = 0;
   private Repository.Stats detail;
   private List<Lrc.Line> lyrics = List.of();
+  private int lastCompanionGeneration=-1;
   private String lyricTrack = "", lyricBody = "";
   private int lyricOffset, lyricIndex = -2;
   private boolean lyricLoading;
@@ -105,7 +106,7 @@ public final class MainActivity extends Activity {
   @Override
   public void onCreate(Bundle saved) {
     app = (MonoApp) getApplication();
-    if (app.prefs.getString("theme", "paper").equals("dark")) setTheme(R.style.DarkAppTheme);
+    if (isDarkTheme()) setTheme(R.style.DarkAppTheme);
     super.onCreate(saved);
     if (saved != null) page = saved.getInt("page", 0);
     root = new LinearLayout(this);
@@ -231,17 +232,20 @@ public final class MainActivity extends Activity {
     return Math.round(v * scale);
   }
 
+  private boolean isDarkTheme(){String t=app.prefs.getString("theme","paper");return t.equals("dark")||t.equals("night");}
+
   private int paper() {
     String t = app.prefs.getString("theme", "paper");
-    return t.equals("dark") ? 0xff292928 : t.equals("mist") ? 0xffeeeeF0 : 0xffefede6;
+    return t.equals("night") ? 0xff0d0d0d : t.equals("dark") ? 0xff292928 : t.equals("mist") ? 0xffeeeeF0 : 0xffefede6;
   }
 
   private int ink() {
-    return app.prefs.getString("theme", "paper").equals("dark") ? 0xffdeded5 : 0xff11110f;
+    return app.prefs.getString("theme","paper").equals("night") ? 0xffe5e1e8 : isDarkTheme() ? 0xffdeded5 : 0xff11110f;
   }
 
   private void onData() {
     if (isFinishing() || scene == null) return;
+    if(lastCompanionGeneration!=app.companion.generation){lastCompanionGeneration=app.companion.generation;lyricTrack="";}
     bind();
     if (page == 2 && lastTracks != app.tracks) {
       lastTracks = app.tracks;
@@ -309,7 +313,7 @@ public final class MainActivity extends Activity {
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | (app.prefs.getString("theme", "paper").equals("dark")
+                | (isDarkTheme()
                     ? 0
                     : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                         | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
@@ -678,9 +682,9 @@ public final class MainActivity extends Activity {
         if (isRu()) {
           String greet =
               hour < 6
-                  ? "Доброй ночи,"
-                  : hour < 12 ? "Доброе утро," : hour < 18 ? "Добрый день," : "Добрый вечер,";
-          scene.text("3:7", greet + "\n" + app.prefs.getString("name", "Ivan") + ".");
+                  ? "Доброй\nночи."
+                  : hour < 12 ? "Доброе\nутро." : hour < 18 ? "Добрый\nдень." : "Добрый\nвечер.";
+          scene.text("3:7", greet);
           scene.text("3:8", "Твоя музыка, не алгоритмы.");
           scene.text("3:10", "ПРОДОЛЖИТЬ");
           scene.text("3:11", t == null ? "Локальная\nбиблиотека" : t.album);
@@ -704,9 +708,9 @@ public final class MainActivity extends Activity {
         } else {
           String greet =
               hour < 6
-                  ? "Good night,"
-                  : hour < 12 ? "Good morning," : hour < 18 ? "Good afternoon," : "Good evening,";
-          scene.text("3:7", greet + "\n" + app.prefs.getString("name", "Ivan") + ".");
+                  ? "Good\nnight."
+                  : hour < 12 ? "Good\nmorning." : hour < 18 ? "Good\nafternoon." : "Good\nevening.";
+          scene.text("3:7", greet);
           scene.text("3:11", t == null ? "Your local\nlibrary" : t.album);
           scene.bounds("3:11", 42, 260, 181, 66);
           scene.text("3:12", artist);
@@ -1566,7 +1570,7 @@ public final class MainActivity extends Activity {
     g.setCornerRadius(sx(radius));
     g.setStroke(
         Math.max(1, sx(.5f)),
-        app.prefs.getString("theme", "paper").equals("dark") ? 0xff484842 : 0xfffaf9f6);
+        isDarkTheme() ? 0xff484842 : 0xfffaf9f6);
     return g;
   }
 
@@ -1928,7 +1932,7 @@ public final class MainActivity extends Activity {
       "Скорость воспроизведения",
       "Эквалайзер",
       "Настройки",
-      "Smart DJ и сохранённые вайбы"
+      "Smart DJ и сохранённые вайбы", "О треке", "Любимый момент"
     };
     new AlertDialog.Builder(this)
         .setTitle(t == null ? "Плеер" : t.title)
@@ -1962,6 +1966,12 @@ public final class MainActivity extends Activity {
                   break;
                 case 8:
                   smartDjMenu();
+                  break;
+                case 9:
+                  if(t!=null)trackInfo(t);
+                  break;
+                case 10:
+                  if(t!=null)momentMenu(t);
                   break;
               }
             })
@@ -2228,12 +2238,13 @@ public final class MainActivity extends Activity {
                   new AlertDialog.Builder(this)
                       .setTitle("Тема")
                       .setItems(
-                          new String[] {"Тёплая бумага", "Туман", "Графит"},
+                          new String[] {"Тёплая бумага", "Туман", "Графит", "Ночь"},
                           (dd, n) -> {
                             app.prefs
                                 .edit()
-                                .putString("theme", new String[] {"paper", "mist", "dark"}[n])
+                                .putString("theme", new String[] {"paper", "mist", "dark", "night"}[n])
                                 .apply();
+                            setTheme(isDarkTheme()?R.style.DarkAppTheme:R.style.AppTheme);
                             show(page, false);
                           })
                       .show();
@@ -2277,7 +2288,7 @@ public final class MainActivity extends Activity {
                       .show();
                   break;
                 case 8:
-                  EditText input = input("Имя", app.prefs.getString("name", "Ivan"));
+                  EditText input = input("Имя", app.prefs.getString("name", ""));
                   input.setFilters(new InputFilter[] {new InputFilter.LengthFilter(20)});
                   new AlertDialog.Builder(this)
                       .setTitle(isRu() ? "Ваше имя" : "Your name")
@@ -2639,6 +2650,8 @@ public final class MainActivity extends Activity {
   private void showMoreStats() {
     Repository.Stats s = detail == null ? app.stats : detail;
     List<String> rows = new ArrayList<>();
+    rows.add(isRu()?"Топ-50 треков за выбранный период":"Top 50 songs in this period");
+    rows.add(isRu()?"Топ-50 исполнителей за выбранный период":"Top 50 artists in this period");
     rows.add("Прослушано: " + Repository.formatTime(s.heard));
     rows.add("Уникальных треков: " + s.unique + "; исполнителей: " + s.artists.size());
     rows.add("Прослушиваний: " + s.qualified);
@@ -2678,7 +2691,7 @@ public final class MainActivity extends Activity {
         .forEach(e -> rows.add(e.getKey() + " · " + Repository.formatTime(e.getValue())));
     new AlertDialog.Builder(this)
         .setTitle("Ваши привычки")
-        .setItems(rows.toArray(new String[0]), null)
+        .setItems(rows.toArray(new String[0]), (dialog,index)->{if(index==0)topFifty(false);if(index==1)topFifty(true);})
         .setPositiveButton(
             "Как это считается",
             (d, w) ->
@@ -2695,6 +2708,31 @@ public final class MainActivity extends Activity {
                         + " возможна потеря последних 5 секунд."))
         .setNegativeButton("Закрыть", null)
         .show();
+  }
+
+  private void topFifty(boolean artists){
+    Repository.Stats s=detail==null?app.stats:detail;List<String> labels=new ArrayList<>();List<Track> songs=new ArrayList<>();
+    if(artists){s.artists.entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(50).forEach(e->labels.add((labels.size()+1)+". "+e.getKey()+" · "+Repository.formatTime(e.getValue())));}
+    else{s.counts.entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey())).filter(e->app.track(e.getKey())!=null).limit(50).forEach(e->{Track t=app.track(e.getKey());songs.add(t);labels.add(songs.size()+". "+t.title+" — "+t.artist+" · "+e.getValue());});}
+    if(labels.isEmpty()){toast(isRu()?"За этот период пока нет данных":"No listening in this period yet");return;}
+    new AlertDialog.Builder(this).setTitle(artists?(isRu()?"Топ-50 исполнителей":"Top 50 artists"):(isRu()?"Топ-50 треков":"Top 50 songs")).setItems(labels.toArray(new String[0]),(d,i)->{if(!artists)play(songs,i);}).setNegativeButton(isRu()?"Закрыть":"Close",null).show();
+  }
+
+  private void trackInfo(Track track){
+    app.io.execute(()->{String text=track.artist+"\n"+track.album+"\n"+time(track.duration)+"\n\n"+(isRu()?"Прослушиваний: ":"Listens: ")+app.stats.counts.getOrDefault(track.id,0L);
+      try{JSONObject record=app.companion.info(track);if(record!=null){JSONObject data=record.getJSONObject("data");JSONArray names=data.optJSONArray("names");if(names!=null){List<String> genres=new ArrayList<>();for(int i=0;i<names.length();i++)genres.add(names.getString(i));text+="\n\n"+(isRu()?"Жанры: ":"Genres: ")+String.join(", ",genres);}JSONObject source=data.optJSONObject("source");if(source!=null)text+="\n"+source.optString("url");}}catch(Exception ignored){}
+      String body=text;app.main.post(()->{if(!isFinishing())info(track.title,body);});
+    });
+  }
+
+  private void momentMenu(Track track){
+    double position=player==null?0:player.getCurrentPosition()/1000.0;
+    app.io.execute(()->{Double saved=null;try{saved=app.companion.moment(track);}catch(Exception ignored){}Double point=saved;
+      app.main.post(()->{if(isFinishing())return;new AlertDialog.Builder(this).setTitle(isRu()?"Любимый момент":"Favorite moment").setItems(new String[]{isRu()?"Сохранить текущий момент":"Save current moment",(isRu()?"Перейти к моменту":"Go to moment")+(point==null?" —": " · "+time(Math.round(point*1000))),isRu()?"Убрать отметку":"Remove marker"},(d,index)->{
+        if(index==1){if(point!=null&&current()!=null&&current().id.equals(track.id)&&player!=null)player.seekTo(Math.round(point*1000));return;}
+        app.io.execute(()->{try{if(index==0)app.companion.saveMoment(track,Math.round(position*10)/10.0);else app.companion.removeMoment(track);app.main.post(()->toast(index==0?(isRu()?"Отметка сохранена":"Marker saved"):(isRu()?"Отметка удалена":"Marker removed")));}catch(Exception ignored){}});
+      }).setNegativeButton(isRu()?"Закрыть":"Close",null).show();});
+    });
   }
 
   private void loadLyrics() {
@@ -2717,6 +2755,7 @@ public final class MainActivity extends Activity {
           String body = app.repo.lyrics(id);
           int offset = app.repo.offset(id);
           List<Lrc.Line> parsed = Lrc.parse(body);
+          if(!app.repo.hasLyrics(id))app.lyricsLookup.fetch(t,false,saved->{if(saved&&!isFinishing()){lyricTrack="";loadLyrics();}});
           app.main.post(
               () -> {
                 lyricLoading = false;
@@ -2793,7 +2832,7 @@ public final class MainActivity extends Activity {
         .setTitle("Текст песни: " + t.title)
         .setItems(
             new String[] {
-              "Изменить или вставить текст", "Импорт LRC", "Привязать строки ко времени", "Сдвиг текста", "Экспорт LRC"
+              "Изменить или вставить текст", "Импорт LRC", "Привязать строки ко времени", "Сдвиг текста", "Экспорт LRC", "Найти текст и тайминги", "Автопоиск текста: "+state("onlineLyrics",true)
             },
             (d, i) -> {
               switch (i) {
@@ -2823,6 +2862,12 @@ public final class MainActivity extends Activity {
                           .putExtra(
                               Intent.EXTRA_TITLE, t.title.replaceAll("[/\\\\]", "_") + ".lrc"),
                       EXPORT_LRC);
+                  break;
+                case 5:
+                  toast("Ищем текст в LRCLIB…");app.lyricsLookup.fetch(t,true,saved->{if(isFinishing())return;if(saved){lyricTrack="";loadLyrics();toast("Текст сохранён");}else toast("Нового текста нет; ваши правки сохранены.");});
+                  break;
+                case 6:
+                  app.lyricsLookup.enabled(!app.prefs.getBoolean("onlineLyrics",true));
                   break;
               }
             })

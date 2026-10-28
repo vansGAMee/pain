@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
-module.exports=function lyricsRoute(req,res,url,dataDir){
+module.exports=function lyricsRoute(req,res,url,dataDir,online){
+ if(url.pathname==='/api/lyrics/settings'&&online){online.settings(req,res).catch(()=>{if(!res.headersSent){res.writeHead(400);res.end('{}');}});return true;}
  if(url.pathname!=='/api/lyrics')return false;
  const id=url.searchParams.get('track');
  const send=(status,value)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
@@ -7,7 +8,10 @@ module.exports=function lyricsRoute(req,res,url,dataDir){
  const dir=path.join(dataDir,'lyrics');
  const file=path.join(dir,crypto.createHash('sha256').update(id).digest('hex')+'.json');
  if(req.method==='GET'){
-  try{send(200,JSON.parse(fs.readFileSync(file,'utf8')));}catch(e){send(e.code==='ENOENT'?200:500,e.code==='ENOENT'?{lines:[]}:{error:'Read failed'});}
+  try{send(200,{...JSON.parse(fs.readFileSync(file,'utf8')),manual:true});}catch(e){
+   if(e.code==='ENOENT'&&online)online.get(id,{refresh:url.searchParams.get('refresh')==='1'}).then(data=>send(200,data)).catch(()=>send(200,{lines:[],state:'error'}));
+   else send(e.code==='ENOENT'?200:500,e.code==='ENOENT'?{lines:[]}:{error:'Read failed'});
+  }
  }else if(req.method==='PUT'){
   let chunks=[],size=0,tooLarge=false;
   req.on('data',b=>{size+=b.length;if(size>512*1024){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(b);});

@@ -84,25 +84,37 @@ def index_library(root, manifest):
     items = json.loads(Path(manifest).read_text(encoding='utf-8'))
     cache = root / 'vectors'
     cache.mkdir(exist_ok=True)
-    rows, vectors, errors = [], [], []
+    rows, vectors, errors, unavailable = [], [], [], []
+    identical_files = {}
     had_catalog = (root / 'catalog.npz').exists()
-    state = dict(state='loading', total=len(items), indexed=0, failed=0, revision=REVISION)
+    state = dict(state='indexing', total=len(items), indexed=0, indexedIds=[], failed=0, revision=REVISION)
     atomic_json(root / 'status.json', state)
     model = None
     loading_model = False
     for item in items:
+        if not item.get('path'):
+            unavailable.append(item['id'])
+            state.update(unavailableIds=unavailable, processed=len(rows)+len(errors)+len(unavailable))
+            atomic_json(root / 'status.json', state)
+            continue
         state.update(current=item.get('title', item['id']), processed=len(rows)+len(errors))
         atomic_json(root / 'status.json', state)
         try:
             file = Path(item['path'])
             sig = signature(file)
+            stat = file.stat()
+            file_identity = (stat.st_dev, stat.st_ino if stat.st_ino else str(file), sig)
             key = hashlib.sha256((REVISION+'\0'+str(file)+'\0'+sig).encode()).hexdigest()
             target = cache / (key+'.npy')
-            if target.exists():
+            if file_identity in identical_files:
+                emb = identical_files[file_identity]
+            elif target.exists():
                 emb = np.load(target, allow_pickle=False)
             else:
                 if model is None:
                     loading_model = True
+                    state['state'] = 'loading'
+                    atomic_json(root / 'status.json', state)
                     model = ec._load_clap()
                     import laion_clap
                     checkpoint = Path(laion_clap.__file__).parent / '630k-audioset-best.pt'
@@ -144,6 +156,9 @@ def index_library(root, manifest):
                 with target.with_suffix('.tmp').open('wb') as stream:
                     np.save(stream, emb)
                 os.replace(target.with_suffix('.tmp'), target)
+            # Hard links / aliases are the very same audio file, so reuse its
+            # canonical cached CLAP output without loading the model twice.
+            identical_files[file_identity] = emb
             rows.append(dict(id=str(item['id']), path=str(file), signature=sig))
             vectors.append(emb)
         except Exception as error:
@@ -155,7 +170,7 @@ def index_library(root, manifest):
                 state.update(state='error', error=str(error))
                 atomic_json(root / 'status.json', state)
                 raise
-        state.update(indexed=len(rows), failed=len(errors), processed=len(rows)+len(errors))
+        state.update(indexed=len(rows), indexedIds=[row['id'] for row in rows], failed=len(errors), processed=len(rows)+len(errors)+len(unavailable))
         atomic_json(root / 'status.json', state)
         # Batch disk writes, not a model hyperparameter. Per-file vectors are
         # already durable, so interrupted runs resume without re-inference.

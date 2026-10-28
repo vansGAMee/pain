@@ -74,6 +74,7 @@ const path = require("node:path");
     // Open Settings Modal
     await page.click("#settingsToggleBtn");
     await page.waitForSelector("#audioAnalysisSettingsSection", { state: "visible" });
+    await page.click('#audioAnalysisSettingsSection > summary');
 
     // Check initial state
     const label = await page.locator("#audioAnalysisCountLabel").textContent();

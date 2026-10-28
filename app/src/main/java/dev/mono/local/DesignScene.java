@@ -196,6 +196,9 @@ public final class DesignScene extends FrameLayout {
     float lum =
         (Color.red(color) * .2126f + Color.green(color) * .7152f + Color.blue(color) * .0722f)
             / 255;
+    if (theme.equals("night")) {
+      int v=(int)(8+(1-lum)*224);return Color.argb(a,v,v,v);
+    }
     if (theme.equals("dark")) {
       int v = (int) (27 + (1 - lum) * 208);
       return Color.argb(a, v, v, (int) (v * .96));
@@ -457,6 +460,8 @@ public final class DesignScene extends FrameLayout {
         int col = color(e.getJSONObject("color"));
         if (app.prefs.getString("theme", "paper").equals("dark"))
           col = (col & 0xffffff) == 0xffffff ? 0x164f4f49 : 0x66000000;
+        if (app.prefs.getString("theme", "paper").equals("night"))
+          col = (col & 0xffffff) == 0xffffff ? 0x182f2d32 : 0x99000000;
         p.setShadowLayer(
             (float) e.optDouble("radius") / 2 * depth,
             (float) off.optDouble("x") * depth,
@@ -488,7 +493,9 @@ public final class DesignScene extends FrameLayout {
             Math.max(.2f, (float) e.optDouble("radius") / 2 * depth),
             (float) off.optDouble("x") * depth,
             (float) off.optDouble("y") * depth,
-            themed(color(e.getJSONObject("color"))));
+            app.prefs.getString("theme","paper").equals("night")
+                ? ((color(e.getJSONObject("color"))&0xffffff)==0xffffff?0x182f2d32:0x99000000)
+                : themed(color(e.getJSONObject("color"))));
         c.drawPath(inv, p);
         p.clearShadowLayer();
         c.restore();

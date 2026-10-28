@@ -150,4 +150,13 @@ public class RepositoryTest {
     assertEquals(90000, repo.stats(0).heard);
   }
 
+  @Test public void backupRestoresPlaylistsWithoutOverwritingCollidingLocalIds()throws Exception{
+    String id=repo.tracks().get(0).id;long list=repo.createPlaylist("From backup");repo.addToPlaylist(list,id);repo.saveLyrics(id,"Preserved words",180);
+    String backup=repo.exportJson();context.deleteDatabase("restore-test.db");Repository restored=new Repository(context,"restore-test.db");
+    try{long existing=restored.createPlaylist("Already here");assertEquals(list,existing);restored.importJson(backup);restored.importJson(backup);
+      assertEquals(2,restored.playlists().size());assertEquals("Already here",restored.playlists().get(existing));
+      long imported=restored.playlists().entrySet().stream().filter(e->e.getValue().equals("From backup")).findFirst().get().getKey();assertEquals(java.util.List.of(id),restored.playlist(imported));assertEquals("Preserved words",restored.lyrics(id));assertEquals(180,restored.offset(id));
+    }finally{restored.close();context.deleteDatabase("restore-test.db");}
+  }
+
 }

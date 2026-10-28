@@ -12,6 +12,8 @@ node_modules/
 desktop/data/*.json
 desktop/data/*.txt
 desktop/data/lyrics/
+desktop/data/lyrics-online/
+desktop/data/companion-conflicts/
 desktop/data/track-info/
 desktop/data/cover-search/
 desktop/data/media-metadata/

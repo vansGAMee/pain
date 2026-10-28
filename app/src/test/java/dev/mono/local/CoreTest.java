@@ -56,13 +56,13 @@ public class CoreTest {
                 + "[00:70]bad\n"
                 + "[01:02.3]End");
     assertEquals(4, lines.size());
-    assertEquals(0, lines.get(0).ms);
-    assertEquals(1300, lines.get(1).ms);
-    assertEquals(3050, lines.get(2).ms);
-    assertEquals(62100, lines.get(3).ms);
+    assertEquals(300, lines.get(0).ms);
+    assertEquals(1700, lines.get(1).ms);
+    assertEquals(3450, lines.get(2).ms);
+    assertEquals(62500, lines.get(3).ms);
     assertEquals("Hello", lines.get(2).text);
     assertEquals(-1, Lrc.active(lines, -1));
-    assertEquals(1, Lrc.active(lines, 1300));
+    assertEquals(1, Lrc.active(lines, 1700));
     assertEquals(3, Lrc.active(lines, 999999));
   }
 

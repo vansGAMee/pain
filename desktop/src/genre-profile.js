@@ -3,7 +3,7 @@
  const body=document.getElementById('genreProfileBody'),status=document.getElementById('genreProfileStatus'),toggle=document.getElementById('onlineGenresSwitch');
  const ru=()=>localStorage.getItem('pain_lang')!=='en',t=(a,b)=>ru()?a:b;
  const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const colors=['#775a89','#628879','#b28b4e','#6089a3','#b57270','#92946a','#8795a2','#aaa79e'];
+ const colors=['#775a89','#628879','#b28b4e','#6089a3','#b57270','#92946a','#8795a2','#aaa79e'].map((color,i)=>`var(--chart-${i+1},${color})`);
  let range='all',enabled=true,controller,lastKey='',lastTrackKey='',busyTrack=false,report,selected=-1;
  const visibility=document.getElementById('showTrackGenresSwitch');
  const setVisibility=value=>{document.documentElement.dataset.showTrackGenres=String(value);localStorage.setItem('pain_show_track_genres',String(value));};

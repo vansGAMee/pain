@@ -3,7 +3,7 @@
  const root=document.getElementById('insightGallery'),grid=document.getElementById('insightGalleryGrid'),status=document.getElementById('insightGalleryStatus');if(!root)return;
  const ru=()=>localStorage.getItem('pain_lang')!=='en',t=(a,b)=>ru()?a:b,pick=s=>Array.isArray(s)?s[ru()?0:1]:String(s??'');
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const palette=['#826394','#548b82','#b98b49','#688bb2','#bd747d','#94995e'];
+ const palette=['#826394','#548b82','#b98b49','#688bb2','#bd747d','#94995e'].map((color,i)=>`var(--chart-${i+1},${color})`);
  const weekdays=()=>ru()?['пн','вт','ср','чт','пт','сб','вс']:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
  let worker,sequence=0,range='all',group='all',cards=new Map(),fingerprint='',timer;
  const active=()=>!document.hidden&&document.getElementById('view-insights')?.classList.contains('active');

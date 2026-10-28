@@ -47,10 +47,14 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
+const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
+  resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
+  getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
 const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: getLibraryTracks,
-  resolveAudio: id => getResolvedAudioFilePath(id, true)});
+  resolveAudio: id => getResolvedAudioFilePath(id, true), prepareAudio: ensureAudio, audioStatus:ensureAudio.getStatus});
 const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
 const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
+const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id)});
 const catalog = require('./music-catalog')(DATA_DIR);
 const storeCatalog=require('./store-search');storeCatalog.configure(DATA_DIR);
 const loadGenreStats=()=>fs.promises.readFile(path.join(DATA_DIR,'stats.json'),'utf8').then(JSON.parse);
@@ -476,7 +480,7 @@ function getLibraryTracks() {
   }
 }
 
-function getResolvedAudioFilePath(trackId, readOnly = false) {
+function getResolvedAudioFilePath(trackId, readOnly = false, allowAlias = true) {
   const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
   const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
 
@@ -520,6 +524,15 @@ function getResolvedAudioFilePath(trackId, readOnly = false) {
           }
         } catch (_) {}
         return dlPath;
+      }
+      // MediaStore IDs can change after rescanning or duplicate imports. Reuse
+      // an existing exact recording without changing IDs, likes or history.
+      if (allowAlias) {
+        const other = require('./audio-download').replacement(track, tracks);
+        if (other) {
+          const file = getResolvedAudioFilePath(String(other.id), true, false);
+          if (file && fs.statSync(file).size === Number(track.bytes)) return file;
+        }
       }
     }
   } catch (_) {}
@@ -687,7 +700,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (lyricsRoute(req,res,url,DATA_DIR)) return;
+  if (lyricsRoute(req,res,url,DATA_DIR,onlineLyrics)) return;
 
   if (pathname === '/api/resource-saver') {
     if (req.method === 'POST') {
@@ -770,13 +783,15 @@ const server = http.createServer((req, res) => {
       const isForce = url.searchParams.get('force') === '1';
       const existing = phoneSync.read('dj-state.json', {}).profiles?.[trackId];
 
-      const file = getResolvedAudioFilePath(trackId, true);
+      let file = getResolvedAudioFilePath(trackId, true);
       if (!file) {
         if (existing && AudioAnalyzer.complete(existing, track)) {
           reply(200, { success: true, profile: existing, bpm: null, cached: true }); return;
         }
-        reply(404, { error: 'Audio file unavailable; download it before analysis' }); return;
+        try { file = await ensureAudio(trackId); }
+        catch (error) { reply(error.code?.startsWith('AUDIO_')?404:502, { code: error.code?.startsWith('AUDIO_')?error.code:'PHONE_UNAVAILABLE', error: error.message }); return; }
       }
+      if (res.destroyed) return;
       let stat;
       try { stat = fs.statSync(file); } catch (_) {
         if (existing && AudioAnalyzer.complete(existing, track)) {

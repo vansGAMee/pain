@@ -3,8 +3,9 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const mergeStats=require('./stats-store');
 const DjState=require('./dj-state');
 const { safeWrite, createSnapshot } = require('./data-guard');
+const CompanionStore=require('./companion-store'),CompanionModel=require('./companion-model');
 const flag=value=>value===true||value===1?1:0;
-function request(base,route,body){
+function request(base,route,body,timeout=5000){
  return new Promise((resolve,reject)=>{
   const url=new URL(route,base);if(url.protocol!=='http:')return reject(new Error('Invalid phone URL'));
   const payload=body===undefined?null:JSON.stringify(body);
@@ -14,13 +15,13 @@ function request(base,route,body){
    res.on('error',reject);
    res.on('end',()=>{try{if(res.statusCode!==200)throw new Error('Phone HTTP '+res.statusCode);resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch(e){reject(e);}});
   });
-  const timer=setTimeout(()=>req.destroy(new Error('Phone sync timed out')),5000);
+  const timer=setTimeout(()=>req.destroy(new Error('Phone sync timed out')),timeout);
   req.on('close',()=>clearTimeout(timer));req.on('error',reject);req.end(payload);
  });
 }
 class PhoneSync{
  constructor(dir){
-  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();this._djState=null;
+  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();this._djState=null;this.companion=new CompanionStore(dir);
  }
  read(name,fallback){
   if(name==='dj-state.json'&&this._djState)return this._djState;
@@ -78,6 +79,18 @@ class PhoneSync{
   }
  }
  flush(base){return this.serial(()=>this.sendPending(base));}
+ async syncCompanion(base){
+  const remote=await request(base,'/api/companion',undefined,15000);
+  if(remote.schema!==1||typeof remote.revision!=='string')throw Error('Unsupported shared collections');
+  CompanionModel.validate(remote.entities);
+  const previous=this.companion.base(base),local=this.companion.capture(),merged=CompanionModel.merge(previous,local,remote.entities);
+  const acknowledged=CompanionModel.canonical(merged.entities)===CompanionModel.canonical(remote.entities)?remote:
+   await request(base,'/api/companion',{revision:remote.revision,entities:merged.entities},15000);
+  CompanionModel.validate(acknowledged.entities);
+  const applied=CompanionModel.merge(local,this.companion.capture(),acknowledged.entities);
+  this.companion.archive([...merged.conflicts,...applied.conflicts]);this.companion.apply(applied.entities);this.companion.acknowledge(base,acknowledged.entities);
+  return {items:Object.keys(applied.entities).length,conflicts:merged.conflicts.length+applied.conflicts.length};
+ }
  synchronize(base){return this.serial(async()=>{
   await this.sendPending(base);
   const [library,remote]=await Promise.all([request(base,'/api/library'),request(base,'/api/stats')]);
@@ -101,6 +114,7 @@ class PhoneSync{
    try{djState=this.saveDjState(await request(base,'/api/dj-state',djState));}catch(_){}
   }
   const result = {library:this.saveLibrary(library),stats:this.saveStats(stats),djState};
+  if(library.capabilities?.companion===1){try{result.companion=await this.syncCompanion(base);}catch(error){result.companion={error:error.message};}}
   try { createSnapshot(this.dir, 'phone-sync'); } catch (_) {}
   return result;
  });}

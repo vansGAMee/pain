@@ -4,6 +4,9 @@
 (function() {
   'use strict';
 
+  const isFormTheme = theme => theme === 'form' || theme === 'form-night';
+  let leaderboardPlays = [];
+
   // --- APPLICATION STATE ---
   const state = {
     lang: localStorage.getItem('pain_lang') || 'en',
@@ -352,6 +355,7 @@
   window.painQueue = queue;
   window.PainPlayer = {
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
+    getAudio: () => activeDeck || deckA,
     flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId):Promise.resolve();}
   };
   let audioCtx = null;
@@ -787,7 +791,7 @@
     } else if (hash && ['home', 'library', 'favorites', 'player', 'insights', 'sync'].includes(hash)) {
       switchView(hash);
     } else {
-      switchView(state.theme==='form'?'home':'library');
+      switchView(isFormTheme(state.theme)?'home':'library');
     }
 
     window.addEventListener('hashchange', () => {
@@ -795,7 +799,7 @@
       if (h === 'profile') {
         switchView('insights');
         setTimeout(openProfileModal, 100);
-      } else if(state.theme==='form'&&h!==state.currentView&&['home','library','favorites','player','insights','sync'].includes(h)) {
+      } else if(isFormTheme(state.theme)&&h!==state.currentView&&['home','library','favorites','player','insights','sync'].includes(h)) {
         switchView(h);
       }
     });
@@ -1202,7 +1206,7 @@
 
   // --- NAVIGATION & VIEW SWITCHING ---
   function switchView(viewName, playlistId = null) {
-    if(viewName==='home'&&state.theme!=='form')viewName='library';
+    if(viewName==='home'&&!isFormTheme(state.theme))viewName='library';
     state.currentView = viewName;
     state.activePlaylistId = playlistId;
 
@@ -1227,7 +1231,7 @@
     }
 
     renderCurrentView();
-    if(state.theme==='form')document.querySelector('.views-viewport').scrollTop=0;
+    if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
     window.dispatchEvent(new CustomEvent('pain:view',{detail:viewName}));
   }
@@ -2105,6 +2109,7 @@
     window.dispatchEvent(new Event('pain:insights'));
     const details = ListeningInsights.build(state.tracks, state.stats);
     const plays = details.plays;
+    leaderboardPlays = plays;
     const now = new Date();
     const isRu = state.lang === 'ru';
 
@@ -2156,7 +2161,7 @@
       DOM.hourlyBars.innerHTML = '';
       const maxH = Math.max(...hours, 60000);
       hours.forEach((ms, h) => {
-        const pct = Math.max(state.theme==='form'?0:4, Math.round((ms / maxH) * 85));
+        const pct = Math.max(isFormTheme(state.theme)?0:4, Math.round((ms / maxH) * 85));
         const isPeak = h === peakHour && ms > 0;
         const col = document.createElement('div');
         col.className = 'hour-col';
@@ -2214,7 +2219,7 @@
       DOM.weekBars.innerHTML = '';
       past7Days.forEach((d, idx) => {
         const ms = dayTotalsMs[idx];
-        const h = Math.max(state.theme==='form'?0:6, Math.round((ms / maxDayMs) * 90));
+        const h = Math.max(isFormTheme(state.theme)?0:6, Math.round((ms / maxDayMs) * 90));
         const col = document.createElement('div');
         col.className = 'bar-col';
         col.title = `${d.toLocaleDateString()}: ${Math.round(ms / 60000)} ${isRu ? 'мин' : 'min'}`;
@@ -2226,70 +2231,35 @@
       });
     }
 
-    // 8. Top 5 Tracks & Obsessions
-    if (DOM.topTracksList) {
-      const sortedTracks = Object.entries(trackCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-      DOM.topTracksList.innerHTML = '';
-      if (sortedTracks.length === 0) {
-        DOM.topTracksList.innerHTML = `<div style="color:var(--ink-secondary); font-size:12px; padding:8px 0;">${isRu ? 'Пока нет прослушиваний' : 'No listening history yet'}</div>`;
-      } else {
-        sortedTracks.forEach(([trackId, count], idx) => {
-          const track = state.tracks.find(t => t.id === trackId) || { id: trackId, title: trackId, artist: '—' };
-          const item = document.createElement('div');
-          item.className = 'leaderboard-item';
-          item.innerHTML = `
-            <div class="leaderboard-item-left">
-              <span class="leaderboard-rank">#${idx + 1}</span>
-              <img class="leaderboard-thumb" src="${getCoverUrl(track)}" alt="" onerror="this.src='${getProceduralCoverSvg(track)}'">
-              <div class="leaderboard-text">
-                <div class="leaderboard-title">${escapeHtml(track.title || 'Untitled')}</div>
-                <div class="leaderboard-sub">${escapeHtml(track.artist || 'Unknown')}</div>
-              </div>
-            </div>
-            <div class="leaderboard-stat">${count} ${isRu ? 'воспр.' : 'plays'}</div>
-          `;
-          item.addEventListener('click', () => playTrackById(track.id));
-          DOM.topTracksList.appendChild(item);
-        });
-      }
-    }
+    renderTopTracks();
 
-    // 9. Top 5 Artists
-    if (DOM.topArtistsList) {
-      const artistTimes = {};
-      plays.forEach(p => {
-        const t = state.tracks.find(x => x.id === p.track);
-        const artist = (t && t.artist) || 'Unknown Artist';
-        artistTimes[artist] = (artistTimes[artist] || 0) + (p.heard || 60000);
-      });
-      const sortedArtists = Object.entries(artistTimes)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-      DOM.topArtistsList.innerHTML = '';
-      if (sortedArtists.length === 0) {
-        DOM.topArtistsList.innerHTML = `<div style="color:var(--ink-secondary); font-size:12px; padding:8px 0;">${isRu ? 'Пока нет данных' : 'No listening history yet'}</div>`;
-      } else {
-        sortedArtists.forEach(([artist, ms], idx) => {
-          const m = Math.round(ms / 60000);
-          const item = document.createElement('div');
-          item.className = 'leaderboard-item';
-          item.innerHTML = `
-            <div class="leaderboard-item-left">
-              <span class="leaderboard-rank">#${idx + 1}</span>
-              <div class="leaderboard-text">
-                <div class="leaderboard-title">${escapeHtml(artist)}</div>
-                <div class="leaderboard-sub">${isRu ? 'Исполнитель' : 'Artist'}</div>
-              </div>
-            </div>
-            <div class="leaderboard-stat">${m} ${isRu ? 'мин' : 'min'}</div>
-          `;
-          DOM.topArtistsList.appendChild(item);
-        });
-      }
-    }
     renderListeningDetails(details);
+  }
+
+  function renderTopTracks(){
+    if(!DOM.topTracksList||typeof TrackLeaderboard==='undefined')return;
+    const select=document.getElementById('topTracksPeriod'),ru=state.lang==='ru',period=select.value||'all';
+    const report=TrackLeaderboard.rank(state.tracks,leaderboardPlays,period);
+    const choices=[['all',ru?'Всё время':'All time'],['7',ru?'7 дней':'7 days'],['30',ru?'30 дней':'30 days'],['this-month',ru?'Этот месяц':'This month'],['90',ru?'90 дней':'90 days'],['365',ru?'Последний год':'Last 365 days'],['this-year',ru?'Этот год':'This year'],...report.years.map(y=>['year:'+y,String(y)])];
+    for(const id of ['topTracksPeriod','topArtistsPeriod']){const input=document.getElementById(id);input.replaceChildren(...choices.map(([value,text])=>new Option(text,value,false,value===period)));if(!input.dataset.bound){input.dataset.bound='true';input.addEventListener('change',()=>{select.value=input.value;renderTopTracks();});}}
+    renderTopArtists(period);
+    DOM.topTracksList.replaceChildren();
+    document.getElementById('topTracksSummary').textContent=ru?`${report.rows.length} треков · ${report.total.toLocaleString('ru-RU')} прослушиваний за период. Короткие случайные включения не учитываются.`:`${report.rows.length} tracks · ${report.total.toLocaleString('en-US')} listens in this period. Brief accidental plays are excluded.`;
+    if(!report.rows.length){const p=document.createElement('p');p.className='chart-sub';p.textContent=ru?'За этот период прослушиваний пока нет.':'No listens in this period yet.';DOM.topTracksList.append(p);return;}
+    const fragment=document.createDocumentFragment();
+    report.rows.forEach(({track,count},index)=>{const item=document.createElement('button');item.type='button';item.className='leaderboard-item top-track-button';item.dataset.trackId=track.id;
+      item.innerHTML=`<span class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><img class="leaderboard-thumb" src="${escapeHtml(getCoverUrl(track))}" alt="" loading="lazy" decoding="async"><span class="leaderboard-text"><span class="leaderboard-title">${escapeHtml(track.title||'Untitled')}</span><span class="leaderboard-sub">${escapeHtml(track.artist||'—')}</span></span></span><span class="leaderboard-stat">${count.toLocaleString(ru?'ru-RU':'en-US')}</span>`;
+      item.title=(ru?'Включить · прослушиваний: ':'Play · listens: ')+count;item.onclick=()=>playTrackById(track.id);fragment.append(item);
+    });DOM.topTracksList.append(fragment);
+  }
+
+  function renderTopArtists(period){
+    const ru=state.lang==='ru',[start,end]=TrackLeaderboard.bounds(period,Date.now()),artists=new Map(),tracks=new Map(state.tracks.map(t=>[String(t.id),t]));
+    for(const p of leaderboardPlays){if(p.started<start||p.started>=end)continue;const artist=tracks.get(String(p.track))?.artist||(ru?'Неизвестный исполнитель':'Unknown artist');artists.set(artist,(artists.get(artist)||0)+p.heard);}
+    const rows=[...artists].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,50),fragment=document.createDocumentFragment();
+    for(const [index,[artist,ms]] of rows.entries()){const item=document.createElement('div');item.className='leaderboard-item';item.innerHTML=`<div class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><div class="leaderboard-text"><div class="leaderboard-title">${escapeHtml(artist)}</div><div class="leaderboard-sub">${ru?'Исполнитель':'Artist'}</div></div></div><div class="leaderboard-stat">${Math.round(ms/60000)} ${ru?'мин':'min'}</div>`;fragment.append(item);}
+    if(!rows.length){const p=document.createElement('p');p.className='chart-sub';p.textContent=ru?'За этот период данных пока нет.':'No listening in this period yet.';fragment.append(p);}
+    DOM.topArtistsList.replaceChildren(fragment);
   }
 
   function renderListeningDetails(details) {
@@ -2840,7 +2810,11 @@
         if (titleEl) titleEl.classList.add('active-text');
         const indexNumSpan = tr.querySelector('.index-num');
         if (indexNumSpan) {
-          if (state.isPlaying) {
+          if (state.theme === 'form-night') {
+            if (!indexNumSpan.querySelector('.row-playback-mark')) indexNumSpan.innerHTML='<span class="row-playback-mark" role="img"><i></i><i></i><i></i></span>';
+            indexNumSpan.firstElementChild.setAttribute('aria-label',state.isPlaying?(state.lang==='ru'?'Воспроизводится':'Playing'):(state.lang==='ru'?'Пауза':'Paused'));
+            indexNumSpan.style.color='var(--accent)';
+          } else if (state.isPlaying) {
             indexNumSpan.textContent = '▶';
             indexNumSpan.style.color = 'var(--ink)';
           } else {
@@ -2927,6 +2901,7 @@
   }
 
   function updatePlayBtnUI() {
+    document.documentElement.dataset.playing = String(state.isPlaying);
     if(typeof HomeView!=='undefined')HomeView.setPlaying(state.isPlaying);
     if (state.isPlaying) {
       DOM.bottomPlayIcon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
@@ -3114,7 +3089,7 @@
       const p = audioProfiles[t.id];
       if (typeof AudioAnalyzer !== 'undefined' && AudioAnalyzer.complete(p, t)) analyzed++;
     }
-    const percent = total > 0 ? Math.round((analyzed / total) * 100) : 0;
+    const percent = total > 0 ? Math.floor((analyzed / total) * 100) : 0;
     DOM.audioAnalysisCountLabel.textContent = ru
       ? `Анализировано: ${analyzed} / ${total} (${percent}%)`
       : `Analyzed: ${analyzed} / ${total} (${percent}%)`;
@@ -3156,6 +3131,12 @@
           DOM.audioAnalysisCurrentTrack.textContent = ru
             ? `Осталось проанализировать: ${remaining}`
             : `Remaining to analyze: ${remaining}`;
+          const errors = batchAudioAnalyzer?.errors || [];
+          if (errors.length) DOM.audioAnalysisCurrentTrack.textContent += ' · ' + errors.map(e =>
+            [e.track.artist,e.track.title].filter(Boolean).join(' — ') + ': ' +
+            (e.code === 'AUDIO_NOT_ON_PHONE' ? (ru ? 'телефон ответил 404: этой записи нет в его библиотеке; нужен исходный аудиофайл' : 'phone returned 404: this track is absent from its library; the original audio file is needed') :
+             e.code === 'AUDIO_PHONE_UNREADABLE' ? (ru ? 'телефон не может прочитать файл; проверьте разрешение на музыку' : 'phone cannot read the file; check music access permission') :
+             ['PHONE_UNAVAILABLE','AUDIO_UNAVAILABLE'].includes(e.code) ? (ru ? 'не удалось загрузить файл с телефона; проверьте соединение' : 'could not download from the phone; check the connection') : e.message)).join('; ');
         }
       }
       if (DOM.startAudioAnalysisBtn) {
@@ -3853,9 +3834,10 @@
 
   // --- THEME & LANGUAGE ---
   function applyTheme(theme) {
-    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form'].includes(theme) ? theme : 'paper';
+    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form', 'form-night'].includes(theme) ? theme : 'paper';
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
+    window.dispatchEvent(new CustomEvent('pain:theme',{detail:theme}));
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => { input.checked = input.value === theme; });
     try {
       localStorage.setItem('pain_theme', theme);
@@ -3863,7 +3845,8 @@
     if (state.fluidColor && state.fluidColor.toLowerCase() !== '#7c4dff') {
       applyFluidColor(state.fluidColor);
     }
-    if(theme!=='form'&&state.currentView==='home')switchView('library');
+    if(!isFormTheme(theme)&&state.currentView==='home')switchView('library');
+    if(state.currentTrackId)updatePlayingRowUI();
   }
 
   function applyLang(lang) {
@@ -4073,7 +4056,7 @@
         root.style.setProperty('--fluid-accent-base', hex);
         root.style.setProperty('--fluid-accent-light', `rgb(${rLight}, ${gLight}, ${bLight})`);
 
-        const isDark = ['dark', 'spotify', 'stereo'].includes(state.theme) || ['dark', 'spotify', 'stereo'].includes(root.getAttribute('data-theme'));
+        const isDark = ['dark', 'spotify', 'stereo', 'form-night'].includes(state.theme) || ['dark', 'spotify', 'stereo', 'form-night'].includes(root.getAttribute('data-theme'));
         if (isDark) {
           root.style.setProperty('--fluid-bg-color-1', `rgba(${rD1}, ${gD1}, ${bD1}, 0.45)`);
           root.style.setProperty('--fluid-bg-color-2', `rgba(${rD2}, ${gD2}, ${bD2}, 0.55)`);
@@ -4386,7 +4369,7 @@
         body: JSON.stringify({phoneUrl: state.phoneUrl})
       });
       if (!result.ok) throw new Error('Phone sync failed');
-      const {library: libData, stats, djState} = await result.json();
+      const {library: libData, stats, djState,companion} = await result.json();
       mergeSharedAudio(djState);
       if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
       // A local click/play during the exchange must not be rolled back by its response.
@@ -4402,6 +4385,12 @@
         state.libraryDirty = true;
       }
       state.stats = stats;
+      if(companion&&!companion.error){
+        const playlists=await fetch('/api/playlists').then(r=>r.ok?r.json():null).catch(()=>null);
+        if(Array.isArray(playlists)){state.playlists=playlists;renderPlaylistsSidebar();}
+        syncExcludedTracksFromServer();syncFavoriteMomentsFromServer();
+        window.dispatchEvent(new Event('pain:companion-synced'));
+      }
       state.hasAutoSynced = true;
       if (libraryChanged || statsChanged) {
         invalidatePlayCountsCache();
@@ -4412,6 +4401,7 @@
         }
       }
       if (!background) {
+        if(companion?.error)showToast(state.lang==='ru'?'История синхронизирована; плейлисты и тексты повторят обмен при следующем подключении.':'History synced; playlists and lyrics will retry at the next connection.');
         DOM.syncProgressFill.style.width = '100%';
         DOM.progressPercent.textContent = '100%';
         setTimeout(() => DOM.progressBanner.classList.remove('active'), 1200);
@@ -4519,11 +4509,11 @@
     });
 
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => {
-      input.addEventListener('change', () => { if (input.checked) { applyTheme(input.value); if(input.value==='form')switchView('home'); } });
+      input.addEventListener('change', () => { if (input.checked) { applyTheme(input.value); if(isFormTheme(input.value))switchView('home'); } });
     });
 
     DOM.themeToggle.addEventListener('click', () => {
-      applyTheme(state.theme === 'paper' ? 'dark' : 'paper');
+      applyTheme(isFormTheme(state.theme) ? (state.theme === 'form' ? 'form-night' : 'form') : (state.theme === 'paper' ? 'dark' : 'paper'));
     });
 
     // Coalesce fast typing instead of rebuilding the whole library for every key.
@@ -4536,7 +4526,7 @@
       clearTimeout(searchTimer);
       cancelTrackRender(DOM.tracksGrid);
       cancelTrackRender(DOM.tracksTableBody);
-      searchTimer = setTimeout(() => { if(state.theme==='form'&&state.currentView!=='library')switchView('library');else renderLibrary(); }, 120);
+      searchTimer = setTimeout(() => { if(isFormTheme(state.theme)&&state.currentView!=='library')switchView('library');else renderLibrary(); }, 120);
     });
 
     DOM.searchClearBtn.addEventListener('click', () => {
@@ -4555,7 +4545,7 @@
         chip.classList.add('active');
         state.categoryFilter = chip.dataset.filter;
         state.libraryDirty = true;
-        if(state.theme==='form')switchView('library');else renderLibrary();
+        if(isFormTheme(state.theme))switchView('library');else renderLibrary();
       });
     });
 
@@ -4563,12 +4553,12 @@
     DOM.sortSelect.addEventListener('change', (e) => {
       state.sortOption = e.target.value;
       state.libraryDirty = true;
-      if(state.theme==='form')switchView('library');else renderLibrary();
+      if(isFormTheme(state.theme))switchView('library');else renderLibrary();
     });
 
     // View Mode Toggles (Grid vs List)
-    DOM.viewModeGridBtn.addEventListener('click', () => {applyViewMode('grid');if(state.theme==='form')switchView('library');});
-    DOM.viewModeListBtn.addEventListener('click', () => {applyViewMode('list');if(state.theme==='form')switchView('library');});
+    DOM.viewModeGridBtn.addEventListener('click', () => {applyViewMode('grid');if(isFormTheme(state.theme))switchView('library');});
+    DOM.viewModeListBtn.addEventListener('click', () => {applyViewMode('list');if(isFormTheme(state.theme))switchView('library');});
 
     // Play All Button in Library
     DOM.playAllBtn.addEventListener('click', () => {

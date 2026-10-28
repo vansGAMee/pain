@@ -20,6 +20,8 @@ public final class MonoApp extends Application {
   public boolean scanning, ready;
   public String scanMessage = "";
   public SyncServer syncServer;
+  public CompanionStore companion;
+  public LyricsLookup lyricsLookup;
   public MusicEngine music;
   private ContentObserver observer;
   private final Runnable autoScan =
@@ -32,6 +34,8 @@ public final class MonoApp extends Application {
     super.onCreate();
     repo = new Repository(this);
     prefs = getSharedPreferences("mono", MODE_PRIVATE);
+    companion = new CompanionStore(this);
+    lyricsLookup = new LyricsLookup(this);
     music = new MusicEngine(this);
     syncServer = new SyncServer(this);
     syncServer.start();

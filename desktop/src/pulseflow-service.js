@@ -4,7 +4,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 
-module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) {
+module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, prepareAudio, audioStatus, spawnImpl = spawn }) {
   const root = path.join(dataDir, 'pulseflow');
   const runtimeRoot = __dirname.includes('app.asar') ? path.dirname(dataDir) : path.join(__dirname, '..');
   const python = process.env.PAIN_PULSEFLOW_PYTHON || path.join(runtimeRoot, '.pulseflow-venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
@@ -12,7 +12,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
   const bridge = path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'pulseflow', 'bridge.py');
   const pending = new Map();
   let indexAutomatic = false, backgroundAllowed = true;
-  let query, indexer, sequence = 0, lastError = null, starting = false, closed = false, indexGeneration = 0;
+  let query, indexer, sequence = 0, lastError = null, starting = false, closed = false, indexGeneration = 0, indexAbort;
   const env = { ...process.env, OMP_NUM_THREADS: '2', OPENBLAS_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
     TOKENIZERS_PARALLELISM: 'false', HF_HOME: path.join(root, 'models'), PYTHONUNBUFFERED: '1' };
   function stopQuery(error = new Error('PulseFlow stopped')) {
@@ -21,7 +21,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
     pending.clear(); child?.kill();
   }
   function spawnPython(command, extra = []) {
-    const child = spawn(python, [bridge, command, '--data', root, ...extra], { env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawnImpl(python, [bridge, command, '--data', root, ...extra], { env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let log;
     fs.mkdirSync(root, { recursive: true });
     log = fs.createWriteStream(path.join(root, command + '.log'), { flags: 'a' });
@@ -50,19 +50,35 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
     let saved = {}; try { saved = JSON.parse(await fs.promises.readFile(path.join(root, 'status.json'), 'utf8')); } catch (_) {}
     const installed = fs.existsSync(python), running = Boolean(indexer) || starting;
     if (['loading', 'indexing'].includes(saved.state) && !running) saved.state = 'interrupted';
-    return { ...saved, installed, running, available: fs.existsSync(path.join(root, 'catalog.npz')),
-      state: installed ? saved.state || 'empty' : 'not-installed', lastError };
+    const tracks = getTracks(), unavailable = tracks.filter(t => !resolveAudio(String(t.id)))
+      .map(t => ({ id: String(t.id), title: t.title, artist: t.artist, ...audioStatus?.(String(t.id)) }));
+    let indexedIds = saved.indexedIds;
+    if (!indexedIds && saved.state === 'ready' && !saved.failed) {
+      try { indexedIds = JSON.parse(await fs.promises.readFile(path.join(root, 'input.json'), 'utf8')).filter(t => t.path).map(t => t.id); } catch (_) {}
+    }
+    const ids = new Set(indexedIds || []), indexed = indexedIds ? tracks.filter(t => ids.has(String(t.id))).length : Math.min(saved.indexed || 0, tracks.length);
+    let failures = []; try { failures = JSON.parse(await fs.promises.readFile(path.join(root, 'errors.json'), 'utf8')); } catch (_) {}
+    return { ...saved, indexedIds: undefined, indexed, total: tracks.length, unavailable, failures, installed, running,
+      available: fs.existsSync(path.join(root, 'catalog.npz')),
+      state: installed ? (starting && !indexer ? 'preparing' : !running && saved.state === 'ready' && indexed < tracks.length ? 'partial' : saved.state || 'empty') : 'not-installed', lastError };
   }
   async function start({ automatic = false } = {}) {
     if (automatic && !backgroundAllowed) return status();
     if (indexer || starting) return status();
     if (closed) throw new Error('PulseFlow stopped');
     if (!fs.existsSync(python)) throw new Error('Install the PulseFlow runtime: npm run pulseflow:setup');
-    starting = true; indexAutomatic = automatic;
+    starting = true; indexAutomatic = automatic; indexAbort = new AbortController();
     const generation = indexGeneration;
     try {
     await fs.promises.mkdir(root, { recursive: true });
-    const manifest = getTracks().map(t => ({ id: String(t.id), title: t.title, path: resolveAudio(String(t.id)) })).filter(t => t.path);
+    const manifest = getTracks().map(t => ({ id: String(t.id), title: t.title, path: resolveAudio(String(t.id)) }));
+    // Manual repair waits for complete downloads before passing paths to Python.
+    if (!automatic && prepareAudio) for (const item of manifest.filter(t => !t.path)) {
+      if (closed || generation !== indexGeneration) throw new Error('PulseFlow indexing cancelled');
+      try { item.path = await prepareAudio(item.id,{signal:indexAbort.signal}); }
+      catch (error) { if(!['AUDIO_NOT_ON_PHONE','AUDIO_PHONE_UNREADABLE'].includes(error.code))break; }
+    }
+    if (closed || generation !== indexGeneration) throw new Error('PulseFlow indexing cancelled');
     const file = path.join(root, 'input.json');
     await fs.promises.writeFile(file, JSON.stringify(manifest));
     if (closed || generation !== indexGeneration) throw new Error('PulseFlow indexing cancelled');
@@ -70,7 +86,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
     child.stdin.end(); lastError = null;
     child.on('error', error => { lastError = error.message; });
     child.on('close', code => { if (indexer === child) { indexer = null; if (code) lastError ||= 'PulseFlow indexing failed; see Settings and data/pulseflow/index.log'; } });
-    return { ...(await status()), running: true, state: 'loading', total: manifest.length };
+    return { ...(await status()), running: true, state: 'indexing', current: '', total: manifest.length };
     } finally { starting = false; }
   }
   function recommend(request) {
@@ -83,7 +99,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
       child.stdin.write(JSON.stringify({ ...request, id }) + '\n');
     });
   }
-  function close() { closed = true; indexGeneration++; stopQuery(); indexer?.kill(); indexer = null; }
+  function close() { closed = true; indexGeneration++; indexAbort?.abort(); stopQuery(); indexer?.kill(); indexer = null; }
   process.once('exit', close);
   async function route(req, res, pathname) {
     res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
@@ -94,17 +110,17 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio }) 
       if (pathname === '/api/pulseflow/status' && req.method === 'GET') { res.end(JSON.stringify(await status())); return; }
       if (req.method !== 'POST' || req.headers['x-pain-update'] !== 'pulseflow') { res.writeHead(403); res.end('{}'); return; }
       if (pathname === '/api/pulseflow/index') { res.end(JSON.stringify(await start())); return; }
-      if (pathname === '/api/pulseflow/cancel') { indexGeneration++; indexer?.kill(); indexer = null; res.end(JSON.stringify(await status())); return; }
+      if (pathname === '/api/pulseflow/cancel') { indexGeneration++; indexAbort?.abort(); indexer?.kill(); indexer = null; res.end(JSON.stringify(await status())); return; }
       if (pathname !== '/api/pulseflow/recommend') { res.writeHead(404); res.end('{}'); return; }
       let body = '';
       for await (const chunk of req) { body += chunk; if (body.length > 2 * 1024 * 1024) throw new Error('Queue is too large'); }
       res.end(JSON.stringify(await recommend(JSON.parse(body))));
-    } catch (error) { lastError = error.message; res.writeHead(503); res.end(JSON.stringify({ error: error.message })); }
+    } catch (error) { if (!/cancelled/.test(error.message)) lastError = error.message; res.writeHead(503); res.end(JSON.stringify({ error: error.message })); }
   }
   function setBackgroundAllowed(value) {
     backgroundAllowed = value;
     if (!value && indexAutomatic && (indexer || starting)) {
-      indexGeneration++; indexer?.kill(); indexer = null;
+      indexGeneration++; indexAbort?.abort(); indexer?.kill(); indexer = null;
     }
   }
   return { route, close, status, start, recommend, setBackgroundAllowed };

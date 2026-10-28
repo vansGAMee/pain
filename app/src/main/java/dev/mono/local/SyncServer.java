@@ -189,6 +189,17 @@ public final class SyncServer {
         sendResponse(out,200,"OK","application/json",app.music.exportState());
       } else if ("/api/dj-state".equals(cleanPath) && "POST".equalsIgnoreCase(method)) {
         sendResponse(out,200,"OK","application/json",app.music.mergeState(request.body));
+      } else if ("/api/companion".equals(cleanPath)) {
+        try {
+          org.json.JSONObject result;
+          if("GET".equalsIgnoreCase(method))result=app.io.submit(()->app.companion.snapshot()).get(12,TimeUnit.SECONDS);
+          else if("POST".equalsIgnoreCase(method)){
+            org.json.JSONObject body=new org.json.JSONObject(request.body);
+            result=app.io.submit(()->app.companion.apply(body.getString("revision"),body.getJSONObject("entities"))).get(12,TimeUnit.SECONDS);
+            if(result!=null)app.refresh();
+          }else{sendResponse(out,405,"Method Not Allowed","application/json","{}");return;}
+          sendResponse(out,result==null?409:200,result==null?"Conflict":"OK","application/json",result==null?"{\"error\":\"Phone changed during sync; retry\"}":result.toString());
+        }catch(Exception error){sendResponse(out,400,"Bad Request","application/json","{\"error\":\"Shared collections were not applied\"}");}
       } else if ("/api/library".equals(cleanPath) && "GET".equalsIgnoreCase(method)) {
         String json = app.repo.exportLibraryJson();
         sendResponse(out, 200, "OK", "application/json", json);

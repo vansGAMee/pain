@@ -209,6 +209,7 @@
       this.queue = [];
       this.timer = null;
       this.callbacks = {};
+      this.errors = [];
       this._generation = 0;
       this._inFlight = null;
     }
@@ -217,7 +218,8 @@
         status: this.status, isRunning: this.status === "running", isPaused: this.status === "paused",
         currentTrack: this.currentTrack, completed: this.completed, total: this.total,
         succeeded: this.succeeded, failed: this.failed,
-        percent: this.total > 0 ? Math.round(this.completed / this.total * 100) : 0
+        errors: this.errors,
+        percent: this.total > 0 ? Math.floor(this.completed / this.total * 100) : 0
       };
     }
     start(tracks, existingProfiles = {}, callbacks = {}) {
@@ -227,6 +229,7 @@
       this.queue = (tracks || []).filter(t => t && t.id != null && (callbacks.overwriteExisting || !complete(existingProfiles[t.id], t)));
       this.total = this.queue.length;
       this.completed = this.succeeded = this.failed = 0;
+      this.errors = [];
       this.status = "running";
       this._notifyProgress();
       this._processNext();
@@ -289,10 +292,13 @@
             if (complete(data?.profile, track)) {
               result = data;
             }
-          } else if (response.status !== 404 && response.status !== 502) {
+          } else {
             let errJson;
             try { errJson = await response.json(); } catch (_) {}
-            failure = new Error(errJson?.error || "Audio analysis failed (HTTP " + response.status + ")");
+            if (errJson?.code || (response.status !== 404 && response.status !== 502)) {
+              failure = new Error(errJson?.error || "Audio analysis failed (HTTP " + response.status + ")");
+              failure.code = errJson?.code;
+            }
           }
         } catch (error) {
           if (error.name === "AbortError") throw error;
@@ -354,6 +360,7 @@
         if (!active()) return;
         failure = error;
         this.failed++;
+        this.errors.push({ track, message: failure.message, code: failure.code });
         try { callbacks.onTrackError?.(track, failure); } catch (_) {}
       } finally {
         if (active()) {

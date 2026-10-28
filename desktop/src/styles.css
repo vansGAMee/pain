@@ -2991,6 +2991,15 @@ input:checked + .switch-slider:before {
   margin-left: 12px;
 }
 
+.top-tracks-period {display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.top-tracks-period select {font:inherit;font-size:12px;padding:7px 10px;max-width:100%;color:var(--ink);background:var(--bg);border:1px solid var(--border-strong);border-radius:7px}
+#topTracksList,#topArtistsList {max-height:560px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;margin-top:12px}
+.top-track-button {width:100%;font:inherit;text-align:left;color:var(--ink);background:none;border:0;cursor:pointer;border-radius:6px}
+.top-track-button:hover {background:var(--card-hover)}
+.top-track-button:focus-visible {outline:2px solid var(--accent);outline-offset:-2px}
+.top-track-button :is(.leaderboard-title,.leaderboard-sub) {display:block}
+#topTracksSummary {font-size:11px;line-height:1.5;margin-top:12px}
+
 /* ========================================================
    TOAST NOTIFICATIONS
    ======================================================== */
@@ -3085,6 +3094,7 @@ input:checked + .switch-slider:before {
 .karaoke-line {border:0;background:none;text-align:left;color:var(--ink);opacity:.27;font:600 clamp(28px,3.5vw,64px)/1.24 'PainLyrics','Geist',sans-serif;letter-spacing:-.035em;padding:4px 0;cursor:pointer;overflow-wrap:anywhere;flex:1;min-width:0;transition:opacity 650ms ease;}
 .karaoke-line.is-past {opacity:.48;}
 .karaoke-line.is-current,.karaoke-line:hover,.karaoke-line:focus-visible {opacity:1;}
+.karaoke-lines.is-unsynced .karaoke-line {opacity:.85;}
 .karaoke-line:focus-visible {outline:2px solid var(--ink-muted);outline-offset:5px;border-radius:5px;}
 .karaoke-empty {color:var(--ink-muted);font-size:clamp(22px,3vw,40px);line-height:1.4;max-width:700px;}
 .karaoke-editor {flex:0 0 300px;overflow:auto;padding:8px 12px 12px 0;}
@@ -3099,6 +3109,9 @@ input:checked + .switch-slider:before {
 #karaoke.is-editing .karaoke-line.is-next {opacity:1;}
 .karaoke-row input {width:88px;border:1px solid var(--border-strong);border-radius:8px;padding:8px;background:var(--card-bg);color:var(--ink);font-family:inherit;font-size:13px;font-variant-numeric:tabular-nums;}
 #karaokeStatus {min-height:20px;flex-shrink:0;font-size:12px;color:var(--ink-muted);padding-top:8px;}
+#karaokeStatus a {color:inherit;}
+#audioAnalysisSettingsSection > summary {cursor:pointer;font-size:14px;font-weight:500;}
+#audioAnalysisSettingsSection[open] > summary {margin-bottom:16px;}
 @media(max-width:800px){#karaoke{padding:16px;}.karaoke-header{gap:12px;}.karaoke-header .btn-minimal{padding:8px;font-size:12px;}.karaoke-body{gap:12px;}.karaoke-editor{flex-basis:220px;}.karaoke-lines{padding-left:8px;padding-right:8px;}}
 @media(max-width:580px){.karaoke-header{flex-direction:column;}.is-editing .karaoke-body{flex-direction:column;overflow:auto;}.karaoke-editor{flex:0 0 auto;overflow:visible;}.is-editing .karaoke-scroll{overflow:visible;flex:none;}.karaoke-editor textarea{height:120px;}}
 @media(prefers-reduced-motion:reduce){.karaoke-line{transition:none;}}

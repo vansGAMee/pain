@@ -46,6 +46,12 @@ public final class Repository extends SQLiteOpenHelper {
   }
 
   @Override
+  public void onOpen(SQLiteDatabase d) {
+    super.onOpen(d);
+    d.execSQL("CREATE TABLE IF NOT EXISTS companion_entities(key TEXT PRIMARY KEY,kind TEXT NOT NULL,local_id INTEGER,value TEXT NOT NULL)");
+  }
+
+  @Override
   public void onUpgrade(SQLiteDatabase d, int old, int next) {
     throw new IllegalStateException("Unsupported database version");
   }
@@ -81,6 +87,10 @@ public final class Repository extends SQLiteOpenHelper {
   private static String s(Cursor c, String n) {
     String v = c.getString(c.getColumnIndexOrThrow(n));
     return v == null ? "" : v;
+  }
+
+  public Track track(String id) {
+    try(Cursor c=getReadableDatabase().rawQuery("SELECT * FROM tracks WHERE id=?",new String[]{id})) {return c.moveToFirst()?readTrack(c):null;}
   }
 
   private static long l(Cursor c, String n) {
@@ -285,6 +295,7 @@ public final class Repository extends SQLiteOpenHelper {
       return c.moveToFirst() ? c.getInt(0) : 0;
     }
   }
+  public boolean hasLyrics(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM lyrics WHERE track=?",new String[]{id})){return c.moveToFirst();}}
 
   public void saveLyrics(String id, String body, int offset) {
     ContentValues v = new ContentValues();
@@ -306,7 +317,9 @@ public final class Repository extends SQLiteOpenHelper {
   public long createPlaylist(String name) {
     ContentValues v = new ContentValues();
     v.put("name", name);
-    return getWritableDatabase().insertOrThrow("playlists", null, v);
+    SQLiteDatabase d=getWritableDatabase();long id=d.insertOrThrow("playlists", null, v);
+    d.delete("companion_entities","kind='playlist' AND local_id=?",new String[]{String.valueOf(id)});
+    return id;
   }
 
   public void addToPlaylist(long list, String track) {
@@ -529,8 +542,10 @@ public final class Repository extends SQLiteOpenHelper {
     org.json.JSONObject root = new org.json.JSONObject();
     root.put("schema", 1);
     root.put("exportedAt", Instant.now().toString());
+    SharedPreferences prefs=context.getSharedPreferences("mono",Context.MODE_PRIVATE);
+    String source=prefs.getString("backupSource","");if(source.isEmpty()){source=UUID.randomUUID().toString();if(!prefs.edit().putString("backupSource",source).commit())throw new java.io.IOException("Could not identify backup");}root.put("backupSource",source);
     for (String table :
-        new String[] {"tracks", "plays", "slices", "lyrics", "playlists", "playlist_tracks"}) {
+        new String[] {"tracks", "plays", "slices", "lyrics", "playlists", "playlist_tracks", "companion_entities"}) {
       org.json.JSONArray arr = new org.json.JSONArray();
       try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM " + table, null)) {
         while (c.moveToNext()) {
@@ -651,6 +666,7 @@ public final class Repository extends SQLiteOpenHelper {
           d.insertWithOnConflict("lyrics", null, v, SQLiteDatabase.CONFLICT_REPLACE);
         }
       }
+      importCollections(root,d);
       d.setTransactionSuccessful();
     } finally {
       d.endTransaction();
@@ -658,11 +674,35 @@ public final class Repository extends SQLiteOpenHelper {
     return count;
   }
 
+  /** Restore by portable collection key, never by another database's integer ID. */
+  private void importCollections(org.json.JSONObject root,SQLiteDatabase d)throws Exception{
+    org.json.JSONArray bindings=root.optJSONArray("companion_entities"),lists=root.optJSONArray("playlists"),members=root.optJSONArray("playlist_tracks");
+    Map<Long,org.json.JSONObject> linked=new HashMap<>();
+    if(bindings!=null)for(int i=0;i<bindings.length();i++){org.json.JSONObject row=bindings.getJSONObject(i);if(row.optString("kind").equals("playlist"))linked.put(row.getLong("local_id"),row);}
+    if(lists!=null)for(int i=0;i<lists.length();i++){
+      org.json.JSONObject row=lists.getJSONObject(i),binding=linked.get(row.getLong("id"));
+      String source=root.optString("backupSource",root.optString("exportedAt","legacy"));
+      String key=binding==null?"playlist:backup_"+UUID.nameUUIDFromBytes((source+":"+row.getLong("id")).getBytes(java.nio.charset.StandardCharsets.UTF_8)):binding.getString("key");
+      Long local=null;try(Cursor c=d.rawQuery("SELECT local_id FROM companion_entities WHERE key=?",new String[]{key})){if(c.moveToFirst())local=c.getLong(0);}
+      if(local==null||!playlists().containsKey(local))local=createPlaylist(row.getString("name"));
+      // Import merges membership and preserves other playlists and newer local additions.
+      if(members!=null)for(int j=0;j<members.length();j++){org.json.JSONObject member=members.getJSONObject(j);if(member.getLong("list")==row.getLong("id"))addToPlaylist(local,member.getString("track"));}
+      org.json.JSONArray songs=new org.json.JSONArray();for(String id:playlist(local)){Track t=track(id);if(t!=null)songs.put(CompanionStore.pack(t));}
+      org.json.JSONObject value=binding==null?new org.json.JSONObject().put("kind","playlist").put("name",row.getString("name")).put("tracks",songs):new org.json.JSONObject(binding.getString("value"));
+      ContentValues v=new ContentValues();v.put("key",key);v.put("kind","playlist");v.put("local_id",local);v.put("value",value.toString());d.insertWithOnConflict("companion_entities",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+    }
+    if(bindings!=null)for(int i=0;i<bindings.length();i++){
+      org.json.JSONObject row=bindings.getJSONObject(i);String kind=row.getString("kind");if(kind.equals("playlist"))continue;
+      if(!List.of("lyrics","genres","moment","excluded").contains(kind))continue;
+      ContentValues v=new ContentValues();v.put("key",row.getString("key"));v.put("kind",kind);v.put("value",new org.json.JSONObject(row.getString("value")).toString());d.insertWithOnConflict("companion_entities",null,v,SQLiteDatabase.CONFLICT_IGNORE);
+    }
+  }
+
   public String exportLibraryJson() throws Exception {
     org.json.JSONObject root = new org.json.JSONObject();
     root.put("schema", 1);
     root.put("type", "library");
-    root.put("capabilities",new org.json.JSONObject().put("audioProfiles",1));
+    root.put("capabilities",new org.json.JSONObject().put("audioProfiles",1).put("companion",1));
     root.put("exportedAt", Instant.now().toString());
     org.json.JSONArray arr = new org.json.JSONArray();
     try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM tracks WHERE available=1", null)) {

@@ -41,14 +41,29 @@ test('analysis endpoint uses saved identity, persists reanalysis, validates sour
   assert.ok(refreshed.profile.updatedAt > first.profile.updatedAt);
   const saved = JSON.parse(fs.readFileSync(path.join(root, 'data/dj-state.json')));
   assert.equal(saved.profiles.song.updatedAt, refreshed.profile.updatedAt, 'same-size reanalysis must persist');
+  // A retained old Android ID must resolve the same already-downloaded song.
+  const alias={...track,id:'old-media-id',path:undefined};
+  await fetch(`http://127.0.0.1:${port}/api/save-library`,{method:'POST',body:JSON.stringify({tracks:[track,alias]})});
+  const aliasResult=await fetch(`http://127.0.0.1:${port}/api/analyze-track/old-media-id`,{method:'POST',body:'{}'});
+  assert.equal(aliasResult.status,200);assert.equal((await aliasResult.json()).profile.signature,Audio.signature(alias));
+  assert.equal(fs.existsSync(path.join(root,'cache/old-media-id.mp3')),false,'alias recovery reuses the existing file without duplicating audio');
   response = await analyze({ track: { ...track, id: 'another' } }); assert.equal(response.status, 400);
   fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
   response = await analyze(); assert.equal(response.status, 200);
   assert.equal((await response.json()).cached, undefined, 'changed source stat must invalidate cache');
   assert.deepEqual(fs.readFileSync(file), before);
   // A missing file without prior measurements must not become invented audio.
+  fs.writeFileSync(path.join(root,'data/last_phone_ip.txt'),'127.0.0.1:9');
   await fetch(`http://127.0.0.1:${port}/api/save-library`, {method:'POST',body:JSON.stringify({tracks:[{id:'missing',title:'Missing',duration:30000}]})});
   const unavailable=await fetch(`http://127.0.0.1:${port}/api/analyze-track/missing`,{method:'POST',body:'{}'});
-  assert.equal(unavailable.status,404);
+  assert.equal(unavailable.status,502);assert.equal((await unavailable.json()).code,'PHONE_UNAVAILABLE');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root,'data/dj-state.json'))).profiles.missing,undefined);
+  // The same last song becomes analyzable after the phone is available. The
+  // endpoint must wait for the entire download before launching the decoder.
+  const phone=http.createServer((req,res)=>{res.writeHead(200,{'Content-Length':before.length});res.write(before.subarray(0,5000));setTimeout(()=>res.end(before.subarray(5000)),20);});
+  await new Promise(resolve=>phone.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>phone.close(resolve)));
+  fs.writeFileSync(path.join(root,'data/last_phone_ip.txt'),'127.0.0.1:'+phone.address().port);
+  const repaired=await fetch(`http://127.0.0.1:${port}/api/analyze-track/missing`,{method:'POST',body:'{}'});
+  assert.equal(repaired.status,200);assert.ok((await repaired.json()).profile);
+  assert.deepEqual(fs.readFileSync(path.join(root,'cache/missing.mp3')),before);
 });

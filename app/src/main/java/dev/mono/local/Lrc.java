@@ -21,7 +21,7 @@ public final class Lrc {
     List<Line> result = new ArrayList<>();
     long offset = 0;
     Matcher o =
-        Pattern.compile("\\[offset:([+-]?\\d+)\\]", Pattern.CASE_INSENSITIVE).matcher(input);
+        Pattern.compile("\\[offset:\\s*([+-]?\\d+)\\]", Pattern.CASE_INSENSITIVE).matcher(input);
     if (o.find())
       try {
         offset = Long.parseLong(o.group(1));
@@ -40,7 +40,7 @@ public final class Lrc {
         end = m.end();
       }
       String text = raw.substring(end).replaceAll("<\\d+:\\d+(?:\\.\\d+)?>", "").trim();
-      for (long ms : times) result.add(new Line(Math.max(0, ms + offset), text));
+      for (long ms : times) result.add(new Line(Math.max(0, ms - offset), text));
     }
     result.sort(Comparator.comparingLong(l -> l.ms));
     return result;
