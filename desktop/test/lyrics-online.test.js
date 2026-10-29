@@ -49,3 +49,38 @@ test('manual text wins, disabling is durable, and saved automatic lyrics remain 
  const manual=await(await fetch(base+'/api/lyrics?track='+track.id+'&refresh=1')).json();assert.deepEqual(manual.lines,lines);assert.ok(manual.manual);assert.equal(calls,1);
  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'lyrics-preferences.json'))).enabled,false);
 });
+const candidate={id:'9182',accesskey:'ABC123',song:track.title,singer:track.artist,duration:180500};
+function backupResponse(url,items=[candidate]) {
+ return url.includes('/download?')?Response.json({content:Buffer.from(record.syncedLyrics).toString('base64')}):Response.json({candidates:items});
+}
+test('unreachable primary switches hosts immediately and saves genuine backup timings offline',async t=>{
+ const dir=fixture(t),calls=[];
+ const service=create(dir,{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);if(url.startsWith('https://lrclib.net/'))throw Error('connection timeout');return backupResponse(url);}});
+ const found=await service.get(track.id);assert.equal(found.source.name,'KuGou');assert.equal(found.synced,true);assert.equal(found.lines[0].time,1.2);
+ assert.equal(calls.length,3);assert.equal(calls.filter(u=>u.includes('lrclib')).length,1);
+ const offline=create(dir,{getTrack:()=>track,fetchImpl:()=>{throw Error('offline');}});assert.deepEqual((await offline.get(track.id)).lines,found.lines);
+});
+test('primary rate limit does not block an independent fallback',async t=>{
+ const calls=[];const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);return url.includes('lrclib.net')?new Response('busy',{status:429,headers:{'retry-after':'90'}}):backupResponse(url);}});
+ assert.equal((await service.get(track.id)).source.name,'KuGou');assert.equal(calls.length,3);
+});
+test('backup rejects other artists and slowed editions, and strips timing from a different recording',async t=>{
+ for(const change of [{singer:'Another artist'},{song:track.title+' - Slowed'},{duration:220000}]) {
+  const calls=[];const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);if(url.includes('lrclib.net'))return new Response('{}',{status:404});return backupResponse(url,[{...candidate,...change}]);}});
+  const found=await service.get(track.id);
+  if(change.duration){assert.equal(found.synced,false);assert.ok(found.lines.length);assert.ok(found.lines.every(l=>l.time===null));}
+  else {assert.equal(found.state,'not-found');assert.ok(calls.every(u=>!u.includes('/download?')));}
+ }
+});
+test('source mode is durable, invalidates old misses, and primary-only never contacts backup',async t=>{
+ const dir=fixture(t);fs.writeFileSync(path.join(dir,'lyrics-preferences.json'),JSON.stringify({enabled:true,mode:'primary'}));
+ let calls=[];let hasBackup=false;
+ const options={getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);if(url.includes('lrclib.net'))return new Response('{}',{status:404});return backupResponse(url,hasBackup?[candidate]:[]);}};
+ const service=create(dir,options);assert.equal((await service.get(track.id)).state,'not-found');assert.ok(calls.every(u=>u.includes('lrclib.net')));
+ const server=http.createServer((req,res)=>route(req,res,new URL(req.url,'http://localhost'),dir,service));await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const endpoint='http://127.0.0.1:'+server.address().port+'/api/lyrics/settings';
+ let response=await fetch(endpoint,{method:'POST',headers:{'X-Pain-Update':'lyrics'},body:JSON.stringify({mode:'regional'})});assert.deepEqual(await response.json(),{enabled:true,mode:'regional'});
+ calls=[];hasBackup=true;assert.equal((await service.get(track.id)).source.name,'KuGou');assert.ok(calls.every(u=>u.includes('kugou.com')));
+ assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'lyrics-preferences.json'))).mode,'regional');
+ response=await fetch(endpoint,{method:'POST',headers:{'X-Pain-Update':'lyrics'},body:JSON.stringify({mode:'unknown'})});assert.equal(response.status,400);
+});

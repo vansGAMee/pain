@@ -29,6 +29,8 @@ const DATA_DIR = path.join(BASE_DATA_DIR, 'data');
 const DOWNLOADS_DIR = path.join(BASE_DATA_DIR, 'downloads');
 const CACHE_DIR = path.join(BASE_DATA_DIR, 'cache');
 const COVERS_DIR = path.join(BASE_DATA_DIR, 'covers');
+const musicRuntime=require('./music-runtime')(DATA_DIR);
+process.env.PATH=musicRuntime.env()[process.platform==='win32'?'Path':'PATH'];
 const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
 const cachedTracks=require('./cached-tracks')({cacheDir:CACHE_DIR,downloadsDir:DOWNLOADS_DIR,getTracks:getLibraryTracks});
 const updaterOptions = {
@@ -52,8 +54,13 @@ const phoneSync = new PhoneSync(DATA_DIR);
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
   resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
   getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
+const runtimeInstaller=require('./runtime-installer')(DATA_DIR,{onReady(){
+  personalRecommender.reload();
+  pulseflow.reloadRuntime();
+  if(performanceMode!=='maximum'&&getLibraryTracks().some(t=>getResolvedAudioFilePath(String(t.id),true)))pulseflow.start({automatic:true}).catch(()=>{});
+}});
 const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: getLibraryTracks,
-  resolveAudio: id => getResolvedAudioFilePath(id, true), prepareAudio: ensureAudio, audioStatus:ensureAudio.getStatus});
+  resolveAudio: id => getResolvedAudioFilePath(id, true), prepareAudio: ensureAudio, audioStatus:ensureAudio.getStatus,runtimeInstaller});
 const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
 const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
 const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id)});
@@ -793,6 +800,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  if (pathname === '/api/music-runtime') { runtimeInstaller.route(req,res);return; }
   if (pathname === '/api/personal/recommend') { personalRecommender.route(req,res);return; }
 
   if (pathname.startsWith('/api/transition-audio/')) {
@@ -1617,6 +1625,8 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
 });
 server.discordPresence=discordPresence;
 server.personalRecommender=personalRecommender;
+server.runtimeInstaller=runtimeInstaller;
+server.once('close',()=>runtimeInstaller.close());
 server.once('close',()=>personalRecommender.close());
 server.headersTimeout=15000;
 server.requestTimeout=10*60*1000;

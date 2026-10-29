@@ -18,7 +18,7 @@ parentPort.on('message',message=>{
  if(message.preferences){preferences=message.preferences;return;}
  if(message.method==='shutdown'){
   server.discordPresence?.close();
-  server.pulseflow.close();server.personalRecommender?.close();server.close();server.closeAllConnections();process.exit(0);
+  server.runtimeInstaller?.close();server.pulseflow.close();server.personalRecommender?.close();server.close();server.closeAllConnections();process.exit(0);
  }
  const job=pending.get(message.id);if(!job)return;pending.delete(message.id);
  if(message.error)job.reject(new Error(message.error));else job.resolve(message.result);

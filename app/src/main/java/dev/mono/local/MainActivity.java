@@ -2832,7 +2832,7 @@ public final class MainActivity extends Activity {
         .setTitle("Текст песни: " + t.title)
         .setItems(
             new String[] {
-              "Изменить или вставить текст", "Импорт LRC", "Привязать строки ко времени", "Сдвиг текста", "Экспорт LRC", "Найти текст и тайминги", "Автопоиск текста: "+state("onlineLyrics",true)
+              "Изменить или вставить текст", "Импорт LRC", "Привязать строки ко времени", "Сдвиг текста", "Экспорт LRC", "Найти текст и тайминги", "Автопоиск текста: "+state("onlineLyrics",true), "Источники текста…"
             },
             (d, i) -> {
               switch (i) {
@@ -2864,10 +2864,14 @@ public final class MainActivity extends Activity {
                       EXPORT_LRC);
                   break;
                 case 5:
-                  toast("Ищем текст в LRCLIB…");app.lyricsLookup.fetch(t,true,saved->{if(isFinishing())return;if(saved){lyricTrack="";loadLyrics();toast("Текст сохранён");}else toast("Нового текста нет; ваши правки сохранены.");});
+                  toast("Ищем текст и тайминги…");app.lyricsLookup.fetch(t,true,saved->{if(isFinishing())return;if(saved){lyricTrack="";loadLyrics();toast("Текст сохранён");}else toast("Нового текста нет; ваши правки сохранены.");});
                   break;
                 case 6:
                   app.lyricsLookup.enabled(!app.prefs.getBoolean("onlineLyrics",true));
+                  break;
+                case 7:
+                  String[] modes={"auto","regional","primary"};
+                  new AlertDialog.Builder(this).setTitle("Источники текста").setSingleChoiceItems(new String[]{"Автоматически: LRCLIB → KuGou","Сначала запасной (без VPN)","Только LRCLIB"},Arrays.asList(modes).indexOf(app.lyricsLookup.mode()),(dialog,choice)->{app.lyricsLookup.mode(modes[choice]);dialog.dismiss();toast("Источник изменён. Можно повторить поиск текста.");}).setNegativeButton("Закрыть",null).show();
                   break;
               }
             })

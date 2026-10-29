@@ -12,7 +12,7 @@ function tone(frequency){
 (async()=>{
  const browser=await chromium.launch({headless:true,args:['--mute-audio','--autoplay-policy=no-user-gesture-required']});
  try{
-  const page=await browser.newPage(),errors=[],waves={a:tone(110),b:tone(6000),c:tone(440)};
+  const page=await browser.newPage(),errors=[],waves={a:tone(110),b:tone(6000),c:tone(440)};let failB=false;
   const tracks=['a','b','c'].map(id=>({id,title:id,artist:id,duration:30000}));
   page.on('pageerror',e=>errors.push(e.message));
   page.on('console',m=>{if(m.type()==='warning'&&m.text().startsWith('Transition recovered'))errors.push(m.text());});
@@ -25,6 +25,7 @@ function tone(frequency){
   await page.route('**/*',async route=>{
    const url=new URL(route.request().url());if(url.origin!=='http://localhost')return route.abort();
    if(url.pathname.startsWith('/api/cached-track/')){
+    if(failB&&url.pathname.endsWith('/b')&&route.request().resourceType()==='media')return route.fulfill({status:503,body:'Temporarily unavailable'});
     const id=url.pathname.split('/').at(-1);if(id==='b'||id==='c')await new Promise(resolve=>setTimeout(resolve,id==='b'?1500:1000));
     const body=waves[url.pathname.split('/').at(-1)],range=/bytes=(\d+)-(\d*)/.exec(route.request().headers().range||'');
     if(range){const start=Number(range[1]),end=range[2]?Math.min(Number(range[2]),body.length-1):body.length-1;return route.fulfill({status:206,contentType:'audio/wav',headers:{'Accept-Ranges':'bytes','Content-Range':`bytes ${start}-${end}/${body.length}`},body:body.subarray(start,end+1)});}
@@ -51,5 +52,10 @@ function tone(frequency){
   await page.waitForFunction(()=>PainPlayer.getTrack()?.id==='c'&&!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.1);
   assert.deepEqual(errors,[]);console.log('PASS: rapid switches during slow buffering preserve the outgoing music and recover the selected track');
   await page.waitForTimeout(1600);
+  failB=true;await page.locator('tr[data-track-id="b"]').click();
+  await page.waitForFunction(()=>PainPlayer.getTrack()?.id==='b'&&PainPlayer.getAudio().error);
+  failB=false;await page.click('#bottomPlayBtn');
+  await page.waitForFunction(()=>PainPlayer.getTrack()?.id==='b'&&!PainPlayer.getAudio().error&&!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.1);
+  console.log('PASS: Play retries a failed track after a temporary source error');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

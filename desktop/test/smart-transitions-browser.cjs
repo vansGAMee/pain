@@ -19,6 +19,8 @@ function tone(frequency){
   await page.addInitScript(()=>{
    localStorage.setItem('pain_track_transition','1');localStorage.setItem('pain_lang','ru');localStorage.setItem('pain_shuffle_mode','off');
    window.transitionCurves=[];window.sourceAssignments=[];
+   const AC=window.AudioContext;window.AudioContext=new Proxy(AC,{construct(Type,args){const ctx=new Type(...args);window.testAudioContext=ctx;return ctx;}});
+   const connect=AudioNode.prototype.connect;AudioNode.prototype.connect=function(destination,...args){if(destination instanceof AudioDestinationNode){const meter=this.context.createAnalyser();meter.fftSize=2048;window.outputMeter=meter;connect.call(this,meter);return connect.call(meter,destination,...args);}return connect.call(this,destination,...args);};
    const native=AudioParam.prototype.setValueCurveAtTime;AudioParam.prototype.setValueCurveAtTime=function(curve,time,duration){window.transitionCurves.push({curve:[...curve],duration});return native.call(this,curve,time,duration);};
    const desc=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');Object.defineProperty(HTMLMediaElement.prototype,'src',{...desc,set(value){window.sourceAssignments.push(value);desc.set.call(this,value);}});
   });
@@ -45,6 +47,7 @@ function tone(frequency){
   page.setDefaultTimeout(10000);await page.goto('http://localhost');
   const play=async id=>{await page.locator(`tr[data-track-id="${id}"]`).click();await page.waitForFunction(id=>PainPlayer.getTrack()?.id===id&&!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.1,id);};
   const prepared=async id=>page.waitForFunction(id=>[...document.querySelectorAll('audio')].some(a=>a!==PainPlayer.getAudio()&&a.src.includes('/'+id+'?')&&a.readyState>=3),id);
+  const audible=async()=>page.waitForFunction(()=>{const meter=window.outputMeter;if(!meter)return false;const data=new Float32Array(meter.fftSize);meter.getFloatTimeDomainData(data);return Math.sqrt(data.reduce((n,x)=>n+x*x,0)/data.length)>.01;});
   await play('a');await prepared('b');
   // Natural succession, including reusing the already buffered source.
   const assigned=await page.evaluate(()=>window.sourceAssignments.filter(s=>s.includes('/b?')).length);
@@ -57,6 +60,11 @@ function tone(frequency){
   await page.waitForFunction(()=>PainPlayer.getTrack()?.id==='c'&&!PainPlayer.getAudio().paused);
   await page.waitForFunction(()=>window.transitionCurves.length>=4);
   await page.waitForTimeout(1200);
+  await audible();
+  // Background/device interruptions can suspend Web Audio after a transition.
+  // Play must resume the processing graph, not merely toggle the media element.
+  await page.click('#bottomPlayBtn');await page.evaluate(()=>window.testAudioContext.suspend());
+  await page.click('#bottomPlayBtn');await page.waitForFunction(()=>window.testAudioContext.state==='running');await audible();
   assert.equal(await page.evaluate(()=>[...document.querySelectorAll('audio')].filter(a=>!a.paused).length),1);
   // Repeated manual selections while fading, then pause and resume.
   await play('a');await play('b');await play('c');await play('a');
@@ -75,6 +83,6 @@ function tone(frequency){
   const curves=await page.evaluate(()=>window.transitionCurves);
   assert.ok(curves.every(c=>c.duration>0&&c.duration<=4&&c.curve.every(Number.isFinite)));
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({naturalSequence:'a → b → c',warmSourceReused:true,curves:curves.length,rapidSwitches:true,pauseResume:true,seekRecovery:true,errors}));
+  console.log(JSON.stringify({naturalSequence:'a → b → c',warmSourceReused:true,curves:curves.length,rapidSwitches:true,pauseResume:true,suspendedContextResumed:true,audibleOutput:true,seekRecovery:true,errors}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

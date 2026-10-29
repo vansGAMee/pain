@@ -912,7 +912,11 @@
           <select id="pulseflowPolicy"><option value="taste" data-ru="Весь мой вкус · обучение по истории" data-en="My whole taste · learned from listening">Весь мой вкус · обучение по истории</option><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="live" data-ru="Живой Smart DJ — больше неожиданности" data-en="Live Smart DJ — more surprises">Живой Smart DJ — больше неожиданности</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
           <p class="fluid-row-hint" data-ru="Весь мой вкус — отдельная локальная модель: фактически прослушанная доля, лайки, CLAP и акустическая текстура. Соотношение с частотным baseline и влияние времени суток выбираются по истории. Причина выбора — в окне вайбов. Первый запуск обучается в фоне." data-en="My whole taste is a separate local model using unique listening coverage, likes, CLAP and acoustic texture. History validation selects the frequency baseline balance and time context. Open vibes for the recorded explanation. Initial training stays in the background.">Весь мой вкус — отдельная локальная модель: фактически прослушанная доля, лайки, CLAP и акустическая текстура. Соотношение с частотным baseline и влияние времени суток выбираются по истории. Причина выбора — в окне вайбов. Первый запуск обучается в фоне.</p>
           <p id="pulseflowStatus" role="status" aria-live="polite"></p>
-          <p id="pulseflowMissing" class="fluid-row-hint" role="status"></p>
+          <p id="pulseflowRuntimeHint" class="fluid-row-hint"></p>
+          <button type="button" class="btn-minimal primary" id="pulseflowInstall" hidden data-ru="Установить локальный движок" data-en="Install local analysis">Установить локальный движок</button>
+          <button type="button" class="btn-minimal" id="pulseflowInstallCancel" hidden data-ru="Остановить установку" data-en="Cancel installation">Остановить установку</button>
+          <details id="pulseflowMissingDetails" hidden><summary id="pulseflowMissingSummary"></summary><p id="pulseflowMissing" class="fluid-row-hint" style="max-height:160px;overflow:auto;white-space:pre-line"></p></details>
+          <details id="pulseflowDiagnostics" hidden><summary data-ru="Подробности ошибки" data-en="Error details">Подробности ошибки</summary><pre id="pulseflowDiagnosticText" style="max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
           <button type="button" class="btn-minimal primary" id="pulseflowIndex" data-ru="Обновить индекс фонотеки" data-en="Update library index">Обновить индекс фонотеки</button>
           <button type="button" class="btn-minimal" id="pulseflowCancel" hidden data-ru="Остановить анализ" data-en="Stop indexing">Остановить анализ</button>
         </div>
@@ -959,9 +963,13 @@
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
               <label for="onlineLyricsSwitch" data-en="Find karaoke lyrics automatically" data-ru="Автоматически искать текст и караоке">Автоматически искать текст и караоке</label>
-              <span class="fluid-row-hint" data-en="LRCLIB lyrics for the current song, with synchronized lines when available. Saved locally; your edits take priority." data-ru="Текст текущей песни из LRCLIB, с таймингами строк, если они есть. Найденное сохраняется локально, ваши правки имеют приоритет.">Текст текущей песни из LRCLIB, с таймингами строк, если они есть. Найденное сохраняется локально, ваши правки имеют приоритет.</span>
+              <span class="fluid-row-hint" data-en="LRCLIB with an independent KuGou fallback. Real timing when available; saved locally. Your edits take priority." data-ru="LRCLIB и независимый запасной источник KuGou. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.">LRCLIB и независимый запасной источник KuGou. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineLyricsSwitch" checked disabled><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="lyricsSourceMode" data-en="Lyrics sources" data-ru="Источники текста">Источники текста</label><span class="fluid-row-hint" data-en="If the main source is unreachable without a VPN, try the backup first. Availability depends on your network." data-ru="Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.">Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.</span></div>
+            <select id="lyricsSourceMode" class="sort-select" disabled><option value="auto" data-ru="Автоматически" data-en="Automatic">Автоматически</option><option value="regional" data-ru="Сначала запасной (без VPN)" data-en="Backup first (without VPN)">Сначала запасной (без VPN)</option><option value="primary" data-ru="Только LRCLIB" data-en="LRCLIB only">Только LRCLIB</option></select>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">

@@ -4,16 +4,15 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 
-module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, prepareAudio, audioStatus, spawnImpl = spawn }) {
+module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, prepareAudio, audioStatus, runtimeInstaller, spawnImpl = spawn }) {
   const root = path.join(dataDir, 'pulseflow');
-  const runtimeRoot = __dirname.includes('app.asar') ? path.dirname(dataDir) : path.join(__dirname, '..');
-  const python = process.env.PAIN_PULSEFLOW_PYTHON || path.join(runtimeRoot, '.pulseflow-venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const runtime = require('./music-runtime')(dataDir), python = runtime.python;
   // Electron packages unpack Python sources: Python cannot import from an asar.
-  const bridge = path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'pulseflow', 'bridge.py');
+  const bridge = path.join(runtime.sources, 'pulseflow', 'bridge.py');
   const pending = new Map();
   let indexAutomatic = false, backgroundAllowed = true;
   let query, indexer, sequence = 0, lastError = null, starting = false, closed = false, indexGeneration = 0, indexAbort;
-  const env = { ...process.env, OMP_NUM_THREADS: '2', OPENBLAS_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
+  const env = { ...runtime.env(), OMP_NUM_THREADS: '2', OPENBLAS_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
     TOKENIZERS_PARALLELISM: 'false', HF_HOME: path.join(root, 'models'), PYTHONUNBUFFERED: '1' };
   function stopQuery(error = new Error('PulseFlow stopped')) {
     const child = query; query = null;
@@ -32,6 +31,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
     return child;
   }
   function ensureQuery() {
+    if(!runtime.installed())throw Object.assign(new Error('Local analysis is not installed'),{code:'RUNTIME_NOT_INSTALLED'});
     if (query) return query;
     const child = query = spawnPython('serve');
     readline.createInterface({ input: child.stdout }).on('line', line => {
@@ -48,7 +48,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
   }
   async function status() {
     let saved = {}; try { saved = JSON.parse(await fs.promises.readFile(path.join(root, 'status.json'), 'utf8')); } catch (_) {}
-    const installed = fs.existsSync(python), running = Boolean(indexer) || starting;
+    const installed = runtime.installed(), running = Boolean(indexer) || starting;
     if (['loading', 'indexing'].includes(saved.state) && !running) saved.state = 'interrupted';
     const tracks = getTracks(), unavailable = tracks.filter(t => !resolveAudio(String(t.id)))
       .map(t => ({ id: String(t.id), title: t.title, artist: t.artist, ...audioStatus?.(String(t.id)) }));
@@ -58,18 +58,19 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
     }
     const ids = new Set(indexedIds || []), indexed = indexedIds ? tracks.filter(t => ids.has(String(t.id))).length : Math.min(saved.indexed || 0, tracks.length);
     let failures = []; try { failures = JSON.parse(await fs.promises.readFile(path.join(root, 'errors.json'), 'utf8')); } catch (_) {}
-    return { ...saved, indexedIds: undefined, indexed, total: tracks.length, unavailable, failures, installed, running,
+    return { ...saved, indexedIds: undefined, indexed, total: tracks.length, unavailable, failures, installed, running, runtime:runtimeInstaller?.status(),
       available: fs.existsSync(path.join(root, 'catalog.npz')),
-      state: installed ? (starting && !indexer ? 'preparing' : !running && saved.state === 'ready' && indexed < tracks.length ? 'partial' : saved.state || 'empty') : 'not-installed', lastError };
+      state: installed ? (starting && !indexer ? 'preparing' : !running&&tracks.length&&unavailable.length===tracks.length?'no-audio':!running && saved.state === 'ready' && indexed < tracks.length ? 'partial' : saved.state || 'empty') : 'not-installed', lastError:installed?lastError:null };
   }
   async function start({ automatic = false } = {}) {
     if (automatic && !backgroundAllowed) return status();
     if (indexer || starting) return status();
     if (closed) throw new Error('PulseFlow stopped');
-    if (!fs.existsSync(python)) throw new Error('Install the PulseFlow runtime: npm run pulseflow:setup');
+    if (!runtime.installed()) throw new Error('Install local analysis in Settings');
     starting = true; indexAutomatic = automatic; indexAbort = new AbortController();
     const generation = indexGeneration;
     try {
+    await runtime.ensureSources();
     await fs.promises.mkdir(root, { recursive: true });
     const manifest = getTracks().map(t => ({ id: String(t.id), title: t.title, path: resolveAudio(String(t.id)) }));
     // Manual repair waits for complete downloads before passing paths to Python.
@@ -89,7 +90,8 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
     return { ...(await status()), running: true, state: 'indexing', current: '', total: manifest.length };
     } finally { starting = false; }
   }
-  function recommend(request) {
+  async function recommend(request) {
+    await runtime.ensureSources();
     return new Promise((resolve, reject) => {
       if (pending.size >= 4) { reject(new Error('PulseFlow is busy')); return; }
       const id = ++sequence, child = ensureQuery();
@@ -123,5 +125,5 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
       indexGeneration++; indexAbort?.abort(); indexer?.kill(); indexer = null;
     }
   }
-  return { route, close, status, start, recommend, setBackgroundAllowed };
+  return { route, close, status, start, recommend, setBackgroundAllowed,reloadRuntime(){lastError=null;stopQuery(new Error('Runtime changed'));} };
 };

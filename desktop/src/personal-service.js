@@ -1,14 +1,13 @@
 /* One local CPU process, bounded pending requests. No Python in the renderer. */
 const path=require('node:path'),fs=require('node:fs'),{spawn}=require('node:child_process'),readline=require('node:readline');
 module.exports=function createPersonalService(dataDir){
- const runtime=__dirname.includes('app.asar')?path.dirname(dataDir):path.join(__dirname,'..');
- const python=process.env.PAIN_PULSEFLOW_PYTHON||path.join(runtime,'.pulseflow-venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
+ const runtime=require('./music-runtime')(dataDir),python=runtime.python;
  let child=null,sequence=0,status={state:'idle'};const pending=new Map();
  function stop(error=new Error('Personal recommender stopped'),reset=false){const process=child;child=null;for(const job of pending.values()){clearTimeout(job.timer);job.reject(error);}pending.clear();process?.kill();status=reset?{state:'idle'}:{state:'error',error:error.message};}
  function start(){
-  if(child)return child;if(!fs.existsSync(python))throw Error('Install the local music runtime in Settings');
-  const process=child=spawn(python,[path.join(__dirname.replace('app.asar','app.asar.unpacked'),'personal','serve.py'),'--data',dataDir],
-   {windowsHide:true,env:{...global.process.env,OPENBLAS_NUM_THREADS:'1',OMP_NUM_THREADS:'1',MKL_NUM_THREADS:'1',PYTHONUNBUFFERED:'1'},stdio:['pipe','pipe','pipe']});
+  if(child)return child;if(!runtime.installed())throw Error('Install local analysis in Settings');
+  const process=child=spawn(python,[path.join(runtime.sources,'personal','serve.py'),'--data',dataDir],
+   {windowsHide:true,env:runtime.env(),stdio:['pipe','pipe','pipe']});
   readline.createInterface({input:process.stdout}).on('line',line=>{
    if(child!==process)return;
    try{
@@ -34,8 +33,8 @@ module.exports=function createPersonalService(dataDir){
   if(!local||req.method!=='POST'||req.headers['x-pain-update']!=='personal'){res.writeHead(403);res.end('{}');return;}
   try{req.setEncoding('utf8');let body='',bytes=0;for await(const chunk of req){bytes+=Buffer.byteLength(chunk);if(bytes>2*1024*1024)throw Error('Request too large');body+=chunk;}
    const value=JSON.parse(body);if(value.action==='status'){res.end(JSON.stringify(status));return;}if(value.action==='abandon'){if(value.cancel)stop(new Error('Personal mode disabled'),true);else if(child)await request(value);res.end(JSON.stringify({abandoned:true}));return;}if(!Array.isArray(value.eligible)&&value.action!=='embedding')throw Error('Missing eligible tracks');
-   const result=await request(value);if(!res.destroyed)res.end(JSON.stringify(result));
+   await runtime.ensureSources();const result=await request(value);if(!res.destroyed)res.end(JSON.stringify(result));
   }catch(error){if(!res.destroyed){res.writeHead(503);res.end(JSON.stringify({error:error.message}));}}
  }
- process.once('exit',()=>stop());return {route,request,status:()=>({...status}),close:stop};
+ process.once('exit',()=>stop());return {route,request,status:()=>({...status}),reload:()=>stop(new Error('Runtime changed'),true),close:stop};
 };

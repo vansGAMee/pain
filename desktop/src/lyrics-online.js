@@ -2,6 +2,8 @@
 const fs = require('node:fs/promises'), path = require('node:path'), crypto = require('node:crypto');
 const { norm, unknown, artists } = require('./cover-matching');
 const { version } = require('../package.json');
+const modes = new Set(['auto', 'regional', 'primary']);
+const providerRevision = 2;
 
 function parseLrc(text, { allowEmpty = false } = {}) {
   if (typeof text !== 'string' || text.length > 200000) return [];
@@ -59,29 +61,31 @@ function select(records, meta) {
 
 module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fetchImpl = fetch, delay = 350 } = {}) {
   const pending = new Map(), prefsFile = path.join(dataDir, 'lyrics-preferences.json');
-  let enabled = true, initialized, tail = Promise.resolve(), nextRequest = 0, generation = 0;
+  let enabled = true, mode = 'auto', initialized, tail = Promise.resolve(), generation = 0;
+  const nextRequest = { primary: 0, regional: 0 };
   const controllers = new Set();
-  initialized = fs.readFile(prefsFile, 'utf8').then(s => { enabled = JSON.parse(s).enabled !== false; }).catch(() => {});
-  async function request(endpoint, params) {
+  initialized = fs.readFile(prefsFile, 'utf8').then(s => { const p = JSON.parse(s); enabled = p.enabled !== false; if (modes.has(p.mode)) mode = p.mode; }).catch(() => {});
+  async function request(endpoint, params, provider = 'primary') {
     if (!enabled) throw new Error('Lyrics search disabled');
-    const wait = nextRequest - Date.now();
+    const wait = nextRequest[provider] - Date.now();
     if (wait > 1000) throw new Error('Lyrics provider is rate limited; retry later');
     if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
     if (!enabled) throw new Error('Lyrics search disabled');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
     controllers.add(controller);
     try {
-      const response = await fetchImpl('https://lrclib.net/api/' + endpoint + '?' + new URLSearchParams(params), {
+      const origin = provider === 'primary' ? 'https://lrclib.net/api/' : 'https://lyrics.kugou.com/';
+      const response = await fetchImpl(origin + endpoint + '?' + new URLSearchParams(params), {
         signal: controller.signal, headers: { 'User-Agent': `PAIN/${version} (https://github.com/vansGAMee/pain)`, Accept: 'application/json' }
       });
-      nextRequest = Date.now() + delay;
+      nextRequest[provider] = Date.now() + delay;
       if (response.status === 429 || response.status === 503) {
         const retry = response.headers.get('retry-after'), seconds = Number(retry);
-        nextRequest = Math.max(nextRequest, Number.isFinite(seconds) && seconds > 0 ? Date.now()+seconds*1000 : Date.parse(retry) || Date.now()+60000);
-        throw new Error('Lyrics provider is busy; retry later');
+        nextRequest[provider] = Math.max(nextRequest[provider], Number.isFinite(seconds) && seconds > 0 ? Date.now()+seconds*1000 : Date.parse(retry) || Date.now()+60000);
+        throw Object.assign(new Error('Lyrics provider is busy; retry later'), { providerHttp: true });
       }
       if (response.status === 404) return null;
-      if (!response.ok) throw new Error('Lyrics provider HTTP ' + response.status);
+      if (!response.ok) throw Object.assign(new Error('Lyrics provider HTTP ' + response.status), { providerHttp: true });
       const chunks = []; let size = 0;
       for await (const chunk of response.body) {
         size += chunk.length; chunks.push(Buffer.from(chunk));
@@ -90,13 +94,13 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
       return JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } finally { clearTimeout(timer); controllers.delete(controller); }
   }
-  async function lookup(meta) {
+  async function primary(meta) {
     const params = { track_name: meta.title, artist_name: meta.artist };
     if (meta.album) params.album_name = meta.album;
     if (meta.duration >= 1 && meta.duration <= 3600) params.duration = Math.round(meta.duration);
     let exact;
     try { exact = await request('get', params); }
-    catch (_) { /* An overloaded signature lookup can still have cached search results. */ }
+    catch (error) { if (!error.providerHttp) throw error; }
     let found = select(exact ? [exact] : [], meta);
     if (found?.synced || found?.instrumental) return found;
     // Search ignores unreliable album tags and can locate a synced edition.
@@ -104,6 +108,34 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     try { records = await request('search', { track_name: meta.title, artist_name: meta.artist }); }
     catch (error) { if (found) return found; throw error; }
     return select(Array.isArray(records) ? records : [], meta) || found || { lines: [], state: 'not-found' };
+  }
+  async function regional(meta) {
+    const data = await request('search', { ver: 1, man: 'yes', client: 'pc', keyword: meta.artist + ' ' + meta.title, duration: Math.round(meta.duration * 1000) }, 'regional');
+    const credits = artists(meta.artist).map(norm);
+    const candidates = (Array.isArray(data?.candidates) ? data.candidates : []).filter(r =>
+      /^\d+$/.test(String(r.id)) && /^[a-z0-9]+$/i.test(r.accesskey || '') && norm(r.song) === norm(meta.title) &&
+      (norm(r.singer) === norm(meta.artist) || artists(r.singer).some(a => credits.includes(norm(a)))));
+    candidates.sort((a,b) => Math.abs(a.duration / 1000 - meta.duration) - Math.abs(b.duration / 1000 - meta.duration));
+    const candidate = candidates[0];
+    if (!candidate) return { lines: [], state: 'not-found' };
+    const body = await request('download', { ver: 1, client: 'pc', id: candidate.id, accesskey: candidate.accesskey, fmt: 'lrc', charset: 'utf8' }, 'regional');
+    if (typeof body?.content !== 'string' || body.content.length > 300000) return { lines: [], state: 'not-found' };
+    const found = select([{ id: Number(candidate.id), trackName: candidate.song, artistName: candidate.singer, duration: candidate.duration / 1000, syncedLyrics: Buffer.from(body.content, 'base64').toString('utf8') }], meta);
+    return found ? { ...found, source: { name: 'KuGou', url: 'https://www.kugou.com/' } } : { lines: [], state: 'not-found' };
+  }
+  async function lookup(meta, run) {
+    const providers = mode === 'primary' ? [primary] : mode === 'regional' ? [regional, primary] : [primary, regional];
+    let plain, answered = false;
+    for (const provider of providers) {
+      if (!enabled || run !== generation) throw new Error('Lyrics settings changed');
+      try {
+        const found = await provider(meta); answered = true;
+        if (found.synced || found.instrumental) return found;
+        if (found.lines?.length && !plain) plain = found;
+      } catch (_) { /* Independent providers have independent failure and rate-limit state. */ }
+    }
+    if (plain) return plain;
+    return { lines: [], state: answered ? 'not-found' : 'error' };
   }
   async function get(id, { refresh = false } = {}) {
     await initialized;
@@ -114,17 +146,18 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     const file = path.join(dataDir, 'lyrics-online', key + '.json');
     let saved;
     try { saved = JSON.parse(await fs.readFile(file, 'utf8')); } catch (_) {}
-    if (saved && (!refresh || !enabled) && (saved.lines?.length || saved.instrumental || Date.now()-saved.updatedAt < 86400000)) return saved;
+    if (saved && (!refresh || !enabled) && (saved.lines?.length || saved.instrumental || (saved.state === 'not-found' && saved.lookupMode === mode && saved.providerRevision === providerRevision && Date.now()-saved.updatedAt < 86400000))) return saved;
     if (!enabled) return saved || { lines: [], state: 'disabled' };
-    if (pending.has(key)) return pending.get(key);
     const run = generation;
+    const pendingKey = key + ':' + run;
+    if (pending.has(pendingKey)) return pending.get(pendingKey);
     const job = tail.then(async () => {
       if (!enabled || run !== generation) return { lines: [], state: 'disabled' };
       const resolved = localMedia ? (await localMedia.read(track)).track : track;
       const meta = metadata(resolved);
       if (!meta) return { lines: [], state: 'missing-metadata' };
       try {
-        const result = { ...await lookup(meta), updatedAt: Date.now() };
+        const result = { ...await lookup(meta, run), updatedAt: Date.now(), lookupMode: mode, providerRevision };
         if (run !== generation) return { lines: [], state: 'disabled' };
         await fs.mkdir(path.dirname(file), { recursive: true });
         const temp = file + '.' + crypto.randomUUID() + '.tmp';
@@ -132,20 +165,22 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
         return result;
       } catch (_) { return saved || { lines: [], state: enabled ? 'error' : 'disabled' }; }
     });
-    pending.set(key, job); tail = job.catch(() => {});
-    return job.finally(() => pending.delete(key));
+    pending.set(pendingKey, job); tail = job.catch(() => {});
+    return job.finally(() => pending.delete(pendingKey));
   }
   async function settings(req, res) {
     await initialized;
     if (req.method === 'POST') {
       if (req.headers['x-pain-update'] !== 'lyrics') { res.writeHead(403); res.end('{}'); return; }
       let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 1000) throw new Error('Request too large'); }
-      const value = JSON.parse(body); if (typeof value.enabled !== 'boolean') throw new Error('Invalid setting');
-      enabled = value.enabled; generation++;
-      if (!enabled) for (const controller of controllers) controller.abort();
-      await fs.mkdir(dataDir, { recursive: true }); await fs.writeFile(prefsFile, JSON.stringify({ enabled }));
+      const value = JSON.parse(body);
+      if ((!('enabled' in value) && !('mode' in value)) || ('enabled' in value && typeof value.enabled !== 'boolean') || ('mode' in value && !modes.has(value.mode))) throw new Error('Invalid setting');
+      if ('enabled' in value) enabled = value.enabled;
+      if ('mode' in value) mode = value.mode;
+      generation++; for (const controller of controllers) controller.abort();
+      await fs.mkdir(dataDir, { recursive: true }); await fs.writeFile(prefsFile, JSON.stringify({ enabled, mode }));
     } else if (req.method !== 'GET') { res.writeHead(405); res.end('{}'); return; }
-    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ enabled }));
+    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ enabled, mode }));
   }
   return { get, settings };
 };

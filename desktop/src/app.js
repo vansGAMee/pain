@@ -2532,6 +2532,7 @@
     transitionAbort?.abort(); transitionAbort = new AbortController();
     clearTimeout(transitionPrepareTimer);
     initAudioNodes();
+    if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
     sampleListening();
     if (state.currentTrackId) recordTrackFinished(state.currentTrackId, true);
     const request = ++playbackRequest;
@@ -2997,17 +2998,24 @@
   }
   function togglePlay() {
     initAudioNodes();
-    if (!audio.getAttribute('src')) {
+    if (!audio.getAttribute('src') || audio.error) {
       const target = (queue ? queue.getCurrentTrack() : null) || state.tracks[0];
       if (target) {
+        // A failed media element cannot recover through play() alone. Reload it
+        // through the same cache/phone path used for a new selection.
+        preparedDecks.delete(activeDeck);
         playTrackObject(target, pendingSeekTime ?? 0);
         return;
       }
     }
 
     if (audio.paused) {
+      if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+      settleDeckGains();
       if(audio.ended){const track=queue?.getCurrentTrack()||state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
+      const request=++playbackRequest;
       audio.play().then(() => {
+        if(request!==playbackRequest)return;
         state.isPlaying = true;
         updatePlayBtnUI();
         DOM.vinylBigDisc.classList.add('spinning');

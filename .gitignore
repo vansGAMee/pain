@@ -33,6 +33,7 @@ desktop/dist/
 
 # Local PulseFlow runtime, weights, derived index and private recovery copies
 desktop/.pulseflow-venv/
+desktop/.pain-runtime/
 desktop/data/pulseflow/
 desktop/data/recovery-*/
 __pycache__/

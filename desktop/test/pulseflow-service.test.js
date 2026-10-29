@@ -1,6 +1,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const serviceFactory=require('../src/pulseflow-service');
+test('missing runtime never spawns a nonexistent Python or exposes its Windows path in status',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-runtime-missing-')),previous=process.env.PAIN_PULSEFLOW_PYTHON;
+ process.env.PAIN_PULSEFLOW_PYTHON=path.join(root,'absent/Scripts/python.exe');let launches=0;
+ const service=serviceFactory({dataDir:root,getTracks:()=>[],resolveAudio:()=>null,spawnImpl:()=>{launches++;throw Error('must never spawn');}});
+ t.after(()=>{service.close();if(previous===undefined)delete process.env.PAIN_PULSEFLOW_PYTHON;else process.env.PAIN_PULSEFLOW_PYTHON=previous;fs.rmSync(root,{recursive:true,force:true});});
+ await assert.rejects(service.recommend({eligible:[]}),/not installed/);assert.equal(launches,0);
+ const status=await service.status();assert.equal(status.installed,false);assert.equal(status.state,'not-installed');assert.equal(status.lastError,null);
+});
 test('status includes every library track and reports missing audio instead of fake completion',async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-pulseflow-coverage-'));fs.mkdirSync(path.join(root,'pulseflow'));
  fs.writeFileSync(path.join(root,'pulseflow/status.json'),JSON.stringify({state:'ready',total:1,indexed:1,indexedIds:['a']}));

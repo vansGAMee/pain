@@ -1,0 +1,15 @@
+{
+  "uvVersion": "0.12.15",
+  "mediaVersion": "b6.1.1",
+  "win32": {
+    "uv": {"file":"uv-x86_64-pc-windows-msvc.zip","sha256":"477bd99a84e34891f2bd4c9152ddeb74e971accccbc59c0f0301f11f08a32d46"},
+    "ffmpeg": {"sha256":"8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77","binarySha256":"04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00"},
+    "ffprobe": {"sha256":"f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d","binarySha256":"3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4"}
+  },
+  "linux": {
+    "uv": {"file":"uv-x86_64-unknown-linux-gnu.tar.gz","sha256":"f97935763c04be3e692460a7aaeaaab8fc3b78fcf8b389da820b38ae7423a638"},
+    "ffmpeg": {"sha256":"bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa","binarySha256":"e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99"},
+    "ffprobe": {"sha256":"25d9b6ccb05e3d9de9e04e31e2506d8dd7f9f0418981965ac6df12e8d3afd067","binarySha256":"4f231a1960d83e403d08f7971e271707bec278a9ae18e21b8b5b03186668450d"}
+  },
+  "mediaLicenseSha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+}
