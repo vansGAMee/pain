@@ -602,6 +602,7 @@
   let pendingAddToPlaylistTrackId = null;
   let updateStatus = null;
   let updateNoticeShown = false;
+  let updatePollTimer = null, updateInstalling = false;
   let autoEqCharacter = 'learning';
   let autoEqResult = null;
   const autoEqTracker = AutoEqualizer.createTracker();
@@ -4051,13 +4052,18 @@
     notes.textContent = notes.hidden ? '' : status.notes;
     DOM.updateStatusDot?.classList.toggle('available', !!status?.available);
     DOM.updateStatusDot?.classList.toggle('error', status?.status === 'error');
-    DOM.updateActionBtn.disabled = ['checking', 'downloading', 'downloaded'].includes(status?.status);
+    DOM.updateActionBtn.disabled = updateInstalling || ['checking', 'downloading'].includes(status?.status);
     if (!status || status.status === 'checking') {
       DOM.updateStatusText.textContent = ru ? 'Проверка обновлений…' : 'Checking for updates…';
       DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
-    } else if (status.status === 'downloading' || status.status === 'downloaded') {
+    } else if (status.status === 'downloading') {
       DOM.updateStatusText.textContent = ru ? 'Загрузка и проверка обновления…' : 'Downloading and verifying update…';
       DOM.updateActionBtn.textContent = ru ? 'Загрузка…' : 'Downloading…';
+    } else if (status.status === 'downloaded') {
+      DOM.updateStatusText.textContent = ru
+        ? `Версия ${status.latestVersion} готова · установится при выходе из PAIN`
+        : `Version ${status.latestVersion} ready · installs when you quit PAIN`;
+      DOM.updateActionBtn.textContent = ru ? 'Перезапустить сейчас' : 'Restart now';
     } else if (status.status === 'error') {
       DOM.updateStatusText.textContent = ru ? 'Не удалось проверить обновления' : 'Could not check for updates';
       DOM.updateActionBtn.textContent = ru ? 'Повторить' : 'Retry';
@@ -4072,6 +4078,19 @@
     }
   }
 
+  function pollUpdateDownload() {
+    if (updatePollTimer || updateInstalling || updateStatus?.status !== 'downloading') return;
+    updatePollTimer = setTimeout(async () => {
+      updatePollTimer = null;
+      if (updateInstalling) return;
+      try {
+        const response = await fetch('/api/update-status', {cache:'no-store',signal:AbortSignal.timeout(5000)});
+        if (response.ok) {updateStatus=await response.json();renderUpdateStatus();}
+      } catch (_) {}
+      pollUpdateDownload();
+    }, 2000);
+  }
+
   async function checkForUpdates(force = false, notify = false) {
     if (['downloading', 'downloaded'].includes(updateStatus?.status)) return;
     updateStatus = { ...(updateStatus || {}), status: 'checking' };
@@ -4081,6 +4100,7 @@
       if (!response.ok) throw new Error('Update check failed');
       updateStatus = await response.json();
       renderUpdateStatus();
+      pollUpdateDownload();
       if (notify && updateStatus.available && !updateNoticeShown) {
         updateNoticeShown = true;
         showToast((state.lang === 'ru' ? `Доступно обновление ${updateStatus.latestVersion}` : `Update ${updateStatus.latestVersion} is available`) + (updateStatus.notes ? ': ' + updateStatus.notes.slice(0, 240) : ''), '↑', 9000);
@@ -4092,13 +4112,15 @@
   }
 
   async function handleUpdateAction() {
-    if (['checking', 'downloading', 'downloaded'].includes(updateStatus?.status)) return;
+    if (updateInstalling || ['checking', 'downloading'].includes(updateStatus?.status)) return;
     if (updateStatus?.status === 'error') { await checkForUpdates(true, true); return; }
     if (!updateStatus?.available) { await checkForUpdates(true, true); return; }
     if (!updateStatus.canInstall) {
       if (updateStatus.page) window.open(updateStatus.page, '_blank', 'noopener');
       return;
     }
+    updateInstalling = true;
+    clearTimeout(updatePollTimer);updatePollTimer=null;
     updateStatus = { ...updateStatus, status: 'downloading' };
     renderUpdateStatus();
     try {
@@ -4124,6 +4146,7 @@
       }
       throw new Error('Update restart timed out');
     } catch (error) {
+      updateInstalling = false;
       updateStatus = { ...updateStatus, status: 'error', error: error.message };
       renderUpdateStatus();
       showToast(state.lang === 'ru' ? 'Не удалось установить обновление' : 'Could not install update', '⚠');

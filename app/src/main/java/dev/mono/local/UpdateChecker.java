@@ -12,12 +12,17 @@ import java.net.*;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.json.*;
 
 final class UpdateChecker {
   private static final String API = "https://api.github.com/repos/vansGAMee/pain/releases/latest";
   private static final Set<String> HOSTS = Set.of("api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com");
   private static final AtomicBoolean BUSY = new AtomicBoolean();
+  private static final AtomicBoolean DOWNLOADING = new AtomicBoolean();
+  // Network work must not hold up the shared library/history database executor.
+  private static final ExecutorService NETWORK = Executors.newSingleThreadExecutor();
   private static final long INTERVAL = 12 * 60 * 60 * 1000L;
 
   static void resume(MainActivity activity) {
@@ -38,13 +43,13 @@ final class UpdateChecker {
     long last = app.prefs.getLong("lastUpdateCheck", 0);
     if (!force && System.currentTimeMillis() - last < INTERVAL) return;
     if (!BUSY.compareAndSet(false, true)) return;
-    app.io.execute(
+    NETWORK.execute(
         () -> {
           try {
             Release release = latest();
             app.prefs.edit().putLong("lastUpdateCheck", System.currentTimeMillis()).apply();
             if (newer(release.version, BuildConfig.VERSION_NAME))
-              app.main.post(() -> offer(activity, release));
+              app.main.post(() -> download(activity, release));
           } catch (Exception ignored) {
             // Updates never block startup or playback. A later launch retries.
           } finally {
@@ -53,20 +58,11 @@ final class UpdateChecker {
         });
   }
 
-  private static void offer(MainActivity activity, Release release) {
-    if (activity.isFinishing() || activity.isDestroyed()) return;
-    new AlertDialog.Builder(activity)
-        .setTitle("Доступно обновление " + release.version)
-        .setMessage("Pain загрузит официальный APK, проверит SHA‑256 и откроет системный установщик.")
-        .setNegativeButton("Позже", null)
-        .setPositiveButton("Обновить", (dialog, which) -> download(activity, release))
-        .show();
-  }
-
   private static void download(MainActivity activity, Release release) {
+    if (activity.isFinishing() || activity.isDestroyed() || !DOWNLOADING.compareAndSet(false, true)) return;
     MonoApp app = (MonoApp) activity.getApplication();
     Toast.makeText(activity, "Загрузка обновления…", Toast.LENGTH_SHORT).show();
-    app.io.execute(
+    NETWORK.execute(
         () -> {
           File directory = new File(activity.getCacheDir(), "updates");
           File apk = new File(directory, release.apkName);
@@ -84,6 +80,8 @@ final class UpdateChecker {
           } catch (Exception error) {
             apk.delete();
             app.main.post(() -> Toast.makeText(activity, "Не удалось обновить Pain", Toast.LENGTH_LONG).show());
+          } finally {
+            DOWNLOADING.set(false);
           }
         });
   }

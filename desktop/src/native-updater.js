@@ -10,7 +10,11 @@ module.exports = function createNativeUpdater(options) {
   const supported = app.isPackaged && (process.platform === 'win32' || !!process.env.APPIMAGE);
   const updater = supported ? require('electron-updater').autoUpdater : null;
   if (updater) {
-    updater.autoDownload = false; updater.autoInstallOnAppQuit = false;
+    // Download through the bounded preparation below; the native updater installs
+    // silently on a successful app quit, after our playback/backend shutdown.
+    updater.autoDownload = false; updater.autoInstallOnAppQuit = true;
+    updater.autoRunAppAfterInstall = false;
+    updater.allowPrerelease = false; updater.allowDowngrade = false;
     updater.on('error', error => { state = { ...state, status: 'error', error: error.message }; });
   }
   const api = {
@@ -28,6 +32,7 @@ module.exports = function createNativeUpdater(options) {
           const notes = Array.isArray(info?.releaseNotes) ? info.releaseNotes.map(item => item.note).join('\n') : info?.releaseNotes;
           state = { ...state, status: 'ready', latestVersion: info?.version, available, canInstall: available,
             notes: releaseSummary(notes), page: 'https://github.com/vansGAMee/pain/releases/latest', checkedAt: Date.now(), error: null };
+          if (available) api.prepareInstall().catch(() => {});
         } catch (error) { state = { ...state, status: 'error', available: false, canInstall: false, error: error.message }; }
         return api.publicState();
       })().finally(() => { checking = null; });
@@ -42,7 +47,7 @@ module.exports = function createNativeUpdater(options) {
           await updater.downloadUpdate();
           state = { ...state, status: 'downloaded', error: null };
           let started = false;
-          return { state: api.publicState(), restart() { if (!started) { started = true; updater.quitAndInstall(false, true); } } };
+          return { state: api.publicState(), restart() { if (!started) { started = true; updater.quitAndInstall(true, true); } } };
         } catch (error) {
           state = { ...state, status: 'error', error: error.message };
           throw error;

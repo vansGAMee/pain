@@ -57,21 +57,24 @@ test('development and unsupported native packages never offer legacy installatio
   }
 });
 
-test('Windows and AppImage updates download and install only after explicit requests', async () => {
+test('Windows and AppImage automatically prepare an update without restarting playback', async () => {
   for (const options of [{}, { platform: 'linux', appImage: true }]) {
     const { api, native, counts, restarts } = launch(options);
     assert.equal(native.autoDownload, false);
-    assert.equal(native.autoInstallOnAppQuit, false);
+    assert.equal(native.autoInstallOnAppQuit, true);
+    assert.equal(native.autoRunAppAfterInstall, false);
+    assert.equal(native.allowPrerelease, false);
+    assert.equal(native.allowDowngrade, false);
     await assert.rejects(api.prepareInstall(), /Native installer is not available/);
     const state = await api.check(true);
     assert.equal(state.canInstall, true);
-    assert.equal(counts.downloads, 0);
+    assert.equal(counts.downloads, 1,'a check starts the background download without an installation request');
     const prepared = await api.prepareInstall();
     assert.equal(prepared.state.status, 'downloaded');
     assert.equal(counts.downloads, 1);
     assert.deepEqual(restarts, []);
     prepared.restart(); prepared.restart();
-    assert.deepEqual(restarts, [[false, true]]);
+    assert.deepEqual(restarts, [[true, true]]);
     assert.equal(counts.fallbackChecks, 0);
   }
 });
@@ -87,7 +90,7 @@ test('concurrent checks share work, cache results, and expose readable native re
   assert.equal(a.currentVersion, '1.7.4');
   assert.equal(a.latestVersion, '1.8.0');
   assert.equal(a.notes, 'Better playback\nTray support');
-  assert.equal(a.status, 'ready');
+  assert.equal(a.status, 'downloading');
   assert.equal(a.available, true);
   assert.equal(a.error, null);
   assert.match(a.page, /^https:\/\/github\.com\//);
@@ -113,7 +116,7 @@ test('concurrent downloads share preparation and checking cannot replace a pendi
   assert.equal(counts.downloads, 1);
   assert.equal(counts.checks, 1);
   a.restart(); b.restart();
-  assert.deepEqual(restarts, [[false, true]]);
+  assert.deepEqual(restarts, [[true, true]]);
 });
 
 test('same, older or missing native releases cannot be installed', async () => {
@@ -155,12 +158,28 @@ for (const synchronous of [false, true]) {
       return Promise.reject(new Error('Download unavailable'));
     } });
     await api.check(true);
-    await assert.rejects(api.prepareInstall(), /Download unavailable/);
+    await new Promise(resolve=>setImmediate(resolve));
     assert.equal(api.publicState().status, 'error');
+    assert.equal(counts.downloads, 1);
     fail = false;
+    await api.check(true);
     const prepared = await api.prepareInstall();
     assert.equal(counts.downloads, 2);
     assert.equal(prepared.state.status, 'downloaded');
     assert.equal(prepared.state.error, null);
   });
 }
+
+test('the real native quit handler installs silently only on successful exit and does not reopen the app',()=>{
+  const {BaseUpdater}=require('electron-updater/out/BaseUpdater');
+  const app=new EventEmitter(),installed=[];
+  const updater=Object.create(BaseUpdater.prototype);
+  Object.assign(updater,{app:{onQuit:handler=>app.on('quit',handler)},autoInstallOnAppQuit:true,
+    _logger:{info(){},warn(){}},downloadedUpdateHelper:{file:'/isolated/verified-installer',downloadedFileInfo:{}},
+    doInstall:options=>{installed.push(options);return true;}});
+  updater.addQuitHandler();updater.addQuitHandler();assert.equal(app.listenerCount('quit'),1);
+  assert.deepEqual(installed,[],'ready updates must never interrupt a running app');
+  app.emit('quit',1);assert.deepEqual(installed,[],'a crash is not a successful exit');
+  app.emit('quit',0);app.emit('quit',0);
+  assert.equal(installed.length,1);assert.equal(installed[0].isSilent,true);assert.equal(installed[0].isForceRunAfter,false);
+});
