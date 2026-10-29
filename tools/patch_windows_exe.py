@@ -8,17 +8,21 @@ no command prompt / console window pops up when running on Windows.
 
 import sys
 import os
+import json
 import re
 import shutil
 import subprocess
 import tempfile
 
-def patch_executable(input_exe, output_exe=None, icon_path=None, version="1.8.4.0"):
+def patch_executable(input_exe, output_exe=None, icon_path=None, version=None):
     if output_exe is None:
         output_exe = input_exe
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
+    if version is None:
+        with open(os.path.join(repo_root, "desktop", "package.json"), encoding="utf-8") as package:
+            version = json.load(package)["version"].split("-", 1)[0].split("+", 1)[0] + ".0"
 
     if icon_path is None:
         icon_path = os.path.join(repo_root, "desktop", "assets", "app-icon.ico")

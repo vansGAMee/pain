@@ -1,6 +1,6 @@
 {
   "name": "pain-desktop",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "description": "Pain — Minimalist Audio Player & Sync Companion for Windows & Linux",
   "main": "src/main.js",
   "bin": "src/server.js",
@@ -9,7 +9,7 @@
     "electron": "electron .",
     "web": "node src/server.js",
     "build:win": "electron-builder --win nsis zip --publish never",
-    "build:linux": "electron-builder --linux AppImage tar.gz --publish never",
+    "build:linux": "electron-builder --linux AppImage --publish never",
     "package:exe": "npx pkg . --target node18-win-x64 --output dist/Pain.exe && python3 ../tools/patch_windows_exe.py dist/Pain.exe",
     "test": "node --test test/*.test.js",
     "pulseflow:setup": "node tools/setup-pulseflow.cjs"
@@ -22,7 +22,9 @@
       "src/**/*",
       "assets/**/*",
       "package.json",
-      "tools/setup-pulseflow.cjs"
+      "tools/setup-pulseflow.cjs",
+      "!**/__pycache__/**",
+      "!**/*.pyc"
     ],
     "directories": {
       "output": "dist/native"
@@ -58,7 +60,10 @@
       "src/pulseflow/**/*",
       "src/vendor/pulseflow/**/*",
       "src/personal/**/*"
-    ]
+    ],
+    "releaseInfo": {
+      "releaseNotes": "- Новый режим «Весь мой вкус» на ПК: подбор по вашей истории, лайкам и звучанию музыки, с объяснениями.\n- Подборка на Главной играет в показанном порядке. После неё продолжаются рекомендации; обновление списка — вручную.\n- Исправлен повторный учёт прослушиваний при паузах, возобновлении и синхронизации.\n- Бас-буст работает вместе с умным EQ. Улучшены переходы и переключение при медленной загрузке.\n- Автообновление Windows/AppImage: загрузка в фоне, установка при выходе. Android скачивает APK автоматически."
+    }
   },
   "pkg": {
     "assets": [
