@@ -76,7 +76,7 @@ def index_library(root, manifest):
     from scripts import embed_clap as ec
     # A CPU thread budget is an operational limit, never a ranking parameter.
     import torch
-    torch.set_num_threads(2)
+    torch.set_num_threads(1)
     try:
         os.nice(10)
     except (AttributeError, OSError):
