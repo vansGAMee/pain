@@ -227,6 +227,8 @@
       this._selectionGeneration = 0;
     }
 
+    refreshRecommendations() {this.recommendationRevision++;this._workerPeek=null;}
+
     workerSnapshot() {
       return {
         now: this.now(), stats: this.pulseflowEnabled ? null : this.stats,
@@ -236,7 +238,7 @@
         tracks: this.tracks, context: this.context,
         navigation: this.navigationSnapshot(), vibeProfile: this.vibeProfile,
         pulseflowPolicy: this.pulseflowPolicy, pulseflowVibe: this.pulseflowVibe, pulseflowEnabled: this.pulseflowEnabled,
-        pulseflowCounts: this.pulseflowEnabled && this.pulseflowPolicy === 'personal' ? Object.fromEntries(this.completedCounts()) : null
+        pulseflowCounts: this.pulseflowEnabled && ['personal','taste'].includes(this.pulseflowPolicy) ? Object.fromEntries(this.completedCounts()) : null
       };
     }
 
@@ -266,7 +268,8 @@
       // playback was collecting audio. It also cloned megabytes per Next.
       if (this.pulseflowEnabled) return JSON.stringify([this.pulseflowPolicy, this.pulseflowVibe,
         this.shuffleMode, this.loopMode, this.navigationSnapshot(), [...this.excludedTracks],
-        this.tracks.map(t => [t.id, Sound.signature(t)]), this.pulseflowPolicy === 'personal' ? [...this.completedCounts()] : null]);
+        this.tracks.map(t => [t.id, Sound.signature(t),this.pulseflowPolicy==='taste'?t.favorite:null]),
+        this.pulseflowPolicy==='taste'?[this.recommendationRevision,Math.floor(this.now()/3600000)]:null, this.pulseflowPolicy === 'personal' ? [...this.completedCounts()] : null]);
       return JSON.stringify([this.pulseflowPolicy, this.pulseflowVibe, this.recommendationRevision, this.shuffleMode, this.loopMode,
         this.navigationSnapshot(), [...this.excludedTracks], this.vibeProfile,
         this.tracks.map(t => [t.id,t.title,t.artist,t.album,t.genre,t.favorite,t.bpm,Sound.signature(t)]), this.bpmCache]);
@@ -638,6 +641,10 @@
       const currentTrack = this.getCurrentTrack();
       const recId = t => (typeof Taste !== 'undefined' && Taste?.recordingIdentity) ? Taste.recordingIdentity(t) : null;
       const currentRec = currentTrack ? recId(currentTrack) : null;
+      if (this.pulseflowPolicy === 'taste' && this.context.type === 'library' && this.loopMode === 'all') {
+        const alternatives=allowed.filter(i=>i!==this.currentIndex&&(!currentRec||recId(this.tracks[i])!==currentRec));
+        return alternatives.length?alternatives:allowed;
+      }
       const remaining = allowed.filter(i => i !== this.currentIndex && (!currentRec || recId(this.tracks[i]) !== currentRec) && this.unplayedIndices.has(i));
       if (remaining.length || this.loopMode === 'off') return remaining;
       const others = allowed.filter(i => i !== this.currentIndex && (!currentRec || recId(this.tracks[i]) !== currentRec));
@@ -667,7 +674,7 @@
       for (const i of indices) {
         const track = this.tracks[i];
         if (!track || this.isExcluded(track.id)) continue;
-        const count = counts.get(String(track.id)) || 0;
+        const count = (counts.get(String(track.id)) || 0)+(this.pulseflowPolicy==='taste'&& (track.favorite===true||track.favorite===1)?1:0);
         if (count > best) { best = count; index = i; }
       }
       return index < 0 ? null : {index, track:this.tracks[index],

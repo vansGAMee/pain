@@ -21,20 +21,28 @@ public final class PlaybackAudio extends BaseAudioProcessor {
   private volatile boolean busy,smartVolume,eqEnabled;
   private volatile boolean closed;
   private volatile double[] bands=new double[8];
+  private volatile double[] manualBands=new double[8];
   private volatile double preamp,volumeDb;
   public PlaybackAudio(PlaybackService service,MonoApp app){this.service=service;this.app=app;}
   public void close(){closed=true;captureAfter=Long.MAX_VALUE;}
-  public void track(String id){track=id;captureAfter=0;volumeDb=0;}
+  public void track(String id){track=id;captureAfter=0;volumeDb=0;if(app.prefs.getBoolean("autoEq",false))applyCurve(null);}
+  private void applyCurve(JSONArray correction){
+    double[] base=manualBands,next=base.clone();double boost=0;
+    for(int i=0;i<next.length;i++){
+      double delta=correction==null?0:correction.optDouble(i,0);
+      next[i]=Math.max(-12,Math.min(12,base[i]+(Double.isFinite(delta)?delta:0)));
+      boost+=Math.max(0,next[i]);
+    }
+    preamp=-boost;bands=next;
+  }
   public void settings(){
     captureAfter=0;
     smartVolume=app.prefs.getBoolean("smartVolume",false);
     eqEnabled=app.prefs.getBoolean("autoEq",false)||app.prefs.getBoolean("equalizer",false);
     if(!smartVolume)volumeDb=0;
-    if(!app.prefs.getBoolean("autoEq",false)){
-      double[] next=new double[8];
-      try{JSONArray a=new JSONArray(app.prefs.getString("eqBands","[]"));for(int i=0;i<8;i++){double value=a.optDouble(i,0);next[i]=eqEnabled&&Double.isFinite(value)?Math.max(-12,Math.min(12,value)):0;}}catch(Exception ignored){}
-      bands=next;double boost=java.util.Arrays.stream(next).max().orElse(0);preamp=boost>0?-boost-3:0;
-    }
+    double[] next=new double[8];
+    try{JSONArray a=new JSONArray(app.prefs.getString("eqBands","[]"));for(int i=0;i<8;i++){double value=a.optDouble(i,0);next[i]=app.prefs.getBoolean("equalizer",false)&&Double.isFinite(value)?Math.max(-12,Math.min(12,value)):0;}}catch(Exception ignored){}
+    manualBands=next;applyCurve(null);
   }
   @Override protected AudioFormat onConfigure(AudioFormat format){
     return format.encoding==C.ENCODING_PCM_16BIT&&format.channelCount>0&&format.channelCount<=8?format:AudioFormat.NOT_SET;
@@ -68,13 +76,13 @@ public final class PlaybackAudio extends BaseAudioProcessor {
           try{
             JSONArray rows=new JSONArray();for(float[] channel:copy){JSONArray values=new JSONArray();for(float x:channel)values.put((double)x);rows.put(values);}
             JSONObject data=new JSONObject().put("track",id).put("rate",rate).put("wall",now).put("position",position)
-                .put("playing",true).put("speed",speed).put("channels",rows).put("smartVolume",smartVolume)
+                .put("playing",true).put("autoEq",app.prefs.getBoolean("autoEq",false)).put("speed",speed).put("channels",rows).put("smartVolume",smartVolume)
                 .put("rms",rms).put("peak",maximum).put("elapsed",elapsed/1000.0);
             app.music.call("audio",data,(result,error) -> {
               busy=false;if(closed||result==null||!id.equals(service.currentId()))return;
               volumeDb=smartVolume?result.optDouble("volumeDb",0):0;
               if(app.prefs.getBoolean("autoEq",false)){
-                JSONObject eq=result.optJSONObject("eq");if(eq!=null){JSONArray a=eq.optJSONArray("bands");double[] next=new double[8];if(a!=null)for(int i=0;i<8;i++)next[i]=a.optDouble(i,0);bands=next;preamp=eq.optDouble("preamp",0);}
+                JSONObject eq=result.optJSONObject("eq");if(eq!=null)applyCurve(eq.optJSONArray("bands"));
               }
               if(result.has("sampleAfter")){long after=result.optLong("sampleAfter",Long.MAX_VALUE);captureAfter=after==Long.MAX_VALUE?Long.MAX_VALUE:SystemClock.elapsedRealtime()+Math.max(0,after-service.player.getCurrentPosition());}
             });

@@ -611,6 +611,31 @@ public final class Repository extends SQLiteOpenHelper {
           try (Cursor c = d.rawQuery("SELECT id FROM plays WHERE id=? OR (track=? AND started=?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1",
               new String[] {id, track, "" + started, id})) {
             if (c.moveToFirst()) id = c.getString(0);
+            else {
+              // Desktop retains proven relay identities across JSON round trips.
+              // Honor those links; never infer identity from a nearby timestamp.
+              org.json.JSONObject links=pl.optJSONObject("syncAliases");
+              org.json.JSONArray ids=links==null?null:links.optJSONArray("ids");
+              org.json.JSONArray starts=links==null?null:links.optJSONArray("starts");
+              boolean found=false;
+              if(ids!=null)for(int a=0;a<Math.min(512,ids.length())&&!found;a++){
+                String alias=ids.optString(a,"");if(alias.isEmpty()||alias.length()>1024)continue;
+                try(Cursor existing=d.rawQuery("SELECT id FROM plays WHERE track=? AND id=? LIMIT 1",new String[]{track,alias})){
+                  if(existing.moveToFirst()){id=existing.getString(0);found=true;}
+                }
+              }
+              if(starts!=null)for(int a=0;a<Math.min(512,starts.length())&&!found;a++){
+                long alias=starts.optLong(a,0);if(alias<=0)continue;
+                try(Cursor existing=d.rawQuery("SELECT id FROM plays WHERE track=? AND started=? LIMIT 1",new String[]{track,""+alias})){
+                  if(existing.moveToFirst()){id=existing.getString(0);found=true;}
+                }
+              }
+            }
+          }
+          org.json.JSONObject links=pl.optJSONObject("syncAliases");
+          org.json.JSONArray relayIds=links==null?null:links.optJSONArray("ids");
+          if(relayIds!=null)for(int a=0;a<Math.min(512,relayIds.length());a++){
+            String alias=relayIds.optString(a,"");if(!alias.isEmpty()&&alias.length()<=1024)playAliases.put(alias,id);
           }
           playAliases.put(originalId, id);
           ContentValues v = new ContentValues();

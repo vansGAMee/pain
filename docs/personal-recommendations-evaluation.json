@@ -1,0 +1,66 @@
+{
+  "split": {
+    "training": 3832,
+    "test": 958,
+    "embargoedCrossBoundary": 0,
+    "outcomesAvailableAt": "max(started+heard, timestamp, slice end)",
+    "likesHidden": true,
+    "orderedBy": "started",
+    "catalog": "fixed snapshot; historical availability unknown",
+    "auditNote": "development replay; this period previously rejected the unconstrained prototype; not an untouched test",
+    "sameRecordingAliasesExcluded": true,
+    "rankDefinition": "frequency first, learned ordering within equal-count tiers; log loss uses actual stochastic policy"
+  },
+  "model": {
+    "events": 3832,
+    "measuredTracks": 773,
+    "leaf": 1,
+    "clock": true,
+    "validationAUC": 0.8498220089769385,
+    "validationMSE": 0.07320118624267864,
+    "method": "bootstrap-thompson-frequency-strata",
+    "validationEvents": 958,
+    "frequencyMarginalPreserved": true,
+    "trainingRows": 3832,
+    "bootstrapModels": 100
+  },
+  "metrics": {
+    "frequency": {
+      "nextChoices": 130,
+      "recall@10": 0.3076923076923077,
+      "recall@50": 0.5461538461538461,
+      "ndcg@50": 0.2291749036527986,
+      "nextChoiceLogLoss": 5.213636881732371,
+      "completionAUC": 0.7140108046203599
+    },
+    "personal": {
+      "nextChoices": 130,
+      "recall@10": 0.3153846153846154,
+      "recall@50": 0.5461538461538461,
+      "ndcg@50": 0.229303561237228,
+      "nextChoiceLogLoss": 5.218968783121265,
+      "completionAUC": 0.9407365165190535,
+      "fractionMSE": 0.12377448633531137
+    },
+    "previous-mean": {
+      "completionAUC": 0.8259010499537682,
+      "fractionMSE": 0.14976272121475329
+    }
+  },
+  "performance": {
+    "fitSeconds": 12.33166632099892,
+    "warmFullLibraryP50Ms": 31.206757499603555,
+    "warmFullLibraryP95Ms": 34.174486348092614
+  },
+  "guard": {
+    "updates": 130,
+    "overlappingPendingOutcomes": 0,
+    "immediateFeedbackTheoremNotClaimedForPlayback": true,
+    "learnedShare": 3.689727146805652e-12
+  },
+  "sampling": {
+    "draws": 600,
+    "uniqueTracks": 295
+  },
+  "unchanged": true
+}

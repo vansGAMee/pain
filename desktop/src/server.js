@@ -58,6 +58,8 @@ const desktopPreferences = globalThis.painShell?.preferences || require('./deskt
 const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
 const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id)});
 const discordPresence=require('./discord-presence')(DATA_DIR);
+const transitionAudio=require('./transition-audio')(DATA_DIR);
+const personalRecommender=require('./personal-service')(DATA_DIR);
 const discordCovers=new Map();let discordTrackId;
 process.once('exit',()=>discordPresence.close());
 const catalog = require('./music-catalog')(DATA_DIR);
@@ -789,6 +791,19 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+  }
+
+  if (pathname === '/api/personal/recommend') { personalRecommender.route(req,res);return; }
+
+  if (pathname.startsWith('/api/transition-audio/')) {
+    if(req.method!=='GET'){res.writeHead(405);res.end();return;}
+    let id;try{id=decodeURIComponent(pathname.slice('/api/transition-audio/'.length));}catch(_){res.writeHead(400);res.end();return;}
+    const track=getLibraryTracks().find(t=>String(t.id)===id),file=track&&getResolvedAudioFilePath(id,true);
+    if(!file){res.writeHead(200,{'Content-Type':'application/json'});res.end('null');return;}
+    const controller=new AbortController(),cancel=()=>controller.abort();res.on('close',cancel);
+    transitionAudio(file,{cachedOnly:url.searchParams.get('cached')==='1',signal:controller.signal}).catch(()=>null).then(profile=>{
+      res.removeListener('close',cancel);if(!res.destroyed){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(profile));}
+    });return;
   }
 
   if (pathname.startsWith('/api/analyze-track/')) {
@@ -1601,6 +1616,8 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
   });
 });
 server.discordPresence=discordPresence;
+server.personalRecommender=personalRecommender;
+server.once('close',()=>personalRecommender.close());
 server.headersTimeout=15000;
 server.requestTimeout=10*60*1000;
 

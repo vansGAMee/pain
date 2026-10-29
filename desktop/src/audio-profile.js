@@ -193,12 +193,13 @@
     if(src!==sourceUrl){boundary();src=sourceUrl;}
     const mediaTime=audio.currentTime;
     if(audio.paused||audio.seeking||audio.readyState<3||context.state!=='running'||audio.muted||audio.volume===0||audio.playbackRate!==1||!Number.isFinite(mediaTime)||mediaTime<0){boundary();return;}
+    const live=typeof options.onFrame==='function'&&!!options.active?.();
     const needsBody=bodyPosition!==Infinity&&bodyFrames<BODY_FRAMES&&profile.frames<ANALYSIS_FRAMES+BODY_FRAMES;
     const fullFile=profile.analysis?.method==='stratified-pcm-v1'&&!!detail(profile);
     const bodyDetailFrames=detailFrames(profile,bodyPosition*step);
     const needsBodyDetail=detailSupported&&!fullFile&&bodyPosition!==Infinity&&bodyDetailFrames<BODY_FRAMES;
     // Reuse both cached excerpts; never decode or scan tracks in the background.
-    if(profile.frames>=ANALYSIS_FRAMES&&!needsBody&&!needsBodyDetail&&(!detailSupported||profile.detail.frames>=24)){boundary();return;}
+    if(!live&&profile.frames>=ANALYSIS_FRAMES&&!needsBody&&!needsBodyDetail&&(!detailSupported||profile.detail.frames>=24)){boundary();return;}
     const current={wall:now(),media:mediaTime},last=previous;previous=current;
     if(!last||!Number.isFinite(current.wall))return;
     const wall=(current.wall-last.wall)/1000,media=current.media-last.media;
@@ -210,7 +211,7 @@
     const updateBodyDetail=!updateIntroDetail&&needsBodyDetail&&(profile.bodyDetail?.frames||0)<BODY_FRAMES&&position>=bodyPosition&&
       !profile.detail.positions.includes(detailPosition)&&!(profile.bodyDetail?.positions||[]).includes(detailPosition);
     const updateDetail=updateIntroDetail||updateBodyDetail;
-    if(!updateBase&&!updateDetail)return;
+    if(!updateBase&&!updateDetail&&!live)return;
     const wasDetailReady=!!detail(profile);let publishDetail=false;
     let vector=null,timbre=null,timbrePower=0,totalPower=0,instruments=null,detailPower=0;
     nodes.forEach((node,i)=>{
@@ -223,6 +224,9 @@
      if(tone){timbre=timbre?timbre.map((x,j)=>(x*timbrePower+tone[j]*power)/(timbrePower+power)):tone;timbrePower+=power;}
      if(!vector)vector=v;else vector=vector.map((x,j)=>(x*totalPower+v[j]*power)/(totalPower+power));totalPower+=power;
     });
+    if(live&&vector){
+     try{options.onFrame(activeTrack,vector,Math.min(wall,media),mediaTime);}catch(_){} // Optional EQ must not affect profile persistence.
+    }
     if(updateDetail&&instruments){
      const d=updateIntroDetail?profile.detail:(profile.bodyDetail||= {version:1,mean:Array(7).fill(0),frames:0,seconds:0,positions:[]});
      d.positions.push(detailPosition);dirty=true;

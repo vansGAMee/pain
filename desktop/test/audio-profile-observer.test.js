@@ -5,7 +5,7 @@ const bins=Float32Array.from({length:1024},(_,i)=>i*48000/2048>=50&&i*48000/2048
 const track=id=>({id,duration:180000,bytes:4000000,mime:'audio/wav'});
 const cached=(song,extra={})=>({version:4,timbre:Array(12).fill(.5),timbreVariance:Array(12).fill(0),variance:[0,0,0,0,0,0],signature:Audio.signature(song),vector:Audio.frame(wave,bins,48000),frames:20,seconds:10,positions:Array.from({length:20},(_,i)=>i+1),...extra});
 
-function fixture(t,{store={},onProfile=()=>{}}={}){
+function fixture(t,{store={},onProfile=()=>{},observerOptions={}}={}){
  const listeners=new Map(),timers=new Map(),saved=[];let wall=0,nextTimer=0;
  const audio={paused:false,seeking:false,readyState:4,currentTime:0,playbackRate:1,muted:false,volume:1,currentSrc:'file:///a.wav',
   addEventListener(name,fn){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add(fn);},
@@ -23,7 +23,7 @@ function fixture(t,{store={},onProfile=()=>{}}={}){
   play(){audio.paused=false;audio.emit('playing');this.prime();}
  };
  f.dispose=Audio.observe(context,source,audio,()=>{if(f.trackError)throw f.trackError;return f.track;},(song,profile)=>{saved.push({id:song.id,profile:structuredClone(profile)});onProfile(song,profile);},store,{
-  now:()=>wall,setInterval(callback){const id=nextTimer++;timers.set(id,callback);return id;},clearInterval(id){timers.delete(id);}
+  now:()=>wall,setInterval(callback){const id=nextTimer++;timers.set(id,callback);return id;},clearInterval(id){timers.delete(id);},...observerOptions
  });
  t.after(()=>f.dispose());f.prime();return f;
 }
@@ -279,4 +279,15 @@ test('starting in the body already covers it without charging an unnecessary sec
  const f=fixture(t);f.audio.currentTime=70;f.audio.emit('seeked');f.prime();f.frames(48);f.pause();
  const before=structuredClone(f.store.a);assertProfile(before,48);
  f.play();f.frames(100);f.pause();assert.deepEqual(f.store.a,before);
+});
+
+
+test('optional live EQ reuses cached-profile stereo reads, stops immediately when disabled and does not rewrite evidence',t=>{
+ const song=track('a'),original=cached(song,{frames:72,seconds:36,positions:Array.from({length:72},(_,i)=>i),analysis:{method:'stratified-pcm-v1'},detail:{version:1,frames:24,seconds:12,positions:Array.from({length:24},(_,i)=>i),mean:Array(7).fill(.5)}});
+ const store={a:original},frames=[];let active=true;
+ const f=fixture(t,{store,observerOptions:{active:()=>active,onFrame:(song,vector,seconds,position)=>frames.push({song,vector,seconds,position})}});
+ const before=JSON.stringify(store);f.frames(30);assert.equal(frames.length,30);assert.equal(frames[0].song.id,'a');assert.equal(frames[0].seconds,.5);
+ assert.equal(f.timers.size,1,'live EQ must not add another timer');assert.equal(JSON.stringify(store),before,'live windows stay separate from saved acoustic evidence');
+ active=false;f.frames(20);assert.equal(frames.length,30,'no extra analysis when smart EQ is disabled');
+ f.dispose();assert.equal(f.timers.size,0);
 });

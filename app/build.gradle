@@ -25,7 +25,7 @@ dependencies {
 
 // One source of truth: Android packages the exact same algorithms as desktop.
 def sharedMusic = ['audio-timbre.js','audio-profile.js','session-graph.js','recommendation-model.js','taste-model.js',
-                   'queue-engine.js','listening-insights.js','auto-eq.js','smart-volume.js',
+                   'queue-engine.js','listening-records.js','listening-insights.js','auto-eq.js','smart-volume.js',
                    'dj-state.js','mobile-engine.js']
 def generateMusicEngine = tasks.register('generateMusicEngine') {
  inputs.files(sharedMusic.collect { rootProject.file("desktop/src/$it") })

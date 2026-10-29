@@ -2011,7 +2011,7 @@ public final class MainActivity extends Activity {
   private void equalizer() {
     String[] rows={"Автоэквалайзер: "+state("autoEq",false),"Умная громкость: "+state("smartVolume",false),"Ручной эквалайзер","Выключить эквалайзер","Предел громкости: "+app.prefs.getInt("volumeLimit",100)+"%","Системная панель звука"};
     new AlertDialog.Builder(this).setTitle("Звук").setItems(rows,(d,i)->{
-      if(i==0){flip("autoEq",false);if(app.prefs.getBoolean("autoEq",false))app.prefs.edit().putBoolean("equalizer",false).apply();}
+      if(i==0){flip("autoEq",false);}
       else if(i==1)flip("smartVolume",false);
       else if(i==2){manualEqualizer();return;}
       else if(i==3)app.prefs.edit().putBoolean("autoEq",false).putBoolean("equalizer",false).apply();
@@ -2024,7 +2024,7 @@ public final class MainActivity extends Activity {
         try{startActivity(intent);}catch(ActivityNotFoundException e){toast("Системная панель недоступна. Используйте встроенный эквалайзер.");}return;
       }
       if(app.service!=null)app.service.applyPreferences();bind();
-    }).setPositiveButton("Как работает",(d,w)->info("Звук","Автоэквалайзер мягко корректирует баланс по звучанию трека. Умная громкость измеряет звук после эквалайзера и сглаживает перепады; защита пиков работает совместно.\n\nПри звонке или другом аудио PAIN подчиняется аудиофокусу Android. Обе функции можно отключить.")).setNegativeButton("Закрыть",null).show();
+    }).setPositiveButton("Как работает",(d,w)->info("Звук","Автоэквалайзер мягко корректирует баланс поверх ручной настройки. Можно поднять бас в ручном эквалайзере и оставить автоматику включённой. Умная громкость измеряет звук после эквалайзера и сглаживает перепады; защита пиков работает совместно.\n\nПри звонке или другом аудио PAIN подчиняется аудиофокусу Android. Обе функции можно отключить.")).setNegativeButton("Закрыть",null).show();
   }
 
   private void manualEqualizer(){
@@ -2044,7 +2044,7 @@ public final class MainActivity extends Activity {
     }
     new AlertDialog.Builder(this).setTitle("Эквалайзер").setView(scroll).setPositiveButton("Применить",(d,w)->{
       JSONArray values=new JSONArray();for(SeekBar slider:sliders)values.put(slider.getProgress()-12);
-      app.prefs.edit().putString("eqBands",values.toString()).putBoolean("equalizer",true).putBoolean("autoEq",false).apply();
+      app.prefs.edit().putString("eqBands",values.toString()).putBoolean("equalizer",true).apply();
       if(app.service!=null)app.service.applyPreferences();bind();
     }).setNeutralButton("Сбросить",(d,w)->{app.prefs.edit().putString("eqBands","[]").putBoolean("equalizer",false).putBoolean("autoEq",false).apply();if(app.service!=null)app.service.applyPreferences();bind();}).setNegativeButton("Отмена",null).show();
   }

@@ -1698,6 +1698,8 @@ body,
 .dj-dialog h2 { margin: 0; font-size: 20px; font-weight: 650; }
 .dj-dialog h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink-secondary); }
 .dj-dialog p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.dj-why-details { margin-top: 10px; font-size: 12px; }
+.dj-why-details summary { cursor: pointer; color: var(--ink-secondary); }
 .dj-dialog .dj-track { font-size: 17px; line-height: 1.4; font-weight: 550; }
 .dj-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .dj-muted { color: var(--ink-muted); }

@@ -44,3 +44,15 @@ test('native PCM yields cached acoustic evidence, respects budgets and is gain a
  };
  assert.ok(Audio.similarity(measure(.2,false),measure(.4,true))>.9999);
 });
+
+
+test('Android smart EQ reuses its reference and keeps section sampling active only while enabled',()=>{
+ const e=new Engine();e.update({tracks,profiles});e.equalize(tracks[0],profiles.t0);const ref=e.eqReference;
+ e.equalize(tracks[1],profiles.t1);assert.equal(e.eqReference,ref);
+ const wave=Array.from({length:2048},(_,i)=>.2*Math.sin(2*Math.PI*440*i/48000));
+ let result=e.audio({track:'t0',rate:48000,wall:0,position:0,speed:1,playing:true,channels:[wave],autoEq:true});
+ assert.equal(result.sampleAfter,0,'native capture must keep observing the current section');
+ result=e.audio({track:'t0',rate:48000,wall:500,position:500,speed:1,playing:true,channels:[wave],autoEq:false});
+ assert.equal(result.eq,null,'disabled mode avoids all automatic EQ work');
+ e.boundary();
+});

@@ -39,3 +39,4 @@ __pycache__/
 *.pyc
 desktop/data/rating-pages/
 desktop/data/track-ratings/
+desktop/data/transition-audio/

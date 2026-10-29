@@ -20,6 +20,7 @@
           if(data.id!==lane.active?.id)return;
           clearTimeout(lane.timer);lane.timer=null;
           const done=lane.active;lane.active=null;
+          if(data.personalPreparing)root.dispatchEvent?.(new Event('pain:personal-preparing'));
           if(data.error)done.reject(new Error(data.error));else done.resolve(data.result);
           const next=lane.waiting;lane.waiting=null;if(next)start(lane,next);
         };

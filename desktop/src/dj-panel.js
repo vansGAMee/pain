@@ -12,16 +12,17 @@
       const profile=QueueEngine.validateVibeProfile(item?.profile);
       if(!profile||typeof item.id!=='string'||item.id.length>100||ids.has(item.id)||typeof item.name!=='string'||!item.name.trim())continue;
       ids.add(item.id);
-      saved.items.push({id:item.id,name:item.name.trim().slice(0,80),source:typeof item.source==='string'?item.source.slice(0,300):'',...(typeof item.trackId==='string'?{trackId:item.trackId}:{}),profile});
+      saved.items.push({id:item.id,name:item.name.trim().slice(0,80),source:typeof item.source==='string'?item.source.slice(0,300):'',...(typeof item.trackId==='string'?{trackId:item.trackId}:{}),profile,...(Array.isArray(item.embedding)&&item.embedding.length===512&&item.embedding.every(n=>Number.isFinite(n)&&Math.abs(n)<=1.001)?{embedding:[...item.embedding]}:{})});
     }
     saved.activeId=saved.items.some(v=>v.id===data?.activeId)?data.activeId:null;
     saved.updatedAt=Number.isSafeInteger(data?.updatedAt)?data.updatedAt:0;
   } catch (_) {}
+  const validEmbedding=v=>Array.isArray(v)&&v.length===512&&v.every(n=>Number.isFinite(n)&&Math.abs(n)<=1.001);
   const active=()=>saved.items.find(v=>v.id===saved.activeId);
   applyVibe();
   function applyVibe(){
     const v=active();
-    queue.pulseflowVibe=v?{trackId:v.trackId,source:v.source}:null;
+    queue.pulseflowVibe=v?{trackId:v.trackId,name:v.name,source:v.source,embedding:v.embedding,profile:v.profile}:null;
     queue.pulseflowPlan=null;
     queue.setVibeProfile(v?.profile||null);
   }
@@ -40,7 +41,7 @@
     const source=draft?.track?.title||text('Без названия','Untitled');
     el('djVibeHint').textContent=!ready
       ?(draft?text(`Нужно больше звучания трека «${source}». Послушайте его немного дольше.`,`More sound from “${source}” is needed. Listen a little longer.`):text('Выберите трек, чтобы сохранить его звучание.','Choose a track to save its sound.'))
-      :text(`Ориентир — «${source}». PulseFlow использует звучание этого трека.`,`Sound reference: “${source}”. PulseFlow uses the sound of this track.`);
+      :text(`Ориентир — «${source}». Сохраняются измеренное звучание и нейросетевой отпечаток, когда он готов.`,`Sound reference: “${source}”. Saves measured sound and its neural embedding when available.`);
     if(saved.items.length>=limit)el('djVibeHint').textContent=text('Сохранено 8 вайбов. Удалите один, чтобы добавить новый.','8 vibes saved. Remove one to add another.');
   }
   function commit(next,message){
@@ -85,6 +86,17 @@
     el('djReason').textContent=reasons?.length
       ?DJExplanation.describe(decision,localStorage.getItem('pain_lang'))
       :(!track?text('Нет текущего трека.','No current track.'):text('Трек запущен из очереди.','Started from the queue.'));
+    const details=el('djWhyDetails'),personal=smart&&decision?.explanation?.method==='personal-taste'&&String(decision?.toTrack?.id)===String(track?.id);
+    if(details){
+      details.hidden=!personal;
+      if(personal){
+        el('djWhyFull').textContent=el('djReason').textContent;
+        el('djWhySummary').textContent=text('Подробнее о решении','Decision details');
+        const d=decision.explanation;
+        el('djReason').textContent=text(`Вся история: ${d.historyEvents} событий. Частотная основа и модель предпочтений по звучанию.`, `Whole history: ${d.historyEvents} events. Frequency baseline and learned audio preferences.`)
+          +(d.liked?text(' Учитывается ваш лайк.',' Your like is included.'):'');
+      }
+    }
     el('djActive').textContent=vibe
       ?(smart?text('Удерживаем: ','Keeping: '):text('На паузе до включения Smart DJ: ','Paused until Smart DJ is enabled: '))+vibe.name
       :text('Свободный подбор. Выберите вайб, чтобы вернуться к его звучанию.','Free selection. Choose a saved vibe to return to its sound.');
@@ -132,7 +144,14 @@
     if(existing){commit({...saved,activeId:existing.id},text('Этот вайб уже сохранён.','This vibe is already saved.'));return;}
     const id=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
     const item={id,name:name.slice(0,80),source,trackId:String(draft.track.id),profile};
-    commit({items:[...saved.items,item],activeId:item.id},text('Вайб сохранён. ','Vibe saved. ')+activationMessage());
+    if (!commit({items:[...saved.items,item],activeId:item.id},text('Вайб сохранён. ','Vibe saved. ')+activationMessage())) return;
+    // Saving is immediate. Enrich the snapshot in the background without
+    // changing a later user selection or resurrecting a deleted bookmark.
+    fetch('/api/personal/recommend',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'personal'},body:JSON.stringify({action:'embedding',track:item.trackId})})
+      .then(r=>r.ok?r.json():null).then(result=>{
+        if(!validEmbedding(result?.embedding)||!saved.items.some(v=>v.id===id))return;
+        commit({...saved,items:saved.items.map(v=>v.id===id?{...v,embedding:[...result.embedding]}:v)},text('Вайб сохранён вместе с отпечатком звучания.','Vibe and audio embedding saved.'));
+      }).catch(()=>{});
   });
   el('djRelease').addEventListener('click',()=>{
     if(commit({...saved,activeId:null},text('Подбор снова свободный.','Selection is free again.')))

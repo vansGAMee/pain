@@ -36,7 +36,7 @@
    param.setTargetAtTime(value,now,time);
   };
   const leveler=createLeveler(),listeners=[];
-  let previousEnabled=null,previousDuck=null,meter=null,splitter=null,buffers=[],timer=null,lastTime=null,lastGain=0,disposed=false;
+  let previousProtection=null,previousEnabled=null,previousOutput=null,meter=null,splitter=null,buffers=[],timer=null,lastTime=null,lastGain=0,disposed=false;
   const stop=()=>{if(timer!==null)clearInterval(timer);timer=null;lastTime=null;};
   const reset=(keepGain=false)=>{
    lastTime=null;lastGain=leveler.reset(keepGain);
@@ -80,18 +80,30 @@
   for(const event of ['loadstart','emptied','error','abort'])listen(audio,event,()=>{stop();reset();});
   listen(audio,'seeking',()=>{stop();reset(true);});listen(audio,'seeked',start);
   listen(context,'statechange',()=>context.state==='running'?start():stop());
-  return {input,output,update(enabled,duckInBackground,background){
+  return {input,output,update(enabled,duckInBackground,background,protectPeaks=false){
    if(disposed)return;
    enabled=!!enabled;
-   if(enabled!==previousEnabled){
-    set(compressor.threshold,enabled?-18:0,.08);
+   // Smart EQ can protect crossfade/transient peaks without enabling loudness
+   // normalization. Processing stays inside the native audio engine.
+   const protection=enabled?'level':protectPeaks?'peaks':'off';
+   const protectionChanged=protection!==previousProtection;
+   if(protectionChanged){
+    set(compressor.threshold,enabled?-18:protectPeaks?-1:0,.08);
     set(compressor.knee,enabled?12:0,.08);
-    set(compressor.ratio,enabled?3:1,.08);
+    set(compressor.ratio,enabled?3:protectPeaks?20:1,.08);
+    previousProtection=protection;
+   }
+   if(enabled!==previousEnabled){
     previousEnabled=enabled;
     if(enabled)start();else {stop();reset();}
    }
    const duck=!!(duckInBackground&&background);
-   if(duck!==previousDuck){set(output.gain,duck?.3:1,duck?.25:.5);previousDuck=duck;}
+   // Web Audio adds makeup gain even below the compression threshold. Cancel
+   // it in peak-only mode: makeup = (1 / fullRangeGain) ** 0.6 (W3C formula).
+   // https://www.w3.org/TR/webaudio-1.0/#computing-the-makeup-gain
+   const compensate=protection==='peaks'?Math.pow(10,.6*(-1)*(1-1/20)/20):1;
+   const outputGain=(duck?.3:1)*compensate;
+   if(outputGain!==previousOutput){set(output.gain,outputGain,protectionChanged?.08:duck?.25:.5);previousOutput=outputGain;}
   },destroy(){disposed=true;stop();for(const remove of listeners)remove();splitter?.disconnect();for(const node of meter||[])node.disconnect();input.disconnect();normalizer.disconnect();compressor.disconnect();output.disconnect();}};
  }
  return {create,createLeveler};

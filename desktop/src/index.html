@@ -729,8 +729,11 @@
         <button class="modal-close-btn" id="eqCloseBtn">✕</button>
       </div>
 
+      <p class="fluid-row-hint" id="eqAutoExplanation" hidden aria-live="polite"></p>
+
       <!-- Presets Row -->
       <div class="eq-presets-row" id="eqPresetsRow">
+        <button class="eq-preset-chip" id="eqAutoToggleBtn" aria-pressed="false" data-en="Smart EQ" data-ru="Умный EQ">Умный EQ</button>
         <button class="eq-preset-chip active" data-preset="flat">Flat</button>
         <button class="eq-preset-chip" data-preset="bass">Bass Boost</button>
         <button class="eq-preset-chip" data-preset="vocal">Vocal Warmth</button>
@@ -880,8 +883,8 @@
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
-              <label for="autoEqSwitch" data-en="Auto equalizer" data-ru="Автоэквалайзер">Автоэквалайзер</label>
-              <span class="fluid-row-hint" id="autoEqStatusText" data-en="Listens to the current track and gently adjusts the existing equalizer." data-ru="Слушает текущий трек и мягко настраивает существующий эквалайзер.">Слушает текущий трек и мягко настраивает существующий эквалайзер.</span>
+              <label for="autoEqSwitch" data-en="Smart equalizer" data-ru="Умный эквалайзер">Умный эквалайзер</label>
+              <span class="fluid-row-hint" id="autoEqStatusText" data-en="Automatic correction on top of your preset, with peak protection. Sliders show the applied curve." data-ru="Автокоррекция поверх вашего пресета, с защитой пиков. Ползунки показывают итоговую кривую.">Автокоррекция поверх вашего пресета, с защитой пиков. Ползунки показывают итоговую кривую.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="autoEqSwitch"><span class="switch-slider round"></span></label></div>
           </div>
@@ -895,7 +898,7 @@
           <div class="fluid-setting-row bpm-row comfort-limit-row">
             <div class="fluid-row-label">
               <label for="trackTransitionSlider" data-en="Track transition" data-ru="Переход между треками">Переход между треками</label>
-              <span class="fluid-row-hint" data-en="Gently fades between tracks. Set to zero to turn it off." data-ru="Мягко приглушает смену треков. Ноль — без перехода.">Мягко приглушает смену треков. Ноль — без перехода.</span>
+              <span class="fluid-row-hint" data-en="Preloads the next track and smooths the overlap using measured intros and endings. Zero turns transitions off." data-ru="Заранее готовит следующий трек и сглаживает наложение по звучанию начала и конца. Ноль — без перехода.">Заранее готовит следующий трек и сглаживает наложение по звучанию начала и конца. Ноль — без перехода.</span>
             </div>
             <div class="comfort-range"><input type="range" id="trackTransitionSlider" min="0" max="4" step="0.5" value="1"><output id="trackTransitionValue" for="trackTransitionSlider">1,0 с</output></div>
           </div>
@@ -906,7 +909,8 @@
             <div class="settings-section-desc" data-ru="История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Живой Smart DJ выбирает случайно из подходящих по звучанию и перестраивает поиск после каждой песни. Первый анализ выполняется в фоне." data-en="History + PulseFlow uses completed listens, then audio to break ties. Smooth selects similar tracks; contrast alternates closer and more distant matches. Live Smart DJ samples matching tracks and searches again after each song. Initial indexing runs in the background.">История + PulseFlow — частота прослушиваний, при равной частоте — звучание. Smooth — похожие треки; contrast — чередование похожих и более отличающихся. Живой Smart DJ выбирает случайно из подходящих по звучанию и перестраивает поиск после каждой песни. Первый анализ выполняется в фоне.</div>
           </div>
           <label for="pulseflowPolicy" data-ru="Режим подбора" data-en="Selection mode">Режим подбора</label>
-          <select id="pulseflowPolicy"><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="live" data-ru="Живой Smart DJ — больше неожиданности" data-en="Live Smart DJ — more surprises">Живой Smart DJ — больше неожиданности</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
+          <select id="pulseflowPolicy"><option value="taste" data-ru="Весь мой вкус · обучение по истории" data-en="My whole taste · learned from listening">Весь мой вкус · обучение по истории</option><option value="personal" data-ru="История + PulseFlow" data-en="History + PulseFlow">История + PulseFlow</option><option value="live" data-ru="Живой Smart DJ — больше неожиданности" data-en="Live Smart DJ — more surprises">Живой Smart DJ — больше неожиданности</option><option value="smooth">PulseFlow: smooth</option><option value="contrast">PulseFlow: contrast</option></select>
+          <p class="fluid-row-hint" data-ru="Весь мой вкус — отдельная локальная модель: фактически прослушанная доля, лайки, CLAP и акустическая текстура. Соотношение с частотным baseline и влияние времени суток выбираются по истории. Причина выбора — в окне вайбов. Первый запуск обучается в фоне." data-en="My whole taste is a separate local model using unique listening coverage, likes, CLAP and acoustic texture. History validation selects the frequency baseline balance and time context. Open vibes for the recorded explanation. Initial training stays in the background.">Весь мой вкус — отдельная локальная модель: фактически прослушанная доля, лайки, CLAP и акустическая текстура. Соотношение с частотным baseline и влияние времени суток выбираются по истории. Причина выбора — в окне вайбов. Первый запуск обучается в фоне.</p>
           <p id="pulseflowStatus" role="status" aria-live="polite"></p>
           <p id="pulseflowMissing" class="fluid-row-hint" role="status"></p>
           <button type="button" class="btn-minimal primary" id="pulseflowIndex" data-ru="Обновить индекс фонотеки" data-en="Update library index">Обновить индекс фонотеки</button>
@@ -1241,6 +1245,7 @@
       <h3 id="djWhyLabel">Почему этот трек</h3>
       <p id="djTrack" class="dj-track"></p>
       <p id="djReason"></p>
+      <details id="djWhyDetails" class="dj-why-details" hidden><summary id="djWhySummary">Подробнее о решении</summary><p id="djWhyFull"></p></details>
     </section>
     <section class="dj-section">
       <h3 id="djVibeLabel">Сохранить вайб</h3>
@@ -1298,6 +1303,7 @@
   <audio id="audioEngine" crossorigin="anonymous"></audio>
   <audio id="audioEngineB" crossorigin="anonymous"></audio>
 
+  <script src="listening-records.js"></script>
   <script src="listening.js"></script>
   <script src="session-graph.js"></script>
   <script src="audio-timbre.js"></script>
@@ -1305,6 +1311,7 @@
   <script src="audio-analyzer.js"></script>
   <script src="dj-state.js"></script>
   <script src="auto-eq.js"></script>
+  <script src="smart-transition.js"></script>
   <script src="smart-volume.js"></script>
   <script src="comfort-utils.js"></script>
   <script src="recommendation-model.js"></script>

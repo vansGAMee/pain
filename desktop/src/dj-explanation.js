@@ -1,6 +1,8 @@
 /* Translate the recorded decision, never recompute or invent a selection reason. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.DJExplanation=factory();})(globalThis,()=>{
   const copy={
+    'Модель готовится · частотный подбор':['Модель обучается в фоне. Эта подборка использует частоту и лайки; её порядок сохранён.','The model is learning in the background. This mix uses frequency and likes and keeps its displayed order.','Learning · frequency fallback'],
+    'Весь ваш вкус':['Обучение по всей истории и звучанию музыки.','Learns from your whole history and audio.','Your whole taste'],
     'Живой Smart DJ':['Случайный выбор из подходящих по звучанию кандидатов PulseFlow. Уже проигранные и исключённые треки отфильтрованы.','Uniform choice among matching PulseFlow candidates. Played and excluded tracks are filtered out.','Live Smart DJ'],
     'История + PulseFlow':['Сначала частота завершённых прослушиваний; при одинаковой частоте — оригинальный PulseFlow по звучанию.','Completed-listen frequency first; original PulseFlow selects by audio within equal counts.','History + PulseFlow'],
     'PulseFlow: smooth':['Оригинальный PulseFlow: ближайшие треки по CLAP-эмбеддингам звука и косинусному сходству в FAISS.','Original PulseFlow: nearest audio CLAP embeddings by FAISS cosine similarity.','PulseFlow: smooth'],
@@ -28,6 +30,28 @@
   function summary(d,lang='ru'){const r=reasons(d)[0];if(!r)return '';return copy[r]?(lang==='ru'?r:copy[r][2]):'';}
   function describe(d,lang='ru'){
     const ru=lang==='ru',details=d?.explanation||{};
+    if(details.method==='personal-taste'){
+      const percent=v=>Math.round(Math.max(0,Math.min(1,v))*100)+'%';
+      const facts=[ru?`Основа — вся доступная история: ${details.historyEvents} событий, а не одна предыдущая песня.`:`Based on your whole available history: ${details.historyEvents} events.`];
+      if(details.listens)facts.push(ru?`Этот трек: ${details.listens} включений, ${details.completed} дослушиваний; в среднем прослушано ${percent(details.heardFraction)} уникальной длительности.`:`This track: ${details.listens} exposures, ${details.completed} completions; average unique coverage ${percent(details.heardFraction)}.`);
+      else facts.push(ru?'У этого трека ещё нет учтённых прослушиваний.':'No recorded listening to this track yet.');
+      if(details.liked)facts.push(ru?'Ваш лайк учтён как отдельное положительное наблюдение.':'Your like is a separate positive observation.');
+      if(details.hasClap===false)facts.push(ru?(details.hasAcoustic?'CLAP-отпечатка пока нет; доступен измеренный акустический профиль.':'Измерения звучания пока нет; доступная основа — история и лайки.'):(details.hasAcoustic?'No CLAP embedding yet; a measured acoustic profile is available.':'No measured audio yet; the available basis is history and likes.'));
+      if(details.audioUsed)facts.push(ru?`Внутри группы с частотой ${details.frequencyTier} учтена модель предпочтений по звуку и фактически прослушанной доле.`:`A learned audio and listening-coverage preference selects within the frequency tier ${details.frequencyTier}.`);
+      else facts.push(details.evidenceReason==='insufficient-evidence'?(ru?'Окончательных наблюдений пока мало; используем лайки и частотную основу.':'Too few terminal observations; using likes and the frequency baseline.'):(ru?'Для этого подбора частотный вариант получил преимущество по наблюдённым исходам.':'Observed outcomes favored the frequency baseline for this selection.'));
+      if(Number.isFinite(details.learnedShare))facts.push(ru?`Текущая доля обученного варианта в смеси — ${percent(details.learnedShare)}; проверено новых исходов: ${details.guardUpdates}.`:`Current learned-expert share: ${percent(details.learnedShare)}; observed new outcomes: ${details.guardUpdates}.`);
+      if(details.audioUsed&&details.clock)facts.push(ru?'Связь вкуса с локальным временем суток включена по результату проверки на более поздней истории. Правил по часам здесь нет.':'Local time-of-day context was selected by validation on later listening. There are no fixed hourly music rules.');
+      const factorNames=ru?{history:'история этого трека',scenario:'сценарий прослушивания', 'semantic-audio':'нейросетевые признаки звучания',spectrum:'спектр и динамика',timbre:'тембр',contrast:'спектральный контраст',clock:'локальное время'}:{history:'this track’s history',scenario:'listening scenario','semantic-audio':'neural audio features',spectrum:'spectrum and dynamics',timbre:'timbre',contrast:'spectral contrast',clock:'local time'};
+      for(const positive of [true,false]){
+        const names=(details.audioUsed?(details.factors||[]):[]).filter(f=>(f.key!=='semantic-audio'||details.hasClap!==false)&&(!['spectrum','timbre','contrast'].includes(f.key)||details.hasAcoustic!==false)).filter(f=>Number.isFinite(f.delta)&&(positive?f.delta>0:f.delta<0)).map(f=>factorNames[f.key]).filter(Boolean);
+        if(names.length)facts.push((ru?(positive?'В исходной оценке модели повышали приоритет: ':'В исходной оценке модели сдерживали приоритет: '):(positive?'In the raw learned estimate, positive factors: ':'In the raw learned estimate, reducing factors: '))+names.join(', ')+'.');
+      }
+      const names=(details.anchors||[]).map(a=>'«'+String(a.title||'').slice(0,100)+'»');
+      if(names.length)facts.push((ru?'Для сравнения звука: ближайшие дослушанные или отмеченные вами записи — ':'For audio comparison, nearest completed or liked recordings: ')+names.join(', ')+'.');
+      if(details.vibe)facts.push(ru?`При выборе был включён сохранённый вайб «${String(details.vibeName||'').slice(0,100)}»; он задавал звучание подбора.`:`The saved vibe “${String(details.vibeName||'').slice(0,100)}” conditioned the sound when this choice was made.`);
+      facts.push(ru?'Частотная основа сохранена. Модель выбирает между треками с одинаковой частотой. Её доля обновляется только по прогнозам, сделанным до дослушивания, и уменьшается, если частотный вариант надёжнее. Неопределённость учитывается без обязательной квоты новых песен.':'The frequency marginal is preserved. Pre-outcome forecast evidence adapts preference within equal-frequency groups, with model uncertainty and no fixed exploration quota.');
+      return facts.join(' ');
+    }
     const lines=reasons(d).map(r=>{
       if(r==='Близкое звучание'&&typeof details.referenceTitle==='string'&&details.referenceTitle.trim()){
         const title=details.referenceTitle.trim().slice(0,160);

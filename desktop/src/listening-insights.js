@@ -1,18 +1,18 @@
 /* Descriptive statistics from saved listening, with no inference about emotion or genre. */
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.ListeningInsights=factory();})(globalThis,()=>{
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./listening-records'));else root.ListeningInsights=factory(root.ListeningRecords);})(globalThis,Records=>{
  const DAY=86400000,flag=n=>n===1||n===true;
  const dayKey=stamp=>{const d=new Date(stamp);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
  const ordinal=stamp=>{const d=new Date(stamp);return Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/DAY;};
  function build(tracks=[],stats={},now=Date.now()){
   const library=new Map(tracks.filter(t=>t?.id!=null).map(t=>[String(t.id),t])),rows=new Map(),aliases=new Map();
-  for(const p of Array.isArray(stats.plays)?stats.plays:[]){
+  for(const p of Records.canonical(Array.isArray(stats.plays)?stats.plays:[])){
    if(!p||p.track==null)continue;
    const started=Number(p.started||p.timestamp),heard=Number(p.heard);
    if(!Number.isFinite(started)||started<=0||started>now||!Number.isFinite(heard)||heard<=0||heard>7*DAY)continue;
    const track=String(p.track),key=JSON.stringify([track,started]),old=rows.get(key);
    const coverage=[p.media_heard,old?.media_heard].filter(n=>Number.isFinite(n)&&n>=0);
    rows.set(key,{...old,...p,track,started,heard:Math.max(heard,old?.heard||0),media_heard:coverage.length?Math.max(...coverage):Math.max(heard,old?.heard||0),finished:flag(p.finished)||flag(old?.finished)?1:0,skipped:flag(p.skipped)||flag(old?.skipped)?1:0});
-   if(p.id!=null)aliases.set(String(p.id),key);
+   for(const id of p.aliases)aliases.set(id,key);
   }
   const plays=[...rows.values()].sort((a,b)=>a.started-b.started),intervals=new Map();
   for(const s of Array.isArray(stats.slices)?stats.slices:[]){

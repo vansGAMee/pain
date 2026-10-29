@@ -13,7 +13,8 @@ const track = (id, artist = 'Artist', title = 'Title', favorite = 0) => ({
   favorite
 });
 const play = (id, days, extra = {}) => ({
-  id: `${id}-${days}`,
+  // Separate playback events require separate stable IDs, including same-day repeats.
+  id: `${id}-${extra.started||at(days)}`,
   track: id,
   started: at(days),
   heard: 180000,

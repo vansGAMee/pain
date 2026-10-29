@@ -258,16 +258,18 @@ public final class PlaybackService extends MediaSessionService {
         delta = pending,
         media = pendingMedia,
         at = lastAudible - pending;
+    final boolean completed=(finished||skipped)&&ListeningMath.completed(totalMedia,dur);
+    final boolean rejected=skipped&&!completed;
     pending = pendingMedia = 0;
     recorded = true;
     if(app.prefs.getBoolean("history",true))try{
       JSONObject feedback=new JSONObject().put("id",id).put("track",track).put("session",sid)
           .put("started",start).put("duration",dur).put("heard",total).put("media_heard",totalMedia)
-          .put("finished",finished?1:0).put("skipped",skipped?1:0);
+          .put("finished",completed?1:0).put("skipped",rejected?1:0);
       app.music.call("feedback",feedback,null);
     }catch(Exception ignored){}
     app.io.execute(
-        () -> app.repo.record(id, track, sid, start, dur, at, delta, media, finished, skipped));
+        () -> app.repo.record(id, track, sid, start, dur, at, delta, media, completed, rejected));
   }
 
   private void finish(boolean finished, boolean skipped) {

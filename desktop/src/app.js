@@ -167,7 +167,7 @@
   function sharedVibes(){try{const v=JSON.parse(localStorage.getItem('pain_dj_vibes_v1'));return v?{...v,updatedAt:v.updatedAt||0}:null;}catch(_){return null;}}
   function mergeSharedAudio(remote){
     if(!remote)return;
-    const state=DjState.merge({profiles:audioProfiles,vibes:sharedVibes()},remote),merged=state.profiles;
+    const mergedState=DjState.merge({profiles:audioProfiles,vibes:sharedVibes()},remote),merged=mergedState.profiles;
     let changed = false;
     for(const [id,profile] of Object.entries(merged)){
       const existing = audioProfiles[id];
@@ -179,9 +179,14 @@
         }
       }
     }
-    if (changed) schedulePersistAudioProfiles();
-    if(state.vibes&&JSON.stringify(state.vibes)!==JSON.stringify(sharedVibes())){
-      try{localStorage.setItem('pain_dj_vibes_v1',JSON.stringify(state.vibes));window.dispatchEvent(new CustomEvent('pain:dj-state',{detail:state.vibes}));}catch(_){}
+    if (changed) {
+      autoEqReference = null;
+      schedulePersistAudioProfiles();
+      const track = state.tracks.find(t => t.id === state.currentTrackId);
+      if (state.eq.auto && track) applyAutoEqualizer(track);
+    }
+    if(mergedState.vibes&&JSON.stringify(mergedState.vibes)!==JSON.stringify(sharedVibes())){
+      try{localStorage.setItem('pain_dj_vibes_v1',JSON.stringify(mergedState.vibes));window.dispatchEvent(new CustomEvent('pain:dj-state',{detail:mergedState.vibes}));}catch(_){}
     }
   }
   async function syncSharedAudio(){
@@ -287,6 +292,11 @@
   let gainNodeA = null;
   let gainNodeB = null;
   let crossfadeTimerId = 0;
+  let transitionFinishTimer = null;
+  let transitionPrepareTimer = null;
+  let transitionAbort = null;
+  const transitionProfiles = new Map();
+  const preparedDecks = new WeakMap();
   let isCrossfading = false;
   let lastReelAdvanceTime = 0;
 
@@ -298,9 +308,13 @@
       if (prop === 'standbyDeck') return standbyDeck;
       if (prop === 'pause') {
         return () => {
+          ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
+          ++trackTransitionRequest; clearTimeout(trackTransitionTimer);
           isCrossfading = false;
           if (deckA) try { deckA.pause(); } catch (_) {}
           if (deckB) try { deckB.pause(); } catch (_) {}
+          settleDeckGains();
+          applySmartVolume();
         };
       }
       if (prop === 'addEventListener') {
@@ -356,7 +370,7 @@
   window.PainPlayer = {
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
     getAudio: () => activeDeck || deckA,
-    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId):Promise.resolve();}
+    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve();}
   };
   let audioCtx = null;
   let audioObservationStops = [];
@@ -589,6 +603,10 @@
   let updateStatus = null;
   let updateNoticeShown = false;
   let autoEqCharacter = 'learning';
+  let autoEqResult = null;
+  const autoEqTracker = AutoEqualizer.createTracker();
+  let autoEqReference = null;
+  let autoEqReferenceTracks = null;
 
   // --- TOAST NOTIFICATIONS ---
   function showToast(message, icon = '✓', duration = 2800) {
@@ -879,13 +897,17 @@
   function updateAudioObservers() {
     const allowed = state.performanceMode !== 'maximum' && !document.hidden;
     if (!allowed) {
+      autoEqTracker.reset();
       const stops = audioObservationStops; audioObservationStops = [];
       for (const stop of stops) stop();
+      const track = state.tracks.find(t => t.id === state.currentTrackId);
+      if (state.eq.auto && track) applyAutoEqualizer(track);
       return;
     }
     if (!audioCtx || audioObservationStops.length) return;
     const onProfile = (track, profile) => {
       queue?.setAudioProfile(track.id, profile);
+      autoEqReference = null;
       if (state.eq.auto && String(track.id) === String(state.currentTrackId)) applyAutoEqualizer(track, profile);
       schedulePersistAudioProfiles();
       if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 30000);
@@ -893,7 +915,14 @@
     try {
       for (const [deck, source] of [[deckA, sourceNodeA], [deckB, sourceNodeB]]) {
         if (deck && source) audioObservationStops.push(AudioProfile.observe(audioCtx, source, deck,
-          () => deckTrackSnapshots.get(deck), onProfile, audioProfiles));
+          () => deckTrackSnapshots.get(deck), onProfile, audioProfiles, {
+            active: () => state.eq.auto && !isCrossfading,
+            onFrame: (track, vector, seconds, position) => {
+              if (String(track.id) !== String(state.currentTrackId)) return;
+              autoEqTracker.observe(track, vector, seconds, position);
+              applyAutoEqualizer(track);
+            }
+          }));
       }
     } catch (_) { for (const stop of audioObservationStops) stop(); audioObservationStops = []; }
   }
@@ -902,8 +931,19 @@
     if (document.hidden) bpmAnalysisController?.abort();
   });
 
+  const eqTargets = new WeakMap();
+  function setEqTarget(param, value, glide) {
+    if (eqTargets.get(param) === value) return;
+    const now = audioCtx.currentTime;
+    if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(now);
+    else { const held = param.value; param.cancelScheduledValues(now); param.setValueAtTime(held, now); }
+    param.setTargetAtTime(value, now, glide);
+    eqTargets.set(param, value);
+  }
+
   function applyEqualizerAudioGains() {
     if (!audioCtx || !preampNode) return;
+    applySmartVolume();
     if (audioCtx.state === 'suspended') {
       audioCtx.resume().catch(() => {});
     }
@@ -911,15 +951,15 @@
     if (state.eq.enabled) {
       const glide = state.eq.auto ? 0.65 : 0.02;
       const gainMult = Math.pow(10, (state.eq.preamp || 0) / 20);
-      preampNode.gain.setTargetAtTime(gainMult, audioCtx.currentTime, glide);
+      setEqTarget(preampNode.gain, gainMult, glide);
       filterNodes.forEach((node, i) => {
         const val = state.eq.bands[i] || 0;
-        node.gain.setTargetAtTime(val, audioCtx.currentTime, glide);
+        setEqTarget(node.gain, val, glide);
       });
     } else {
-      preampNode.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.02);
+      setEqTarget(preampNode.gain, 1, .02);
       filterNodes.forEach(node => {
-        node.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+        setEqTarget(node.gain, 0, .02);
       });
     }
   }
@@ -946,7 +986,7 @@
 
   function updatePresetChipsUI() {
     document.querySelectorAll('.eq-preset-chip').forEach(chip => {
-      chip.classList.toggle('active', chip.dataset.preset === state.eq.preset);
+      chip.classList.toggle('active', chip.dataset.preset === (state.eq.auto ? (state.eq.manual?.enabled===false?'flat':state.eq.manual?.preset) : state.eq.preset));
     });
   }
 
@@ -956,35 +996,64 @@
   }
 
   function autoEqDescription() {
-    if (!state.eq.auto) return state.lang === 'ru'
-      ? 'Слушает текущий трек и мягко настраивает существующий эквалайзер.'
-      : 'Listens to the current track and gently adjusts the existing equalizer.';
-    if (autoEqCharacter === 'learning') return state.lang === 'ru'
-      ? 'Включён · слушает первые секунды трека'
-      : 'On · listening to the first seconds';
-    const labels = state.lang === 'ru'
-      ? { deep: 'глубокий звук', vocal: 'выраженная середина', bright: 'яркий звук', balanced: 'сбалансированный звук' }
-      : { deep: 'deep sound', vocal: 'mid-forward sound', bright: 'bright sound', balanced: 'balanced sound' };
-    const tandem = state.smartVolume ? (state.lang === 'ru' ? ' · громкость согласована' : ' · level matched') : '';
-    return `${state.lang === 'ru' ? 'Включён' : 'On'} · ${labels[autoEqCharacter] || labels.balanced}${tandem}`;
+    const ru = state.lang === 'ru';
+    if (!state.eq.auto) return ru
+      ? 'Мягкая автокоррекция поверх вашего пресета. Можно сочетать с Bass Boost.'
+      : 'Gentle automatic correction on top of your preset. Works with Bass Boost.';
+    const name = state.eq.manual?.enabled !== false && state.eq.manual?.preset !== 'flat'
+      ? document.querySelector(`[data-preset="${['bass','vocal','acoustic','electronic','rock','treble'].includes(state.eq.manual?.preset) ? state.eq.manual.preset : 'custom'}"]`)?.textContent || (ru ? 'Ручная настройка' : 'Custom settings')
+      : (ru ? 'Без пресета' : 'Flat');
+    const base = `${name} + ${ru ? 'умный EQ' : 'Smart EQ'} · `;
+    if (!autoEqResult?.ready) return ru
+      ? `${base}собирает 10 секунд звучания · пресет уже работает`
+      : `${base}collecting 10 seconds of sound · preset is active`;
+    if (autoEqResult.reason === 'reference') return ru
+      ? `${base}пока мало измеренных треков для автокоррекции · пресет работает`
+      : `${base}more measured tracks needed for correction · preset is active`;
+    const labels = ru
+      ? {deep:'баса',vocal:'середины',bright:'высоких частот'}
+      : {deep:'bass',vocal:'midrange',bright:'treble'};
+    const delta = autoEqResult.bands.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
+    const amount = `${delta>0?'+':''}${delta.toFixed(2)} ${ru?'дБ':'dB'}`;
+    const action = autoEqResult.adjusted
+      ? (ru ? `Автокоррекция ${labels[autoEqCharacter]}: ${amount}` : `${labels[autoEqCharacter]} correction: ${amount}`)
+      : (ru ? 'Дополнительная коррекция не нужна' : 'No additional correction needed');
+    const count = autoEqResult.referenceTracks;
+    const section = autoEqResult.live ? (ru ? ' · текущий участок' : ' · current section') : '';
+    const tandem = state.smartVolume ? (ru ? ' · громкость согласована' : ' · level matched') : '';
+    return `${base}${action} · ${ru ? 'сравнение с' : 'compared with'} ${count} ${ru ? 'измеренными треками' : 'measured tracks'}${section}${tandem}`;
   }
 
   function updateAutoEqualizerUI() {
     if (DOM.autoEqSwitch) DOM.autoEqSwitch.checked = !!state.eq.auto;
     if (DOM.autoEqStatusText) DOM.autoEqStatusText.textContent = autoEqDescription();
     if (DOM.eqAutoBadge) DOM.eqAutoBadge.hidden = !state.eq.auto;
-    document.querySelectorAll('.eq-v-slider,.eq-preset-chip').forEach(control => {
-      control.disabled = !!state.eq.auto;
+    const toggle = document.getElementById('eqAutoToggleBtn');
+    if (toggle) { toggle.classList.toggle('active', !!state.eq.auto); toggle.setAttribute('aria-pressed', String(!!state.eq.auto)); }
+    const explanation = document.getElementById('eqAutoExplanation');
+    if (explanation) { explanation.hidden = !state.eq.auto; explanation.textContent = autoEqDescription(); }
+    document.querySelectorAll('.eq-v-slider').forEach(control => {
+      control.disabled = !!state.eq.auto && control === DOM.eqSliderPreamp;
     });
   }
 
   function applyAutoEqualizer(track, profile = null) {
     if (!state.eq.auto || !track) return;
-    const recommendation = AutoEqualizer.recommend(track, profile || AudioProfile.get(audioProfiles, track, true), autoEqHeadroom);
+    if (!autoEqReference || autoEqReferenceTracks !== state.tracks) {
+      autoEqReferenceTracks = state.tracks;
+      autoEqReference = AutoEqualizer.createReference(state.tracks.map(t => ({id:t.id,profile:AudioProfile.get(audioProfiles,t)})));
+    }
+    const cached = profile || AudioProfile.get(audioProfiles, track, true);
+    const live = autoEqTracker.get(track);
+    const evidence = live ? {...live,analysis:{...live.analysis,sampleRate:cached?.analysis?.sampleRate}} : cached;
+    const recommendation = AutoEqualizer.recommend(track, evidence, autoEqHeadroom, autoEqReference);
+    recommendation.live = !!live;
+    autoEqResult = recommendation;
     state.eq.enabled = true;
     state.eq.preset = 'auto';
-    state.eq.preamp = recommendation.preamp;
-    state.eq.bands = [...recommendation.bands];
+    const combined = AutoEqualizer.combine(state.eq.manual, recommendation, autoEqHeadroom);
+    state.eq.preamp = combined.preamp;
+    state.eq.bands = combined.bands;
     autoEqCharacter = recommendation.character;
     applyEqualizerAudioGains();
     initEqualizerUI();
@@ -1001,12 +1070,15 @@
       };
     }
     state.eq.auto = enabled;
+    autoEqTracker.reset();
     if (enabled) {
       autoEqCharacter = 'learning';
+      autoEqResult = null;
       const track = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(item => item.id === state.currentTrackId);
       if (track) applyAutoEqualizer(track);
       else {
-        state.eq.enabled = true; state.eq.preset = 'auto'; state.eq.preamp = 0; state.eq.bands = [...EQ_PRESETS.flat];
+        const combined = AutoEqualizer.combine(state.eq.manual, null, autoEqHeadroom);
+        state.eq.enabled = true; state.eq.preset = 'auto'; state.eq.preamp = combined.preamp; state.eq.bands = combined.bands;
       }
     } else {
       const manual = state.eq.manual;
@@ -1276,11 +1348,11 @@
         playTrackInContext(track,state.tracks,{type:'library',title:'Smart DJ',allowNew:true});
         const start=tracks.findIndex(t=>String(t.id)===String(track.id));
         const decision=items?.[start]?.decision,details=decision?.explanation;
-        if(['pulseflow-clap-faiss','frequency-pulseflow-ties','pulseflow-uniform'].includes(details?.method)){
+        if(['pulseflow-clap-faiss','frequency-pulseflow-ties','pulseflow-uniform','personal-taste','personal-taste-fallback'].includes(details?.method)){
           queue.setShuffleMode('smart');state.shuffleMode='smart';
           queue.lastTransition=decision;
           queue.pulseflowPlan={seed:decision.fromTrack,policy:details.policy,personal:details.method==='frequency-pulseflow-ties',preview:true,vibeKey:JSON.stringify(queue.pulseflowVibe||null),
-            remaining:items.slice(start+1).map(row=>({id:row.track.id,score:row.decision.explanation.score}))};
+            remaining:items.slice(start+1).map(row=>({id:row.track.id,score:row.decision.explanation.score,reasons:row.decision.reasons,explanation:row.decision.explanation}))};
           // Finish the selected preview, then continue through the library.
         }
       },
@@ -1383,7 +1455,7 @@
     if (!trackId || !state.stats || !state.stats.plays) return 0;
     if (!playCountsCache) {
       playCountsCache = new Map();
-      const plays = state.stats.plays;
+      const plays = ListeningRecords.canonical(state.stats.plays);
       const identities=new Set(),now=Date.now();
       for (let i = 0; i < plays.length; i++) {
         const p=plays[i],tid=p?.track,key=JSON.stringify([tid,p?.started]),duration=Number(p?.duration);
@@ -2353,74 +2425,84 @@
     return profileCanvasCache;
   }
 
-  // --- EQUAL-POWER DUAL-DECK CROSSFADE ENGINE ---
-  function createEqualPowerCurves(numPoints = 64) {
-    const fadeOut = new Float32Array(numPoints);
-    const fadeIn = new Float32Array(numPoints);
-    for (let i = 0; i < numPoints; i++) {
-      const x = i / (numPoints - 1);
-      // Cosine / Sine equal-power crossfade curve
-      fadeOut[i] = Math.max(0.0001, Math.cos(x * 0.5 * Math.PI));
-      fadeIn[i] = Math.max(0.0001, Math.sin(x * 0.5 * Math.PI));
-    }
-    return { fadeOut, fadeIn };
-  }
-
-  function crossfadeDecks(outgoingDeck, incomingDeck, durationSec = 1.5) {
-    const curTimer = ++crossfadeTimerId;
-    isCrossfading = true;
-
-    if (!audioCtx || !gainNodeA || !gainNodeB) {
-      if (outgoingDeck && outgoingDeck !== incomingDeck) {
-        try { outgoingDeck.pause(); outgoingDeck.src = ''; } catch (_) {}
-      }
-      isCrossfading = false;
-      return;
-    }
-
+  // --- MEASURED DUAL-DECK TRANSITIONS ---
+  const transitionKey = track => JSON.stringify([track?.id, AudioProfile.signature(track)]);
+  function transitionProfile(track) { return track ? transitionProfiles.get(transitionKey(track)) : null; }
+  async function prepareTransitionProfile(track, signal) {
+    if (!track || signal?.aborted || state.trackTransition === 0) return null;
+    const key = transitionKey(track);
+    if (transitionProfiles.has(key)) return transitionProfiles.get(key);
     try {
-      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-      if (transitionGainNode) setTrackTransitionGain(1);
+      const response = await fetch(`/api/transition-audio/${encodeURIComponent(track.id)}${state.performanceMode === 'maximum' ? '?cached=1' : ''}`, {signal});
+      if (!response.ok) return null;
+      const result = await response.json();
+      if (signal?.aborted || !SmartTransition.valid(result)) return null;
+      if (transitionProfiles.size >= 128) transitionProfiles.delete(transitionProfiles.keys().next().value);
+      transitionProfiles.set(key, result); return result;
+    } catch (_) { return null; }
+  }
+  function sourceFor(track) { return `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`; }
+  function deckGain(deck) { return (deck === deckA ? gainNodeA : gainNodeB)?.gain; }
+  function rampDeck(deck, target, seconds = .02) {
+    const gain = deckGain(deck); if (!gain || !audioCtx) return;
+    const now = audioCtx.currentTime, held = gain.value;
+    if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+    else { gain.cancelScheduledValues(now); gain.setValueAtTime(held, now); }
+    gain.linearRampToValueAtTime(target, now + seconds);
+  }
+  function settleDeckGains() {
+    if (!audioCtx) return;
+    rampDeck(activeDeck, 1); rampDeck(standbyDeck, 0);
+  }
+  function transitionPlan(next, automatic = true) {
+    const current = deckTrackSnapshots.get(activeDeck);
+    return SmartTransition.plan(current, next, transitionProfile(current), transitionProfile(next), state.trackTransition,
+      {automatic, position:audio.currentTime || 0, rate:audio.playbackRate, duration:getCurrentTrackDuration()});
+  }
+  function preloadDeck(track) {
+    if (!track || !standbyDeck || !standbyDeck.paused || isCrossfading || activeDeck === standbyDeck) return;
+    const src = sourceFor(track), deck = standbyDeck;
+    if (preparedDecks.get(deck) === src) return;
+    rampDeck(deck, 0); deck.preload = 'auto';
+    deckTrackSnapshots.set(deck, {...track}); preparedDecks.set(deck, src);
+    deck.src = src; deck.load();
+  }
+  function crossfadeDecks(outgoingDeck, incomingDeck, durationSec = 1.5) {
+    const curTimer = ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
+    isCrossfading = true; applySmartVolume();
+    if (!audioCtx || !gainNodeA || !gainNodeB) {
+      if (outgoingDeck && outgoingDeck !== incomingDeck) outgoingDeck.pause();
+      isCrossfading = false; applySmartVolume(); return;
+    }
+    try {
       const now = audioCtx.currentTime;
-      const remainingOut = (outgoingDeck && outgoingDeck.duration > 0 && outgoingDeck.currentTime > 0)
-        ? Math.max(0.25, outgoingDeck.duration - outgoingDeck.currentTime)
-        : durationSec;
-      const dur = Math.max(0.25, Math.min(4.0, Math.min(durationSec, remainingOut)));
-      const outGain = (outgoingDeck === deckA) ? gainNodeA.gain : gainNodeB.gain;
-      const inGain = (incomingDeck === deckA) ? gainNodeA.gain : gainNodeB.gain;
-
-      const { fadeOut, fadeIn } = createEqualPowerCurves(64);
-
-      if (typeof outGain.cancelAndHoldAtTime === 'function') outGain.cancelAndHoldAtTime(now);
-      else { outGain.cancelScheduledValues(now); outGain.setValueAtTime(outGain.value || 1, now); }
-
-      if (typeof inGain.cancelAndHoldAtTime === 'function') inGain.cancelAndHoldAtTime(now);
-      else { inGain.cancelScheduledValues(now); inGain.setValueAtTime(0.0001, now); }
-
-      outGain.setValueCurveAtTime(fadeOut, now, dur);
-      inGain.setValueCurveAtTime(fadeIn, now, dur);
-
-      setTimeout(() => {
-        if (curTimer === crossfadeTimerId) {
-          isCrossfading = false;
-          if (outgoingDeck && outgoingDeck !== activeDeck) {
-            try { outgoingDeck.pause(); outgoingDeck.src = ''; } catch (_) {}
-            try {
-              outGain.cancelScheduledValues(audioCtx.currentTime);
-              outGain.setValueAtTime(0.0001, audioCtx.currentTime);
-            } catch (_) {}
-          }
-          if (inGain) {
-            try {
-              inGain.cancelScheduledValues(audioCtx.currentTime);
-              inGain.setValueAtTime(1.0, audioCtx.currentTime);
-            } catch (_) {}
-          }
+      const remainingOut = Math.max(0, (outgoingDeck.duration - outgoingDeck.currentTime) / (outgoingDeck.playbackRate || 1));
+      const dur = Math.max(.02, Math.min(4, durationSec, Number.isFinite(remainingOut) ? remainingOut : durationSec));
+      const outGain = deckGain(outgoingDeck), inGain = deckGain(incomingDeck);
+      const heldOut = Math.max(0, Math.min(1, outGain.value)), heldIn = Math.max(0, Math.min(1, inGain.value));
+      for (const gain of [outGain,inGain]) {
+        const held = gain.value;
+        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+        else {gain.cancelScheduledValues(now);gain.setValueAtTime(held,now);}
+      }
+      const curves = SmartTransition.curves({duration:dur,
+        outgoing:transitionProfile(deckTrackSnapshots.get(outgoingDeck)), incoming:transitionProfile(deckTrackSnapshots.get(incomingDeck)),
+        outPosition:outgoingDeck.currentTime,inPosition:incomingDeck.currentTime,outRate:outgoingDeck.playbackRate,inRate:incomingDeck.playbackRate,
+        outGain:heldOut,inGain:heldIn});
+      outGain.setValueCurveAtTime(curves.fadeOut,now,dur);inGain.setValueCurveAtTime(curves.fadeIn,now,dur);
+      transitionFinishTimer = setTimeout(() => {
+        if (curTimer !== crossfadeTimerId) return;
+        isCrossfading = false; applySmartVolume();
+        if (outgoingDeck !== activeDeck) {
+          outgoingDeck.pause(); outgoingDeck.removeAttribute('src'); outgoingDeck.load(); preparedDecks.delete(outgoingDeck);
         }
-      }, Math.round(dur * 1000) + 60);
-    } catch (e) {
-      console.warn('Crossfade execution error:', e);
-      isCrossfading = false;
+        state.hasPrefetchedNext = false;
+        prefetchNextTrack();
+      }, Math.ceil(dur*1000)+30);
+    } catch (error) {
+      isCrossfading = false; settleDeckGains(); applySmartVolume();
+      if (outgoingDeck !== activeDeck) outgoingDeck.pause();
+      console.warn('Transition recovered:', error);
     }
   }
 
@@ -2441,8 +2523,13 @@
     } catch (_) {}
   }
 
-  function startTrackObject(track, startPosition = 0) {
+  function startTrackObject(track, startPosition = 0, options = {}) {
     if (!track) return;
+    const plan = transitionPlan(track, !!options.automatic);
+    if (options.automatic && startPosition === 0) startPosition = plan.start;
+    ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
+    transitionAbort?.abort(); transitionAbort = new AbortController();
+    clearTimeout(transitionPrepareTimer);
     initAudioNodes();
     sampleListening();
     if (state.currentTrackId) recordTrackFinished(state.currentTrackId, true);
@@ -2460,12 +2547,13 @@
     if (DOM.progressThumb) DOM.progressThumb.style.left = `${startPct}%`;
 
     playingTrackSnapshot = {...track};
+    autoEqTracker.reset();
     if (state.eq.auto) applyAutoEqualizer(track);
 
     const isReelActive = typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active;
     const hasActivePlaying = activeDeck && !activeDeck.paused && activeDeck.currentTime > 0 && activeDeck.src;
-    const shouldCrossfade = hasActivePlaying && (state.trackTransition > 0 || isReelActive || isTrackFadingOut);
-    const crossfadeDuration = isReelActive ? 1.5 : (state.trackTransition > 0 ? state.trackTransition : 0.35);
+    const shouldCrossfade = hasActivePlaying && !plan.continuous && (state.trackTransition > 0 || isReelActive || isTrackFadingOut);
+    const crossfadeDuration = isReelActive ? 1.5 : (plan.duration || (state.trackTransition > 0 ? state.trackTransition : .35));
 
     isTrackFadingOut = false;
 
@@ -2483,10 +2571,12 @@
 
       if (transitionGainNode) setTrackTransitionGain(1);
       deckTrackSnapshots.set(incomingDeck, playingTrackSnapshot);
-      incomingDeck.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+      const src = sourceFor(track);
+      if (preparedDecks.get(incomingDeck) !== src) { incomingDeck.src = src; preparedDecks.set(incomingDeck,src); }
+      if (startPosition === 0 && incomingDeck.readyState >= 1) incomingDeck.currentTime = 0;
       if (startPosition > 0) {
         const onLoaded = () => {
-          try { incomingDeck.currentTime = startPosition; } catch (_) {}
+          if (request === playbackRequest) try { incomingDeck.currentTime = startPosition; } catch (_) {}
           incomingDeck.removeEventListener('loadedmetadata', onLoaded);
         };
         incomingDeck.addEventListener('loadedmetadata', onLoaded);
@@ -2510,6 +2600,7 @@
         if (request !== playbackRequest || err.name === 'AbortError') return;
         if (state.phoneUrl) {
           incomingDeck.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          preparedDecks.delete(incomingDeck);
           try {
             await incomingDeck.play();
             if (request === playbackRequest) {
@@ -2528,29 +2619,35 @@
       });
     } else {
       // INITIAL START OR SINGLE DECK PLAYBACK
+      const selectedDeck = preparedDecks.get(standbyDeck) === sourceFor(track) ? standbyDeck : activeDeck || deckA;
+      const otherDeck = selectedDeck === deckA ? deckB : deckA;
       pendingSeekTime = startPosition > 0 ? startPosition : null;
       if (gainNodeA && audioCtx) {
         try {
           gainNodeA.gain.cancelScheduledValues(audioCtx.currentTime);
-          gainNodeA.gain.setValueAtTime(1.0, audioCtx.currentTime);
+          gainNodeA.gain.setValueAtTime(selectedDeck === deckA ? 1 : 0, audioCtx.currentTime);
         } catch (_) {}
       }
       if (gainNodeB && audioCtx) {
         try {
           gainNodeB.gain.cancelScheduledValues(audioCtx.currentTime);
-          gainNodeB.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+          gainNodeB.gain.setValueAtTime(selectedDeck === deckB ? 1 : 0, audioCtx.currentTime);
         } catch (_) {}
       }
-      activeDeck = deckA;
-      standbyDeck = deckB;
-      deckTrackSnapshots.set(deckA, playingTrackSnapshot);
-      deckA.src = `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`;
+      activeDeck = selectedDeck;
+      standbyDeck = otherDeck;
+      if (otherDeck) otherDeck.pause();
+      isCrossfading = false; applySmartVolume();
+      deckTrackSnapshots.set(selectedDeck, playingTrackSnapshot);
+      const src = sourceFor(track);
+      if (preparedDecks.get(selectedDeck) !== src) { selectedDeck.src = src; preparedDecks.set(selectedDeck,src); }
+      if (startPosition === 0 && selectedDeck.readyState >= 1) selectedDeck.currentTime = 0;
       savePlaybackPosition(true);
-      deckA.play().then(() => {
+      selectedDeck.play().then(() => {
         if (request === playbackRequest) {
           if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
           if (pendingSeekTime !== null) {
-            try { deckA.currentTime = pendingSeekTime; } catch (_) {}
+            try { selectedDeck.currentTime = pendingSeekTime; } catch (_) {}
             pendingSeekTime = null;
           }
           syncPlaybackState();
@@ -2558,13 +2655,14 @@
       }).catch(async err => {
         if (request !== playbackRequest || err.name === 'AbortError') return;
         if (state.phoneUrl) {
-          deckA.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          selectedDeck.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          preparedDecks.delete(selectedDeck);
           try {
-            await deckA.play();
+            await selectedDeck.play();
             if (request === playbackRequest) {
               if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
               if (pendingSeekTime !== null) {
-                try { deckA.currentTime = pendingSeekTime; } catch (_) {}
+                try { selectedDeck.currentTime = pendingSeekTime; } catch (_) {}
                 pendingSeekTime = null;
               }
               syncPlaybackState();
@@ -2592,17 +2690,39 @@
     }
     if (state.currentView === 'player') renderVinylPlayerView();
     analyzeTrackBpmInBackground(track);
+    const preparationSignal = transitionAbort.signal;
+    transitionPrepareTimer = setTimeout(async () => {
+      await prepareTransitionProfile(track, preparationSignal);
+      if (!preparationSignal.aborted && request === playbackRequest) prefetchNextTrack();
+    }, 500);
   }
 
-  function playTrackObject(track, startPosition = 0) {
+  function playTrackObject(track, startPosition = 0, options = {}) {
     if (!track) return;
     pendingNextSkips = 0;
     isNavigatingNext = false;
     if (queue) queue.cancelPendingSelection();
     initAudioNodes();
     clearTimeout(trackTransitionTimer);
-    ++trackTransitionRequest;
-    startTrackObject(track, startPosition);
+    const serial = ++trackTransitionRequest;
+    // A replacement may still be buffering at zero gain while the other deck
+    // remains audible. Reuse that audible deck as the outgoing source; retiring
+    // it here would create silence on a second quick selection.
+    if (activeDeck && standbyDeck && activeDeck.readyState < 3 && !standbyDeck.paused && !standbyDeck.ended) {
+      ++playbackRequest;
+      ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
+      const waitingDeck = activeDeck;
+      waitingDeck.pause(); waitingDeck.removeAttribute('src'); waitingDeck.load(); preparedDecks.delete(waitingDeck);
+      activeDeck = standbyDeck; standbyDeck = waitingDeck;
+      isCrossfading = false; settleDeckGains(); applySmartVolume();
+    }
+    if (activeDeck && standbyDeck && !standbyDeck.paused) {
+      ++playbackRequest;
+      ++crossfadeTimerId; clearTimeout(transitionFinishTimer);isCrossfading=false;
+      settleDeckGains();
+      // Retire the previous overlap smoothly before reusing its decoder.
+      trackTransitionTimer=setTimeout(()=>{if(serial===trackTransitionRequest){standbyDeck.pause();startTrackObject(track,startPosition,options);}},25);
+    } else startTrackObject(track, startPosition, options);
   }
 
   async function analyzeTrackBpmInBackground(track) {
@@ -2742,7 +2862,9 @@
     }
 
     isTrackFadingOut = false;
-    isCrossfading = false;
+    ++crossfadeTimerId;clearTimeout(transitionFinishTimer);
+    ++trackTransitionRequest;clearTimeout(trackTransitionTimer);
+    isCrossfading = false;applySmartVolume();
     if (transitionGainNode) setTrackTransitionGain(1);
     if (audioCtx) {
       const activeGain = (activeDeck === deckA) ? gainNodeA : gainNodeB;
@@ -2760,9 +2882,10 @@
         } catch (_) {}
       }
       if (standbyDeck && standbyDeck !== activeDeck) {
-        try { standbyDeck.pause(); standbyDeck.src = ''; } catch (_) {}
+        try { standbyDeck.pause(); standbyDeck.removeAttribute('src'); standbyDeck.load(); preparedDecks.delete(standbyDeck); } catch (_) {}
       }
     }
+    state.hasPrefetchedNext = false;
 
     if (audio.readyState >= 1) {
       try {
@@ -2882,6 +3005,7 @@
     }
 
     if (audio.paused) {
+      if(audio.ended){const track=queue?.getCurrentTrack()||state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
       audio.play().then(() => {
         state.isPlaying = true;
         updatePlayBtnUI();
@@ -3177,6 +3301,8 @@
         onTrackComplete: (track, profile, bpm) => {
           audioProfiles[track.id] = profile;
           queue?.setAudioProfile(track.id, profile);
+          autoEqReference = null;
+          if (state.eq.auto && track.id === state.currentTrackId) applyAutoEqualizer(track, profile);
           if (bpm) {
             queue?.setTrackBpm(track.id, bpm);
             schedulePersistBpmCache();
@@ -3605,9 +3731,9 @@
     queue.setStats({plays:[...(Array.isArray(stats?.plays)?stats.plays:[]),...readTasteSkips()]});
   }
 
-  async function recordTrackFinished(trackId,explicitSkip=false) {
+  async function recordTrackFinished(trackId,explicitSkip=false,checkpoint=false) {
     if(!state.saveHistory||!listening||listening.id!==trackId||listening.closed)return;
-    const audible=listening.finish();
+    const audible=checkpoint?listening.snapshot():listening.finish();
     if(!audible){
       if(explicitSkip && listening.heard>=1000 && listening.duration>0 && !listening._tasteRecorded){
         listening._tasteRecorded=true;
@@ -3619,7 +3745,7 @@
         if(queue)queue.setStats({plays:[...(state.stats.plays||[]),...skips]});
         // The phone needs the same explicit feedback. Qualification rules keep
         // these previews out of play counts, while preserving honest skip/time data.
-        const play={...feedback,id:'pc_'+(globalThis.crypto?.randomUUID?.()||Date.now()+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',
+        const play={...feedback,id:listening.playId,session:'pc_companion',
           finished:0};
         state.stats.plays.push(play);localSyncRevision++;
         try{await fetch('/api/sync-stats',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({play,phoneUrl:state.phoneUrl})});}catch(_){}
@@ -3627,11 +3753,12 @@
       return;
     }
     const now=Date.now();
-    const playRecord={...audible,skipped:explicitSkip&&!audible.finished?1:0,id:'pc_'+(globalThis.crypto?.randomUUID?.() || now+'_'+Math.random().toString(36).slice(2)),session:'pc_companion',at:now,timestamp:now};
+    const playRecord={...audible,skipped:explicitSkip&&!audible.finished?1:0,id:listening.playId,session:'pc_companion',at:now,timestamp:now};
     const track=state.tracks.find(t=>t.id===trackId);
     if(!track)return;
     if (!state.stats.plays) state.stats.plays = [];
-    state.stats.plays.push(playRecord);
+    const existing=state.stats.plays.findIndex(p=>p.id===playRecord.id);
+    if(existing>=0)state.stats.plays[existing]=playRecord;else state.stats.plays.push(playRecord);
     localSyncRevision++;
     invalidatePlayCountsCache();
     if (queue) setQueueTasteStats(state.stats);
@@ -3664,6 +3791,7 @@
   async function prefetchNextTrack() {
     if (state.hasPrefetchedNext) return;
     state.hasPrefetchedNext = true;
+    const request = playbackRequest, signal = transitionAbort?.signal;
     let nextTrack;
     if (queue && queue.shuffleMode === 'smart' && typeof queue.peekNextAsync === 'function') {
       try {
@@ -3675,15 +3803,27 @@
     } else {
       nextTrack = getNextTrack();
     }
+    if (request !== playbackRequest || signal?.aborted) return;
     if (!nextTrack) {
       state.hasPrefetchedNext = false;
       return;
     }
 
-    fetch(`/api/preload-track/${encodeURIComponent(nextTrack.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`, {
-      method: 'POST'
-    }).catch(() => {});
+    try {
+      await fetch(`/api/preload-track/${encodeURIComponent(nextTrack.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`, {method:'POST',signal});
+      if (request !== playbackRequest || signal?.aborted) return;
+      const currentNext = getNextTrack();
+      if (currentNext?.id !== nextTrack.id) {state.hasPrefetchedNext=false;return;}
+      preloadDeck(nextTrack);
+      if (state.trackTransition > 0 && preparedDecks.get(standbyDeck) !== sourceFor(nextTrack)) state.hasPrefetchedNext = false;
+      await prepareTransitionProfile(nextTrack,signal);
+    } catch (_) {if(request===playbackRequest)state.hasPrefetchedNext=false;}
   }
+
+  window.addEventListener('pain:personal-ready',()=>{
+    state.hasPrefetchedNext=false;
+    if(queue?.pulseflowPolicy==='taste'&&queue.getShuffleMode()==='smart'&&!audio.paused)prefetchNextTrack();
+  });
 
   function getNextTrack() {
     if (queue) {
@@ -3703,7 +3843,7 @@
     sampleListening();
     // DOM click handlers pass an Event; only an explicit true means natural end.
     const explicitSkip = isAutoAdvance === true ? false : !audio.ended;
-    if (state.currentTrackId) recordTrackFinished(state.currentTrackId, explicitSkip);
+    // Commit the outgoing event only when navigation actually starts; waiting for a worker is not another play.
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.next();
       return;
@@ -3752,7 +3892,7 @@
         }
 
         if (nextTrack) {
-          playTrackObject(nextTrack);
+          playTrackObject(nextTrack,0,{automatic:isAutoAdvance});
         } else {
           isCrossfading = false;
           state.isPlaying = false;
@@ -4179,7 +4319,7 @@
 
   function applySmartVolume() {
     smartVolumeNode?.update(state.smartVolume, state.backgroundDuck,
-      document.hidden || !document.hasFocus());
+      document.hidden || !document.hasFocus(), state.eq.auto && state.eq.enabled || isCrossfading);
   }
 
   function displayTrackTitle(track) {
@@ -4222,6 +4362,9 @@
     state.performanceMode = PerformanceMode.normalize(value);
     state.resourceSaver = PerformanceMode.get(value).saver;
     if (state.resourceSaver) bpmAnalysisController?.abort();
+    if (state.performanceMode === 'maximum' && transitionAbort) {
+      transitionAbort.abort();transitionAbort = new AbortController();state.hasPrefetchedNext = false;
+    }
     updateAudioObservers();
     localStorage.setItem('pain_performance_mode', state.performanceMode);
     document.documentElement.dataset.performanceMode = state.performanceMode;
@@ -4774,7 +4917,6 @@
     }
 
     audio.addEventListener('playing',()=>{
-      if(listening?.closed){const track=state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
       listening?.anchor(performance.now(),audio.currentTime,!audio.muted&&audio.volume>0);
       syncPlaybackState();
     });
@@ -4811,7 +4953,7 @@
       savePlaybackPosition(true);
     });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
-    window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId);});
+    window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId,false,true);});
     audio.addEventListener('error',()=>{state.isPlaying=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     audio.addEventListener('ratechange',()=>{
@@ -4858,16 +5000,15 @@
         }
       }
 
-      if (deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended && !isCrossfading) {
-        const remaining = dur - cur;
+      if (deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended && !isCrossfading && !audio.seeking) {
+        const upcoming = getNextTrack(), plan = upcoming && transitionPlan(upcoming);
+        const remaining = plan ? (plan.end-cur)/(audio.playbackRate||1) : Infinity;
         const isRepeatOne = state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one');
-        if (remaining > 0 && remaining <= state.trackTransition && !isRepeatOne) {
-          const upcoming = getNextTrack();
-          if (upcoming) {
-            isCrossfading = true;
-            playNextTrack(true);
-            return;
+        if (upcoming && !isRepeatOne && !plan.continuous && remaining <= plan.duration && remaining > -.1) {
+          if (preparedDecks.get(standbyDeck) === sourceFor(upcoming) && standbyDeck.readyState >= 3) {
+            isCrossfading = true; playNextTrack(true); return;
           }
+          // Keep the outgoing song audible while the next decoder is buffering.
           prefetchNextTrack();
         }
       } else if (!deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended) {
@@ -4914,6 +5055,7 @@
       }
 
       if (state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one')) {
+        const track=queue?.getCurrentTrack()||state.tracks[state.currentTrackIndex];if(track)beginListening(track);
         audio.currentTime = 0;
         audio.play().catch(() => {});
       } else {
@@ -5009,6 +5151,10 @@
       if (e.target === DOM.eqModalBackdrop) closeEqModal();
     });
 
+    document.getElementById('eqAutoToggleBtn')?.addEventListener('click', () => {
+      initAudioNodes(); setAutoEqualizer(!state.eq.auto);
+    });
+
     DOM.eqPowerSwitch.addEventListener('change', (e) => {
       const enabled = e.target.checked;
       initAudioNodes();
@@ -5033,9 +5179,17 @@
       const valLabel = document.getElementById(`eqVal${i}`);
       if (slider) {
         slider.addEventListener('input', (e) => {
-          if (state.eq.auto) return;
           initAudioNodes();
           const val = parseFloat(e.target.value);
+          if (state.eq.auto) {
+            const manual = state.eq.manual || {bands:Array(8).fill(0),preamp:0};
+            manual.enabled = true; manual.preset = 'custom';
+            manual.bands[i] = Math.max(-12,Math.min(12,val-(autoEqResult?.bands[i]||0)));
+            state.eq.manual = manual;
+            const combined = AutoEqualizer.combine(manual,autoEqResult,autoEqHeadroom);
+            state.eq.bands = combined.bands;state.eq.preamp = combined.preamp;
+            initEqualizerUI();saveEqualizerState();return;
+          }
           state.eq.bands[i] = val;
           if (valLabel) valLabel.textContent = `${val > 0 ? '+' : ''}${val}dB`;
           state.eq.preset = 'custom';
@@ -5046,12 +5200,19 @@
     }
 
     // EQ Preset Chips
-    document.querySelectorAll('.eq-preset-chip').forEach(chip => {
+    document.querySelectorAll('.eq-preset-chip[data-preset]').forEach(chip => {
       chip.addEventListener('click', () => {
-        if (state.eq.auto) return;
         initAudioNodes();
         const pKey = chip.dataset.preset;
+        if (state.eq.auto && EQ_PRESETS[pKey]) {
+          state.eq.manual = {enabled:true,preset:pKey,preamp:0,bands:[...EQ_PRESETS[pKey]]};
+          const track = state.tracks.find(t => t.id === state.currentTrackId);
+          if (track) applyAutoEqualizer(track);
+          else { const combined=AutoEqualizer.combine(state.eq.manual,null,autoEqHeadroom);state.eq.bands=combined.bands;state.eq.preamp=combined.preamp; }
+          initEqualizerUI();saveEqualizerState();return;
+        }
         if (EQ_PRESETS[pKey]) {
+          state.eq.enabled = true;
           state.eq.preset = pKey;
           state.eq.bands = [...EQ_PRESETS[pKey]];
           initEqualizerUI();

@@ -8,7 +8,8 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   await page.addScriptTag({path:path.join(__dirname,'../src/auto-eq.js')});
   const result=await page.evaluate(async()=>{
    const frequencies=[60,170,310,600,1000,3000,6000,12000];
-   const sourceProfile={vector:[.35,.04,.92,.04,.2,.2],frames:20,seconds:10};
+   const sourceProfile={vector:[.35,.04,.92,.04,.2,.2],frames:20,seconds:10,variance:Array(6).fill(0)};
+   const reference=AutoEqualizer.createReference(Array.from({length:32},(_,i)=>({id:String(i),profile:{...sourceProfile,vector:[.35,.25+i*.003,.55-i*.002,.2-i*.001,.2,.25]}})));
    async function render({enabled=true,eq=false,volume=1,background=false,antiphase=false,mono=false,constant=false}={}){
     const rate=44100,seconds=16,ctx=new OfflineAudioContext(2,rate*seconds,rate),gains=[];
     const timers=new Map(),oldSet=window.setInterval,oldClear=window.clearInterval;let serial=0;
@@ -32,7 +33,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
      }
      source.buffer=buffer;let last=source,recommendation=null;
      if(eq){
-      recommendation=AutoEqualizer.recommend({},sourceProfile,AutoEqualizer.createHeadroom(ctx,frequencies));
+      recommendation=AutoEqualizer.recommend({},sourceProfile,AutoEqualizer.createHeadroom(ctx,frequencies),reference);
       const preamp=ctx.createGain();preamp.gain.value=10**(recommendation.preamp/20);last.connect(preamp);last=preamp;
       frequencies.forEach((frequency,i)=>{
        const node=ctx.createBiquadFilter();node.type=i===0?'lowshelf':i===7?'highshelf':'peaking';node.frequency.value=frequency;node.Q.value=1.2;node.gain.value=recommendation.bands[i];last.connect(node);last=node;
@@ -57,7 +58,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
    for(const rate of [44100,48000]){
     const ctx=new OfflineAudioContext(1,128,rate),measure=AutoEqualizer.createHeadroom(ctx,frequencies);
     for(const vector of [[.35,.04,.92,.04,.2,.2],[.35,.7,.2,.1,.1,.2],[.35,.05,.35,.6,.4,.2]]){
-     const eq=AutoEqualizer.recommend({},{...sourceProfile,vector},measure),f=Float32Array.from({length:4096},(_,i)=>20*(20000/20)**(i/4095));
+     const eq=AutoEqualizer.recommend({},{...sourceProfile,vector},measure,reference),f=Float32Array.from({length:4096},(_,i)=>20*(20000/20)**(i/4095));
      const response=new Float64Array(f.length).fill(10**(eq.preamp/20)),mag=new Float32Array(f.length),phase=new Float32Array(f.length);
      frequencies.forEach((frequency,i)=>{
       const node=ctx.createBiquadFilter();node.type=i===0?'lowshelf':i===7?'highshelf':'peaking';node.frequency.value=frequency;node.Q.value=1.2;node.gain.value=eq.bands[i];node.getFrequencyResponse(f,mag,phase);
@@ -76,6 +77,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   assert.ok(Math.abs(result.wide.gain-result.plain.gain)<.005,'antiphase stereo must not look like silence');
   assert.ok(Math.abs(result.mono.gain-result.plain.gain)<.005,'mono must not acquire an extra 3 dB of normalization');
   assert.ok(result.peaks.every(p=>p<=1.001),'combined EQ curves retain peak headroom');
+  assert.ok(result.eq.recommendation.adjusted,'level matching test must exercise actual tonal correction');
   assert.ok(result.on.peak<1&&result.eq.peak<1);
   console.log('PASS: native audio level matching, EQ tandem, mono/stereo, manual volume, ducking, headroom and meter lifecycle');
 
@@ -96,6 +98,27 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
    }finally{audio.pause();URL.revokeObjectURL(audio.src);await ctx.close();}
   });
   assert.ok(Math.abs(faderRatio-.2)<.01,'the actual media fader must be divided out of the measured level');
+
+  const protectedPeaks=await page.evaluate(async()=>{
+   const rate=44100,ctx=new OfflineAudioContext(2,rate*4,rate),source=ctx.createBufferSource(),buffer=ctx.createBuffer(2,rate*4,rate);
+   for(let ch=0;ch<2;ch++){
+    const data=buffer.getChannelData(ch);for(let i=0;i<data.length;i++)data[i]=(ch?-1:1)*(i<rate*2?.1:1.25)*Math.sin(2*Math.PI*440*i/rate);
+   }
+   source.buffer=buffer;const control=SmartVolume.create(ctx);control.update(false,false,false,true);source.connect(control.input);control.output.connect(ctx.destination);source.start();
+   try{
+    const result=await ctx.startRendering(),a=result.getChannelData(0),b=result.getChannelData(1);let peak=0,quiet=0,phaseError=0;
+    for(let i=0;i<a.length;i++){
+     if(i>rate*2.5)peak=Math.max(peak,Math.abs(a[i]));
+     if(i>rate&&i<rate*1.5)quiet=Math.max(quiet,Math.abs(a[i]));
+     phaseError=Math.max(phaseError,Math.abs(a[i]+b[i]));
+    }
+    return {peak,quiet,phaseError};
+   }finally{control.destroy();}
+  });
+  assert.ok(protectedPeaks.peak<1&&protectedPeaks.peak>.8,'peak-only protection catches overloaded crossfades');
+  assert.ok(Math.abs(protectedPeaks.quiet-.1)<.001,'peak-only mode must preserve quiet material without leveling');
+  assert.ok(protectedPeaks.phaseError<1e-6,'stereo image must remain linked');
+  console.log('PASS: native Smart EQ peak protection preserves quiet dynamics and antiphase stereo');
 
   // Isolated UI fixture: no server or access to the user library.
   await page.route('**/*',async route=>{

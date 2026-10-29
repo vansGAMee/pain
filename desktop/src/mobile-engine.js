@@ -14,11 +14,11 @@
   return Float32Array.from({length:n/2},(_,i)=>20*Math.log10(Math.max(1e-12,Math.hypot(re[i],im[i])/n)));
  }
  class Engine{
-  constructor(emit=()=>{}){this.emit=emit;this.tracks=[];this.stats={plays:[]};this.profiles={};this.scope='';this.q=null;this.dispose=null;this.leveler=Volume.createLeveler();this.levelTrack='';this.vibes={items:[],activeId:null};this.excluded=[];}
+  constructor(emit=()=>{}){this.emit=emit;this.tracks=[];this.stats={plays:[]};this.profiles={};this.scope='';this.q=null;this.dispose=null;this.leveler=Volume.createLeveler();this.eqTracker=EQ.createTracker();this.levelTrack='';this.vibes={items:[],activeId:null};this.excluded=[];}
   update(data){
-   if(Array.isArray(data.tracks))this.tracks=data.tracks;
+   if(Array.isArray(data.tracks)){this.tracks=data.tracks;this.eqReference=null;}
    if(data.stats?.plays)this.stats=data.stats;
-   if(data.profiles){this.dispose?.();this.dispose=null;this.observer=null;this.profiles=State.merge({profiles:this.profiles},data).profiles;}
+   if(data.profiles){this.eqReference=null;this.dispose?.();this.dispose=null;this.observer=null;this.profiles=State.merge({profiles:this.profiles},data).profiles;}
    if(this.q){this.q.audioProfiles=this.profiles;this.q.refreshLibrary(this.tracks);this.q.setStats(this.stats);}
    if(Array.isArray(data.excluded))this.excluded=data.excluded.map(String);
    if(data.vibes){this.vibes=State.merge({vibes:this.vibes},{vibes:data.vibes}).vibes||this.vibes;}
@@ -73,7 +73,15 @@
    return this.vibes;
   }
   insights(){const d=Insights.build(this.tracks,this.stats);return {...d,plays:undefined,days:Object.fromEntries(d.days)};}
+  equalize(track,profile){
+   if(!this.eqReference){
+    this.eqReference=EQ.createReference(this.tracks.map(t=>({id:t.id,profile:Audio.get(this.profiles,t)})));
+   }
+   const live=this.eqTracker.get(track);
+   return EQ.recommend(track,live?{...live,analysis:{...live.analysis,sampleRate:profile?.analysis?.sampleRate}}:profile,null,this.eqReference);
+  }
   audio(data){
+   if(this.autoEqActive!==(data.autoEq!==false)){this.autoEqActive=data.autoEq!==false;this.eqTracker.reset();}
    const track=this.tracks.find(t=>t.id===data.track);if(!track)return {};
    if(!this.observer||this.observer.rate!==data.rate){
     this.dispose?.();const o=this.observer={rate:data.rate,tick:()=>{},time:0,track:null,channels:[],spectra:[],audio:{paused:false,seeking:false,readyState:4,volume:1,playbackRate:1,currentTime:0}};
@@ -84,8 +92,8 @@
      }};
     }};
     this.dispose=Audio.observe(context,{connect(){},disconnect(){}},o.audio,()=>o.track,(t,p)=>{
-     this.profiles[t.id]=p;this.q?.setAudioProfile(t.id,p);this.emit({type:'profile',track:t.id,profile:p});
-    },this.profiles,{now:()=>o.time,setInterval:fn=>{o.tick=fn;return 1;},clearInterval:()=>{}});
+     this.eqReference=null;this.profiles[t.id]=p;this.q?.setAudioProfile(t.id,p);this.emit({type:'profile',track:t.id,profile:p});
+    },this.profiles,{now:()=>o.time,setInterval:fn=>{o.tick=fn;return 1;},clearInterval:()=>{},active:()=>this.autoEqActive,onFrame:(t,v,seconds,position)=>this.eqTracker.observe(t,v,seconds,position)});
    }
    const o=this.observer;o.time=data.wall;o.track=track;o.channels=data.channels.map(a=>Float32Array.from(a));o.spectra=[];
    Object.assign(o.audio,{paused:!data.playing,currentTime:data.position/1000,playbackRate:data.speed,currentSrc:track.uri});o.tick();
@@ -102,7 +110,7 @@
     const needsDetail=!fullFile&&data.rate>=16000&&data.rate<=192000&&bodyDetail<24;
     sampleAfter=duration>=60&&(profile.frames<72&&profile.positions.filter(p=>p>=body).length<24||needsDetail)?body*step*1000:null;
    }
-   return {track:track.id,eq:EQ.recommend(track,profile),volumeDb,sampleAfter};
+   return {track:track.id,eq:data.autoEq===false?null:this.equalize(track,profile),volumeDb,sampleAfter:data.autoEq===true?0:sampleAfter};
   }
  }
  Engine.spectrum=spectrum;return Engine;

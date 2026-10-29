@@ -56,7 +56,8 @@
     ],
     "asarUnpack": [
       "src/pulseflow/**/*",
-      "src/vendor/pulseflow/**/*"
+      "src/vendor/pulseflow/**/*",
+      "src/personal/**/*"
     ]
   },
   "pkg": {

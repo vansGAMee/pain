@@ -63,7 +63,7 @@ class PhoneSync{
   const play={...input,id:input.id||'pc_'+createHash('sha256').update(input.track+'\0'+input.started).digest('hex'),session:input.session||'pc_companion',
    media_heard:Math.min(media,input.duration||media),finished:flag(input.finished),skipped:flag(input.skipped)};
   const stats=this.saveStats({plays:[play]});
-  const saved=stats.plays.find(p=>p.track===play.track&&p.started===play.started);
+  const saved=stats.plays.find(p=>p.track===play.track&&(p.id===play.id||p.aliases?.includes(play.id)||p.started===play.started));
   this.pending.plays=mergeStats({plays:this.pending.plays},{plays:[saved]}).plays;this.persist();
  }
  serial(task){const job=this.chain.catch(()=>{}).then(task);this.chain=job;return job;}
