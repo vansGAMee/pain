@@ -122,3 +122,37 @@ test('source mode is durable, invalidates old misses, and primary-only never con
  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'lyrics-preferences.json'))).mode,'regional');
  response=await fetch(endpoint,{method:'POST',headers:{'X-Pain-Update':'lyrics'},body:JSON.stringify({mode:'unknown'})});assert.equal(response.status,400);
 });
+const english='The morning light comes through the window and the streets are quiet. We walk together by the river, telling stories of the places we have seen. There is a little house beyond the garden where our friends are waiting for us.';
+const german='Am frühen Morgen scheint die Sonne durch das Fenster und die Straßen sind noch still. Wir gehen zusammen an den Fluss und erzählen von den Orten, die wir gesehen haben. Hinter dem Garten steht ein kleines Haus, in dem unsere Freunde auf uns warten.';
+test('language labels normalize, but even an exact title/duration cannot authorize words in another language',()=>{
+ const meta=create.metadata({...track,title:'Any Song (eng)'});
+ const wrong={...record,trackName:'Any Song (English Version)',plainLyrics:german,syncedLyrics:'[00:01]'+german};
+ const correct={...record,id:43,trackName:'Any Song - English',plainLyrics:english,syncedLyrics:'[00:01]'+english};
+ const found=create.select([wrong,correct],meta);assert.equal(found.source.id,43);assert.equal(found.synced,true);
+ const unlabelled={...correct,trackName:'Any Song'};
+ assert.equal(create.select([unlabelled],meta).source.id,43,'unlabelled source requires the actual requested language');
+ assert.equal(create.select([{...unlabelled,plainLyrics:german,syncedLyrics:'[00:01]'+german}],meta),null);
+ assert.equal(create.select([correct],{...meta,title:'Any Song (German Version)'}),null);
+ assert.equal(create.select([correct],{...meta,title:'Any Song'}),null,'original cannot silently become an English edition');
+ assert.equal(create.select([{...correct,trackName:'Another Song (eng)'}],meta),null);
+ assert.equal(create.select([{...correct,trackName:'Any Song (eng) (Live)'}],meta),null);
+ assert.equal(create.select([{...correct,syncedLyrics:'[00:01]'+german}],meta),null,'plain and timed text are independently checked');
+});
+test('a language-labelled file retries backup using the base title and verifies the downloaded words',async t=>{
+ const song={...track,title:'Any Song (eng)'},calls=[];
+ const service=create(fixture(t),{getTrack:()=>song,delay:0,fetchImpl:async url=>{
+  calls.push(url);const u=new URL(url);
+  if(u.hostname==='lrclib.net')return u.pathname.endsWith('/search')?Response.json([{...record,trackName:'Any Song',plainLyrics:german,syncedLyrics:'[00:01]'+german}]):new Response('{}',{status:404});
+  if(u.pathname==='/download')return Response.json({content:Buffer.from('[00:01]'+english).toString('base64')});
+  assert.equal(u.pathname,'/search');return Response.json({status:200,candidates:u.searchParams.get('keyword')===song.artist+' Any Song'?[{...candidate,song:'Any Song'}]:[]});
+ }});
+ const found=await service.get(song.id);assert.equal(found.source.name,'KuGou');assert.equal(found.synced,true);assert.equal(found.recording.language,'eng');assert.equal(found.lines[0].text,english);
+ assert.ok(calls.some(u=>new URL(u).searchParams.get('keyword')===song.artist+' Any Song'));
+});
+test('upgrading rechecks incorrect automatic language caches while manual text stays untouched',async t=>{
+ const dir=fixture(t),song={...track,title:'Any Song (eng)'},crypto=require('node:crypto');
+ const key=crypto.createHash('sha256').update(song.id+JSON.stringify([song.title,song.artist,song.album,song.duration])).digest('hex');
+ fs.mkdirSync(path.join(dir,'lyrics-online'));fs.writeFileSync(path.join(dir,'lyrics-online',key+'.json'),JSON.stringify({lines:[{text:german,time:1}],providerRevision:3}));
+ const service=create(dir,{getTrack:()=>song,delay:0,fetchImpl:async()=>{throw Error('offline');}});
+ const found=await service.get(song.id);assert.equal(found.state,'error');assert.deepEqual(found.lines,[]);
+});

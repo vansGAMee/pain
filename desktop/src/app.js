@@ -19,6 +19,7 @@
     currentTrackIndex: -1,
     currentTrackId: null,
     isPlaying: false,
+    playbackLoading: false,
     loopMode: 'all', // 'off' | 'all' | 'one'
     shuffle: false,
     shuffleMode: 'off', // 'off' | 'random' | 'smart'
@@ -2551,6 +2552,7 @@
     // The outgoing decoder is still audible while the replacement buffers.
     // Keep controls/animations stable instead of repainting the whole library twice.
     state.isPlaying = Boolean(activeDeck && !activeDeck.paused && !activeDeck.ended);
+    state.playbackLoading = true;
     const durSec = Math.max(0, Number(track.duration) || 0) / 1000;
     DOM.currentTime.textContent = formatTime(startPosition);
     updateDurationLabel(durSec, startPosition);
@@ -2611,7 +2613,8 @@
       }).catch(async err => {
         if (request !== playbackRequest || err.name === 'AbortError') return;
         if (state.phoneUrl) {
-          incomingDeck.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          state.playbackLoading = true; updatePlayBtnUI();
+          incomingDeck.src = sourceFor(track)+'&refresh=1';
           preparedDecks.delete(incomingDeck);
           try {
             await incomingDeck.play();
@@ -2624,7 +2627,7 @@
               syncPlaybackState();
             }
           } catch (e) {
-            if (request === playbackRequest) console.warn('Audio unavailable:', e);
+            reportPlaybackFailure(track,request,e);
           }
         }
         if (request === playbackRequest) syncPlaybackState();
@@ -2667,7 +2670,8 @@
       }).catch(async err => {
         if (request !== playbackRequest || err.name === 'AbortError') return;
         if (state.phoneUrl) {
-          selectedDeck.src = `${state.phoneUrl.replace(/\/+$/, '')}/api/track/${encodeURIComponent(track.id)}`;
+          state.playbackLoading = true; updatePlayBtnUI();
+          selectedDeck.src = sourceFor(track)+'&refresh=1';
           preparedDecks.delete(selectedDeck);
           try {
             await selectedDeck.play();
@@ -2680,7 +2684,7 @@
               syncPlaybackState();
             }
           } catch (e) {
-            if (request === playbackRequest) console.warn('Audio unavailable:', e);
+            reportPlaybackFailure(track,request,e);
           }
         }
         if (request === playbackRequest) syncPlaybackState();
@@ -3010,11 +3014,29 @@
     if(queue)queue.currentStartedAt=listening?.started||Date.now();
   }
   function syncPlaybackState() {
-    state.isPlaying = !audio.paused && !audio.ended;
+    state.isPlaying = !audio.paused && !audio.ended && !audio.error;
+    state.playbackLoading = state.isPlaying && audio.readyState < 3;
     updatePlayBtnUI();
     DOM.vinylBigDisc.classList.toggle('spinning',state.isPlaying);
     updatePlayingRowUI();
     updateFluidBpmTempo();
+  }
+  async function reportPlaybackFailure(track,request,error) {
+    if(request!==playbackRequest||error.name==='AbortError')return;
+    audio.pause();syncPlaybackState();
+    console.warn('Audio unavailable:',error);
+    let status;
+    try { status=await (await fetch(`/api/audio-status/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`)).json(); } catch (_) {}
+    if(request!==playbackRequest)return;
+    const ru=state.lang==='ru',code=status?.issue?.code;
+    const message=code==='AUDIO_NOT_ON_PHONE'
+      ? (ru?'Файл трека не найден на телефоне. Обновите синхронизацию.':'Track file not found on the phone. Refresh synchronization.')
+      : code==='AUDIO_PHONE_UNREADABLE'
+      ? (ru?'Телефон не может прочитать этот файл. Проверьте доступ к музыке.':'The phone cannot read this file. Check music access.')
+      : code==='PHONE_UNAVAILABLE'
+      ? (ru?'Не удалось загрузить трек с телефона. Проверьте подключение и нажмите Play.':'Could not load the track from the phone. Check the connection and press Play.')
+      : (ru?'Не удалось воспроизвести файл. Нажмите Play для повторной попытки.':'Could not play the file. Press Play to retry.');
+    showToast(message,'!',6500);
   }
   function togglePlay() {
     initAudioNodes();
@@ -3034,17 +3056,20 @@
       settleDeckGains();
       if(audio.ended){const track=queue?.getCurrentTrack()||state.tracks[state.currentTrackIndex];if(track)beginListening(track);}
       const request=++playbackRequest;
+      state.playbackLoading = audio.readyState < 3; updatePlayBtnUI();
       audio.play().then(() => {
         if(request!==playbackRequest)return;
         state.isPlaying = true;
+        state.playbackLoading = false;
         updatePlayBtnUI();
         DOM.vinylBigDisc.classList.add('spinning');
         updatePlayingRowUI();
-      }).catch(err => console.warn(err));
+      }).catch(err => {if(request!==playbackRequest)return;syncPlaybackState();const track=queue?.getCurrentTrack();if(track)reportPlaybackFailure(track,request,err);});
     } else {
       ++playbackRequest;
       audio.pause();
       state.isPlaying = false;
+      state.playbackLoading = false;
       updatePlayBtnUI();
       DOM.vinylBigDisc.classList.remove('spinning');
       updatePlayingRowUI();
@@ -3055,12 +3080,17 @@
 
   function updatePlayBtnUI() {
     const playing=String(state.isPlaying);
-    if(document.documentElement.dataset.playing===playing)return;
-    document.documentElement.dataset.playing = playing;
-    if(typeof HomeView!=='undefined')HomeView.setPlaying(state.isPlaying);
-    if (state.isPlaying) {
+    if(document.documentElement.dataset.playing!==playing){
+      document.documentElement.dataset.playing = playing;
+      if(typeof HomeView!=='undefined')HomeView.setPlaying(state.isPlaying);
+    }
+    const control=playing+':'+state.playbackLoading;
+    if(DOM.bottomPlayBtn.dataset.playback===control)return;
+    DOM.bottomPlayBtn.dataset.playback=control;
+    DOM.bottomPlayBtn.setAttribute('aria-busy',String(state.playbackLoading));
+    if (state.isPlaying || state.playbackLoading) {
       DOM.bottomPlayIcon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
-      DOM.bottomPlayBtn.title = 'Pause';
+      DOM.bottomPlayBtn.title = state.playbackLoading ? (state.lang==='ru'?'Загрузка… Нажмите, чтобы отменить':'Loading… Click to cancel') : 'Pause';
     } else {
       DOM.bottomPlayIcon.innerHTML = '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/>';
       DOM.bottomPlayBtn.title = 'Play';
@@ -4986,6 +5016,7 @@
         setTrackTransitionGain(1);
       }
       sampleListening(true);listening?.anchor(performance.now(),audio.currentTime,false);
+      state.playbackLoading=!audio.paused;updatePlayBtnUI();
     });
     audio.addEventListener('seeking',()=>{
       const dur = getCurrentTrackDuration();
@@ -5007,7 +5038,7 @@
     });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId,false,true);});
-    audio.addEventListener('error',()=>{state.isPlaying=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
+    audio.addEventListener('error',()=>{state.isPlaying=false;state.playbackLoading=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     audio.addEventListener('ratechange',()=>{
       isTrackFadingOut = false;

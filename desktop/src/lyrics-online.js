@@ -3,7 +3,25 @@ const fs = require('node:fs/promises'), path = require('node:path'), crypto = re
 const { norm, unknown, artists } = require('./cover-matching');
 const { version } = require('../package.json');
 const modes = new Set(['auto', 'regional', 'primary']);
-const providerRevision = 3;
+const providerRevision = 4;
+// ISO 639 language names/codes are metadata, never translations of song titles.
+const languageCodes = {en:'eng',de:'deu',ru:'rus',fr:'fra',es:'spa',pt:'por',it:'ita',ja:'jpn',ko:'kor',zh:'cmn',uk:'ukr',pl:'pol',tr:'tur',nl:'nld',sv:'swe',ar:'arb',hi:'hin',id:'ind',vi:'vie',th:'tha'};
+const languageNames = new Map();
+for (const [locale,code] of Object.entries(languageCodes)) {
+  for (const name of [locale,code,...['en','ru',locale].map(lang=>new Intl.DisplayNames([lang],{type:'language'}).of(locale))]) languageNames.set(norm(name),code);
+}
+languageNames.set('англ','eng'); languageNames.set('нем','deu');
+const languageOf = value => languageNames.get(norm(String(value).replace(/\b(?:version|ver\.?)\b|версия/ig,''))) || null;
+function edition(value, omitLanguage = false) {
+  const qualifiers=[]; let language=null;
+  const qualifier = content => {for(const part of content.split('|')){
+    const code=languageOf(part); if(code) {language=code;if(!omitLanguage)qualifiers.push('language:'+code);}
+    else if(norm(part)&&norm(part)!=='explicit')qualifiers.push(norm(part));
+  }};
+  const base=recordingTitle(value).replace(/[([]([^()[\]]+)[)\]]/g,(_,content)=>{qualifier(content);return '';})
+    .replace(/\s+[-–—]\s+(.+)$/, (whole,suffix)=>{if(languageOf(suffix)){qualifier(suffix);return '';}return whole;});
+  return {key:norm(base)+'|'+qualifiers.sort().join('|'),language,base:base.trim()};
+}
 const recordingTitle = value => String(value || '').replace(/[([]\s*explicit\s*[)\]]/ig, '').trim();
 const speedQualifier = /^(?:(?:ultra|super|slightly)\s+)?(?:slow(?:ed)?(?:\s*(?:&|and|\+)\s*reverb(?:ed)?)?|sped\s*up|speed\s*up|nightcore)$/i;
 function speedTitle(value) {
@@ -13,14 +31,19 @@ function speedTitle(value) {
   }).replace(/\s+[-–—]\s+(.+)$/, (whole,suffix) => speedQualifier.test(suffix) ? '' : whole).trim();
 }
 function editionKey(value) {
-  const qualifiers=[];
-  const base=recordingTitle(value).replace(/[([]([^()[\]]+)[)\]]/g,(_,content)=>{qualifiers.push(...content.split('|').map(norm).filter(s=>s&&s!=='explicit'));return '';});
-  return norm(base)+'|'+qualifiers.sort().join('|');
+  return edition(value).key;
 }
 const creditsOf = value => artists(String(value || '').replace(/[、/]/g, ',')).map(norm);
 function sameArtist(a,b) { return norm(a) === norm(b) || creditsOf(a).some(x => creditsOf(b).includes(x)); }
 const sameEdition = (a,b) => editionKey(a) === editionKey(b);
 const sameSong = (a,b) => sameEdition(a,b) || editionKey(speedTitle(a)) === editionKey(speedTitle(b));
+function matchesTitle(candidate,requested,allowSpeed=true) {
+  if(sameEdition(candidate,requested)||(allowSpeed&&sameSong(candidate,requested)))return true;
+  const target=edition(requested),other=edition(candidate);
+  // An omitted language label requires verification of the downloaded words.
+  if(!target.language||other.language&&other.language!==target.language)return false;
+  return edition(candidate,true).key===edition(requested,true).key || allowSpeed&&edition(speedTitle(candidate),true).key===edition(speedTitle(requested),true).key;
+}
 
 function parseLrc(text, { allowEmpty = false } = {}) {
   if (typeof text !== 'string' || text.length > 200000) return [];
@@ -46,6 +69,9 @@ function metadata(track) {
     const parts = title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
     if (!parts) return null;
     [,artist,title] = parts;
+  } else {
+    const parts=title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+    if(parts&&norm(parts[1])===norm(artist))title=parts[2];
   }
   // Preserve slowed, live and remix editions: their clocks differ.
   title = title.replace(/[([](?:official\s+)?(?:audio|music video|video|lyrics?)[)\]]/ig, '').trim();
@@ -53,13 +79,21 @@ function metadata(track) {
   return { title, artist, album: unknown(track.album) ? '' : String(track.album), duration: Number(track.duration) / 1000 || 0 };
 }
 function select(records, meta) {
-  const matches = records.filter(r => r && Number.isSafeInteger(r.id) && sameSong(r.trackName,meta.title) && sameArtist(r.artistName,meta.artist));
-  const timed = matches.filter(r => sameEdition(r.trackName,meta.title) && meta.duration > 0 && Math.abs(Number(r.duration) - meta.duration) <= 2);
+  const language=edition(meta.title).language;
+  const matches = records.filter(r => r && Number.isSafeInteger(r.id) && matchesTitle(r.trackName,meta.title) && sameArtist(r.artistName,meta.artist));
+  const timed = matches.filter(r => matchesTitle(r.trackName,meta.title,false) && meta.duration > 0 && Math.abs(Number(r.duration) - meta.duration) <= 2);
   const ordered = [...timed, ...matches.filter(r => !timed.includes(r))];
   ordered.sort((a,b) => Number(timed.includes(b))-Number(timed.includes(a)) ||
     Number(Boolean(b.syncedLyrics))-Number(Boolean(a.syncedLyrics)) ||
     Number(norm(b.albumName)===norm(meta.album))-Number(norm(a.albumName)===norm(meta.album)));
   for (const record of ordered) {
+    if(language) {
+      const words=typeof record.plainLyrics==='string'&&record.plainLyrics.trim()?record.plainLyrics:parseLrc(record.syncedLyrics).map(l=>l.text).join('\n');
+      // Use the full bounded text with franc's published model/defaults. Do not
+      // force a language or accept short/unknown text for an explicit version.
+      if(words.length>200000||require('franc-min')(words)!==language)continue;
+      if(record.syncedLyrics&&require('franc-min')(parseLrc(record.syncedLyrics).map(l=>l.text).join('\n'))!==language)continue;
+    }
     const sync = timed.includes(record) ? parseLrc(record.syncedLyrics) : [];
     const plain = typeof record.plainLyrics === 'string' && record.plainLyrics.length <= 200000
       ? record.plainLyrics.split(/\r?\n/).map(text => ({ text: text.trim(), time: null })).filter(l => l.text)
@@ -67,7 +101,8 @@ function select(records, meta) {
     const lines = sync.length ? sync : plain;
     if (lines.length > 2000 || lines.some(l => l.text.length > 2000)) continue;
     if (lines.length || (record.instrumental && timed.includes(record))) return {
-      lines, synced: sync.length > 0, instrumental: Boolean(record.instrumental), editionFallback: !sameEdition(record.trackName,meta.title),
+      lines, synced: sync.length > 0, instrumental: Boolean(record.instrumental), editionFallback: !matchesTitle(record.trackName,meta.title,false),
+      recording: {title:record.trackName,artist:record.artistName,language},
       source: { name: 'LRCLIB', url: 'https://lrclib.net/api/get/' + Number(record.id), id: record.id }
     };
   }
@@ -128,11 +163,15 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
   async function regional(meta) {
     const data = await request('search', { ver: 1, man: 'yes', client: 'pc', keyword: meta.artist + ' ' + meta.title, duration: Math.round(meta.duration * 1000) }, 'regional');
     if (data && (!Array.isArray(data.candidates) || (data.status !== undefined && data.status !== 200))) throw new Error('Invalid backup lyrics response');
-    const candidates = (Array.isArray(data?.candidates) ? data.candidates : []).filter(r =>
-      validCandidate(r) && sameSong(r.song,meta.title) && sameArtist(r.singer,meta.artist));
+    let candidates = (Array.isArray(data?.candidates) ? data.candidates : []).filter(r =>
+      validCandidate(r) && matchesTitle(r.song,meta.title) && sameArtist(r.singer,meta.artist));
+    if(!candidates.length&&edition(meta.title).language) {
+      const alternate=await request('search',{ver:1,man:'yes',client:'pc',keyword:meta.artist+' '+edition(meta.title).base,duration:Math.round(meta.duration*1000)},'regional');
+      candidates=(Array.isArray(alternate?.candidates)?alternate.candidates:[]).filter(r=>validCandidate(r)&&matchesTitle(r.song,meta.title)&&sameArtist(r.singer,meta.artist));
+    }
     candidates.sort((a,b) => Number(sameEdition(b.song,meta.title))-Number(sameEdition(a.song,meta.title)) || Math.abs(a.duration / 1000 - meta.duration) - Math.abs(b.duration / 1000 - meta.duration));
-    if (candidates[0]) {
-      const found = await downloadCandidate(candidates[0], meta);
+    for (const candidate of candidates.slice(0,2)) {
+      const found = await downloadCandidate(candidate, meta);
       if (found?.lines?.length) return found;
     }
     // Lyric keyword search misses recordings that the song catalogue knows.
@@ -142,7 +181,7 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     const catalog = await request('search/song', { version: 9108, plat: 0, pagesize: 8, showtype: 0, keyword: `${queryTitle} - ${artist}` }, 'regional', true);
     if (catalog && (catalog.status !== 1 || !Array.isArray(catalog.data?.info))) throw new Error('Invalid song catalogue response');
     const songs = (Array.isArray(catalog?.data?.info) ? catalog.data.info : []).flatMap(song => [song,...(Array.isArray(song.group) ? song.group : [])]);
-    const matches = songs.filter(song => /^[a-f0-9]{32}$/i.test(song.hash || '') && sameSong(song.songname,meta.title) && sameArtist(song.singername,meta.artist));
+    const matches = songs.filter(song => /^[a-f0-9]{32}$/i.test(song.hash || '') && matchesTitle(song.songname,meta.title) && sameArtist(song.singername,meta.artist));
     matches.sort((a,b) => Number(sameEdition(b.songname,meta.title))-Number(sameEdition(a.songname,meta.title)) || Math.abs(a.duration-meta.duration)-Math.abs(b.duration-meta.duration));
     const tried = new Set();
     for (const song of matches) {
@@ -151,7 +190,7 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
       tried.add(song.hash);
       const response = await request('search', { ver: 1, man: 'yes', client: 'pc', hash: song.hash, duration: Math.round(song.duration*1000) }, 'regional');
       const base = norm(recordingTitle(meta.title).replace(/[([][^()[\]]+[)\]]/g,''));
-      const lyrics = (Array.isArray(response?.candidates) ? response.candidates : []).filter(r => validCandidate(r) && sameArtist(r.singer,meta.artist) && (sameSong(r.song,meta.title) || norm(recordingTitle(r.song)) === base));
+      const lyrics = (Array.isArray(response?.candidates) ? response.candidates : []).filter(r => validCandidate(r) && sameArtist(r.singer,meta.artist) && (matchesTitle(r.song,meta.title) || norm(recordingTitle(r.song)) === base));
       lyrics.sort((a,b) => Math.abs(a.duration / 1000-meta.duration)-Math.abs(b.duration / 1000-meta.duration));
       if (lyrics[0]) {
         const found = await downloadCandidate(lyrics[0], meta, song);
@@ -192,7 +231,8 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     const file = path.join(dataDir, 'lyrics-online', key + '.json');
     let saved;
     try { saved = JSON.parse(await fs.readFile(file, 'utf8')); } catch (_) {}
-    if (saved && (!refresh || !enabled) && (saved.lines?.length || saved.instrumental || (saved.state === 'not-found' && saved.lookupMode === mode && saved.providerRevision === providerRevision && Date.now()-saved.updatedAt < 86400000))) return saved;
+    if(enabled && saved?.providerRevision !== providerRevision && edition(track.title).language) saved=undefined;
+    if (saved && (!refresh || !enabled) && (!enabled || saved.providerRevision === providerRevision) && (saved.lines?.length || saved.instrumental || (saved.state === 'not-found' && saved.lookupMode === mode && Date.now()-saved.updatedAt < 86400000))) return saved;
     if (!enabled) return saved || { lines: [], state: 'disabled' };
     if (selectedId !== id) { selectedId = id; selection++; for (const controller of controllers) controller.abort(); }
     const chosen = selection;

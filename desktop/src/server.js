@@ -54,6 +54,7 @@ const phoneSync = new PhoneSync(DATA_DIR);
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
   resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
   getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
+const playbackStream=require('./playback-stream')({cacheDir:CACHE_DIR,resolveFile:id=>getResolvedAudioFilePath(id),streamFile:streamFileWithRange,mimeFor:getTrackMimeType,openRemote:ensureAudio.openRemote});
 const runtimeInstaller=require('./runtime-installer')(DATA_DIR,{onReady(){
   personalRecommender.reload();
   pulseflow.reloadRuntime();
@@ -1300,52 +1301,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Sleep-proof local cached track playback (streams from disk or fetches & caches from mobile)
+  // Cache playback and analysis share the same exact-recording recovery.
+  if (pathname.startsWith('/api/audio-status/') && req.method === 'GET') {
+    const id=decodeURIComponent(pathname.substring('/api/audio-status/'.length));
+    res.writeHead(200,{'Content-Type':'application/json'});
+    res.end(JSON.stringify({local:Boolean(getResolvedAudioFilePath(id)),issue:ensureAudio.getStatus(id,url.searchParams.get('phoneUrl')||undefined)}));return;
+  }
   if (pathname.startsWith('/api/cached-track/')) {
-    const trackId = decodeURIComponent(pathname.substring('/api/cached-track/'.length));
-    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
-    const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
-    const mime = getTrackMimeType(trackId);
-
-    // If cached on disk in CACHE_DIR or DOWNLOADS_DIR (>64KB), stream with HTTP 206 Range support
-    const localAudioPath = getResolvedAudioFilePath(trackId);
-    if (localAudioPath) {
-      streamFileWithRange(localAudioPath, req, res, mime);
-      return;
-    }
-
-    const phoneUrl = (url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl()).replace(/\/+$/, '');
-    let source;
-    try{source=new URL(`${phoneUrl}/api/track/${encodeURIComponent(trackId)}`);if(source.protocol!=='http:')throw new Error('HTTP required');}
-    catch(e){res.writeHead(400);res.end('Invalid phone URL');return;}
-    const upstream=http.get(source,{headers:req.headers.range?{Range:req.headers.range}:{}},phoneRes=>{
-      const headers={'Content-Type':phoneRes.headers['content-type']||mime,'Accept-Ranges':'bytes'};
-      for(const key of ['content-length','content-range'])if(phoneRes.headers[key])headers[key]=phoneRes.headers[key];
-      res.writeHead(phoneRes.statusCode,headers);
-      if(req.method==='HEAD'){res.end();phoneRes.resume();return;}
-      phoneRes.pipe(res);
-      // Cache only an entire representation, never a partial seek response.
-      const cr=/^bytes 0-(\d+)\/(\d+)$/.exec(phoneRes.headers['content-range']||'');
-      const whole=phoneRes.statusCode===200||(phoneRes.statusCode===206&&cr&&Number(cr[1])+1===Number(cr[2]));
-      if(!whole){phoneRes.on('error',()=>res.destroy());return;}
-      const temp=cachedFile+'.'+require('crypto').randomUUID()+'.tmp';
-      const output=fs.createWriteStream(temp);
-      const discard=()=>{try{fs.unlinkSync(temp);}catch(_){}};
-      output.on('error',discard);
-      phoneRes.on('aborted',()=>{output.destroy();discard();});
-      phoneRes.on('error',()=>{output.destroy();discard();res.destroy();});
-      output.on('finish',()=>{
-        try{
-          const size=fs.statSync(temp).size;
-          const expected=Number(phoneRes.headers['content-length'])||0;
-          if(phoneRes.complete&&size>=4096&&(!expected||expected===size))safeAtomicRename(temp,cachedFile);else discard();
-        }catch(_){discard();}
-      });
-      phoneRes.pipe(output);
-    });
-    upstream.setTimeout(30000,()=>upstream.destroy(new Error('Phone timed out')));
-    upstream.on('error',err=>{if(!res.headersSent){res.writeHead(502);res.end('Phone unavailable');}else res.destroy();});
-    return;
+    const trackId=decodeURIComponent(pathname.substring('/api/cached-track/'.length));
+    playbackStream(req,res,trackId,{phoneUrl:url.searchParams.get('phoneUrl')||undefined,refresh:url.searchParams.get('refresh')==='1'});return;
   }
 
   // Pre-fetch track in background for sleep-resistant seamless queue

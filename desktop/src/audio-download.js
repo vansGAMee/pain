@@ -1,11 +1,20 @@
-// Complete phone downloads shared by analysis jobs. Never buffers a song in RAM.
+// Phone streams and complete downloads share exact-recording recovery.
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const { pipeline } = require('node:stream/promises');
 const matching = require('./cover-matching');
 function replacement(track, tracks) {
-  if (!track || matching.unknown(track.artist) || !track.title || !(track.bytes > 0) || !(track.duration > 0)) return null;
+  function identity(t){
+    if(!t||!t.title||!(t.bytes>0)||!(t.duration>0))return null;
+    let title=String(t.title),artist=String(t.artist||'');
+    if(matching.unknown(artist)){
+      const parts=title.match(/^(.+?)\s+[-–—]\s+(.+)$/);if(!parts)return null;
+      [,artist,title]=parts;
+    }
+    return {title:matching.norm(title),artist:matching.norm(artist)};
+  }
+  const key=identity(track);if(!key)return null;
   const candidates = tracks.filter(t => String(t.id) !== String(track.id) && t.available !== 0 &&
-    matching.norm(t.title) === matching.norm(track.title) && matching.norm(t.artist) === matching.norm(track.artist) &&
+    identity(t)?.title === key.title && identity(t)?.artist === key.artist &&
     Number(t.bytes) === Number(track.bytes) && Number(t.duration) === Number(track.duration));
   return candidates.length === 1 ? candidates[0] : null;
 }
@@ -23,10 +32,11 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
       const temp=availabilityFile+'.tmp';await fs.promises.writeFile(temp,text);await fs.promises.rename(temp,availabilityFile);
     }).catch(()=>{});}
   }
-  function open(url, signal) {
+  function open(url, signal, {method='GET',range}={}) {
     return new Promise((resolve,reject) => {
       const timer = setTimeout(()=>request.destroy(new Error('Phone connection timed out')),5000);
-      const request=http.get(url,{signal},response=>{clearTimeout(timer);resolve(response);});
+      const request=http.request(url,{signal,method,headers:range?{Range:range}:{}},response=>{clearTimeout(timer);resolve(response);});
+      request.end();
       request.setTimeout(15000,()=>request.destroy(new Error('Phone transfer stalled')));
       request.on('error',error=>{clearTimeout(timer);reject(error);});
     });
@@ -53,6 +63,26 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
       job.then(resolve,reject).finally(()=>signal.removeEventListener('abort',cancel));
     });
   }
+  async function openRemote(id,{signal,method='GET',range,base=phoneBase()}={}){
+    try{
+      let url=new URL('/api/track/'+encodeURIComponent(id),base);
+      if(url.protocol!=='http:')throw Error('Phone URL must use HTTP');
+      let response=await open(url,signal,{method,range});
+      if(response.statusCode===404){
+        let text='';for await(const chunk of response){text+=chunk.toString();if(text.length>1024){response.destroy();break;}}
+        const code=/File unreadable/i.test(text)?'AUDIO_PHONE_UNREADABLE':'AUDIO_NOT_ON_PHONE';
+        let candidate;
+        if(code==='AUDIO_NOT_ON_PHONE'&&getTrack?.(id))try{candidate=replacement(getTrack(id),await remoteTracks(base,signal));}catch(_){}
+        if(!candidate)throw failure(code,code==='AUDIO_NOT_ON_PHONE'?'This track is absent from the phone library (HTTP 404).':'The phone cannot read this audio file (HTTP 404).');
+        url=new URL('/api/track/'+encodeURIComponent(candidate.id),base);
+        response=await open(url,signal,{method,range});
+      }
+      if(![200,206,416].includes(response.statusCode)){
+        const status=response.statusCode;response.resume();throw failure(status===404?'AUDIO_NOT_ON_PHONE':'PHONE_UNAVAILABLE','Phone returned HTTP '+status);
+      }
+      record(id,null);return response;
+    }catch(error){if(!signal?.aborted)record(id,error,base);throw error;}
+  }
   function ensureAudio(id, { signal } = {}) {
     if (signal?.aborted) return Promise.reject(new Error('Download cancelled'));
     const existing = resolveAudio(id); if (existing) {if(issues[id])record(id,null);return Promise.resolve(existing);}
@@ -63,22 +93,7 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
       const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 120000);
       const base=phoneBase();
       try {
-        let url = new URL('/api/track/' + encodeURIComponent(id), base);
-        if (url.protocol !== 'http:') throw new Error('Phone URL must use HTTP');
-        let response = await open(url,controller.signal);
-        if (response.statusCode === 404) {
-          let text='';for await(const chunk of response){text+=chunk.toString();if(text.length>1024){response.destroy();break;}}
-          const code=/File unreadable/i.test(text)?'AUDIO_PHONE_UNREADABLE':'AUDIO_NOT_ON_PHONE';
-          let candidate;
-          // Android may change MediaStore IDs after rescanning. Recover only a
-          // unique exact title/artist/duration/byte-size match; never guess.
-          if (code==='AUDIO_NOT_ON_PHONE' && getTrack?.(id)) {
-            try { candidate=replacement(getTrack(id),await remoteTracks(base,controller.signal)); } catch (_) {}
-          }
-          if(!candidate)throw failure(code,code==='AUDIO_NOT_ON_PHONE'?'This track is absent from the phone library (HTTP 404).':'The phone cannot read this audio file (HTTP 404).');
-          url=new URL('/api/track/'+encodeURIComponent(candidate.id),base);
-          response=await open(url,controller.signal);
-        }
+        const response=await openRemote(id,{signal:controller.signal,base});
         if (response.statusCode !== 200) { const status=response.statusCode;response.resume();throw failure(status===404?'AUDIO_NOT_ON_PHONE':'PHONE_UNAVAILABLE','Phone returned HTTP '+status); }
         await fs.promises.mkdir(cacheDir, { recursive: true });
         await pipeline(response, fs.createWriteStream(temp, { flags: 'wx' }), { signal: controller.signal });
@@ -94,7 +109,8 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
     pending.set(id, completion);
     return waitFor(completion,signal);
   }
-  ensureAudio.getStatus=id=>{const issue=issues[id];return issue&&issue.base===phoneBase()&&issue.signature===signature(id)?{code:issue.code,checkedAt:issue.checkedAt}:null;};
+  ensureAudio.getStatus=(id,base=phoneBase())=>{const issue=issues[id];return issue&&issue.base===base&&issue.signature===signature(id)?{code:issue.code,checkedAt:issue.checkedAt}:null;};
+  ensureAudio.openRemote=openRemote;
   return ensureAudio;
 };
 module.exports.replacement=replacement;

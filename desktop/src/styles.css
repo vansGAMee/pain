@@ -1915,6 +1915,7 @@ body,
 }
 
 .bottom-play-btn {
+  position: relative;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -1943,6 +1944,14 @@ body,
   width: 20px;
   height: 20px;
 }
+.bottom-play-btn[aria-busy="true"]::after {
+  content: ''; position: absolute; inset: -4px; border: 2px solid var(--ink);
+  border-right-color: transparent; border-radius: 50%; pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion]):not([data-performance-mode="maximum"]) .bottom-play-btn[aria-busy="true"]::after {animation: playback-loading 1s linear infinite;}
+}
+@keyframes playback-loading {to {transform: rotate(360deg);}}
 
 .bottom-seek-row {
   width: 100%;
