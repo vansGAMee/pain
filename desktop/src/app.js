@@ -4049,7 +4049,7 @@
     const ru = state.lang === 'ru', status = updateStatus;
     const notes = document.getElementById('updateReleaseNotes');
     notes.hidden = !status?.available || !status?.notes;
-    notes.textContent = notes.hidden ? '' : status.notes;
+    notes.textContent = notes.hidden ? '' : (ru ? 'Что нового:\n' : 'What’s new:\n') + status.notes;
     DOM.updateStatusDot?.classList.toggle('available', !!status?.available);
     DOM.updateStatusDot?.classList.toggle('error', status?.status === 'error');
     DOM.updateActionBtn.disabled = updateInstalling || ['checking', 'downloading'].includes(status?.status);
