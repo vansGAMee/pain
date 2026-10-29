@@ -69,6 +69,7 @@
       status.textContent = runtime.running?(phaseLabels[runtime.phase]||(ru()?'Подготовка движка…':'Preparing local analysis…')):!installed?labels['not-installed']:data.state==='no-audio'?labels['no-audio']:`${labels[data.state] || data.state}: ${data.indexed || 0} / ${data.total || 0}`
         + (data.failed ? ` · ${ru() ? 'Ошибок' : 'Failed'}: ${data.failed}` : '')
         + (data.current&&installed ? ` · ${data.current}` : '');
+      if(runtime.running&&runtime.source)status.textContent+=' · '+runtime.source;
       if(runtime.running&&runtime.progress)status.textContent+=' '+Math.floor(runtime.progress.received/1048576)+(runtime.progress.total?' / '+Math.ceil(runtime.progress.total/1048576):'')+(ru()?' МБ':' MB');
       if(q.pulseflowPolicy==='taste'&&installed&&!runtime.running){
         try{const response=await fetch('/api/personal/recommend',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'personal'},body:JSON.stringify({action:'status'})});

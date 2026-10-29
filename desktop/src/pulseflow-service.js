@@ -12,7 +12,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
   const pending = new Map();
   let indexAutomatic = false, backgroundAllowed = true;
   let query, indexer, sequence = 0, lastError = null, starting = false, closed = false, indexGeneration = 0, indexAbort;
-  const env = { ...runtime.env(), OMP_NUM_THREADS: '2', OPENBLAS_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
+  const env = { ...runtime.env(), OMP_NUM_THREADS: '1', OPENBLAS_NUM_THREADS: '1', MKL_NUM_THREADS: '1',
     TOKENIZERS_PARALLELISM: 'false', HF_HOME: path.join(root, 'models'), PYTHONUNBUFFERED: '1' };
   function stopQuery(error = new Error('PulseFlow stopped')) {
     const child = query; query = null;
@@ -21,6 +21,7 @@ module.exports = function createPulseFlow({ dataDir, getTracks, resolveAudio, pr
   }
   function spawnPython(command, extra = []) {
     const child = spawnImpl(python, [bridge, command, '--data', root, ...extra], { env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    require('./background-priority')(child);
     let log;
     fs.mkdirSync(root, { recursive: true });
     log = fs.createWriteStream(path.join(root, command + '.log'), { flags: 'a' });

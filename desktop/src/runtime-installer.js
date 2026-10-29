@@ -34,6 +34,7 @@ module.exports=function createInstaller(dataDir,options={}){
  function run(command,args){return new Promise((resolve,reject)=>{
   if(controller.signal.aborted)return reject(Error('Installation cancelled'));
   const proc=child=spawnImpl(command,args,{env:layout.env(),windowsHide:true,detached:layout.platform!=='win32',stdio:['ignore','pipe','pipe']});
+  require('./background-priority')(proc);
   const append=data=>{log=(log+data.toString()).slice(-24000);fs.promises.appendFile(path.join(layout.home,'install.log'),data).catch(()=>{});};
   proc.stdout.on('data',append);proc.stderr.on('data',append);proc.once('error',reject);
   proc.once('close',code=>{if(child===proc)child=null;code===0?resolve():reject(Error('Runtime command failed ('+code+'): '+log.slice(-1500)));});
@@ -60,7 +61,8 @@ module.exports=function createInstaller(dataDir,options={}){
   if(path.resolve(path.dirname(path.dirname(layout.python)))!==path.resolve(venv))throw Error('The configured custom Python is unavailable; restore its path before installing');
   await run(uv,['--no-config','venv','--python','3.11','--managed-python','--allow-existing',venv]);
   await phase('packages');
-  await run(uv,['--no-config','pip','install','--python',layout.python,'torch==2.5.1','torchvision==0.20.1','torchaudio==2.5.1','--index-url','https://download.pytorch.org/whl/cpu']);
+  await require('./runtime-pytorch')(args=>run(uv,args),{python:layout.python,platform:layout.platform,signal:controller.signal,onSource:async source=>{state.source=source;await save();}});
+  state.source='pypi.org';await save();
   await run(uv,['--no-config','pip','install','--python',layout.python,'-r',path.join(layout.sources,'pulseflow/requirements.lock'),'--index-url','https://pypi.org/simple']);
   await phase('checking');
   await run(uv,['--no-config','pip','check','--python',layout.python]);

@@ -7,6 +7,7 @@ parentPort.on('message',m=>{if(m==='abort')controller.abort();});
 function excerpt(file,start){return new Promise((resolve,reject)=>{
  const args=['-nostdin','-v','error','-threads','1','-ss',String(start),'-i',file,'-t',String(seconds),'-map','0:a:0','-f','f32le','-ac','2','-ar',String(rate),'-threads','1','pipe:1'];
  const child=spawn('ffmpeg',args,{signal:controller.signal,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  require('./background-priority')(child);
  let size=0,error='',chunks=[],settled=false;
  const timer=setTimeout(()=>{child.kill();finish(Error('Transition analysis timed out'));},12000);
  const finish=(err,result)=>{if(settled)return;settled=true;clearTimeout(timer);err?reject(err):resolve(result);};

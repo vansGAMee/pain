@@ -172,6 +172,7 @@
   function boundary(){flush();previous=null;}
   function sample(){
    if(disposed)return;
+   if(options.defer?.()){previous=null;return;}
    try{
     const track=getTrack();
     if(!track||track.id==null){boundary();return;}

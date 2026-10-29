@@ -8,6 +8,7 @@ module.exports=function createPersonalService(dataDir){
   if(child)return child;if(!runtime.installed())throw Error('Install local analysis in Settings');
   const process=child=spawn(python,[path.join(runtime.sources,'personal','serve.py'),'--data',dataDir],
    {windowsHide:true,env:runtime.env(),stdio:['pipe','pipe','pipe']});
+  require('./background-priority')(process);
   readline.createInterface({input:process.stdout}).on('line',line=>{
    if(child!==process)return;
    try{

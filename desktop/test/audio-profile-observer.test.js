@@ -37,6 +37,10 @@ test('pausing flushes all measured frames, including those after the periodic sa
  const f=fixture(t);f.frames(25);f.pause();
  assertProfile(f.store.a,25);assert.ok(Audio.get(f.store,f.track));assertProfile(f.saved.at(-1).profile,25);
 });
+test('deferred playback analysis skips transition frames and resumes without counting the gap',t=>{
+ let defer=true;const f=fixture(t,{observerOptions:{defer:()=>defer}});f.frames(12);assert.equal(f.saved.length,0);assert.equal(f.store.a,undefined);
+ defer=false;f.prime();f.frames(25);f.pause();assertProfile(f.store.a,25);assert.equal(f.store.a.seconds,12.5);
+});
 
 test('repeated playing events keep one timer and ending playback flushes evidence',t=>{
  const f=fixture(t);f.audio.emit('playing');f.audio.emit('playing');assert.equal(f.timers.size,1);

@@ -119,8 +119,10 @@
   let audioSyncTimer=null,audioSyncBusy=false,audioSyncAgain=false;
 
   let persistAudioProfilesTimer = null;
+  let persistAudioIdle = null;
   function schedulePersistAudioProfiles(immediate = false) {
     if (immediate) {
+      if(persistAudioIdle!==null){cancelIdleCallback(persistAudioIdle);persistAudioIdle=null;}
       if (persistAudioProfilesTimer) {
         clearTimeout(persistAudioProfilesTimer);
         persistAudioProfilesTimer = null;
@@ -128,10 +130,15 @@
       try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
       return;
     }
-    if (!persistAudioProfilesTimer) {
+    if (!persistAudioProfilesTimer && persistAudioIdle===null) {
       persistAudioProfilesTimer = setTimeout(() => {
         persistAudioProfilesTimer = null;
-        try { AudioProfile.persist(audioProfiles, localStorage); } catch (_) {}
+        const save=()=>{
+          persistAudioIdle=null;
+          if(isCrossfading||navigator.scheduling?.isInputPending?.()){schedulePersistAudioProfiles();return;}
+          try{AudioProfile.persist(audioProfiles,localStorage);}catch(_){}
+        };
+        if(typeof requestIdleCallback==='function')persistAudioIdle=requestIdleCallback(save,{timeout:5000});else save();
       }, 5000);
     }
   }
@@ -917,6 +924,7 @@
       for (const [deck, source] of [[deckA, sourceNodeA], [deckB, sourceNodeB]]) {
         if (deck && source) audioObservationStops.push(AudioProfile.observe(audioCtx, source, deck,
           () => deckTrackSnapshots.get(deck), onProfile, audioProfiles, {
+            defer: () => isCrossfading || deck !== activeDeck,
             active: () => state.eq.auto && !isCrossfading,
             onFrame: (track, vector, seconds, position) => {
               if (String(track.id) !== String(state.currentTrackId)) return;
@@ -2540,7 +2548,9 @@
     state.currentTrackIndex = state.tracks.findIndex(t => t.id === track.id);
     state.hasPrefetchedNext = false;
     beginListening(track);
-    state.isPlaying = false;
+    // The outgoing decoder is still audible while the replacement buffers.
+    // Keep controls/animations stable instead of repainting the whole library twice.
+    state.isPlaying = Boolean(activeDeck && !activeDeck.paused && !activeDeck.ended);
     const durSec = Math.max(0, Number(track.duration) || 0) / 1000;
     DOM.currentTime.textContent = formatTime(startPosition);
     updateDurationLabel(durSec, startPosition);
@@ -2691,12 +2701,17 @@
       });
     }
     if (state.currentView === 'player') renderVinylPlayerView();
-    analyzeTrackBpmInBackground(track);
     const preparationSignal = transitionAbort.signal;
-    transitionPrepareTimer = setTimeout(async () => {
+    const prepareWhenPlaying = async () => {
+      if (preparationSignal.aborted || request !== playbackRequest) return;
+      if (audio.error) return;
+      if (isCrossfading || audio.readyState < 3) { transitionPrepareTimer = setTimeout(prepareWhenPlaying,500);return; }
+      if (audio.paused) return;
+      analyzeTrackBpmInBackground(track);
       await prepareTransitionProfile(track, preparationSignal);
       if (!preparationSignal.aborted && request === playbackRequest) prefetchNextTrack();
-    }, 500);
+    };
+    transitionPrepareTimer = setTimeout(prepareWhenPlaying,500);
   }
 
   function playTrackObject(track, startPosition = 0, options = {}) {
@@ -2909,7 +2924,12 @@
     seekToTime(clampedPct * dur);
   }
 
+  let playingRowFrame = null;
   function updatePlayingRowUI() {
+    if (playingRowFrame !== null) return;
+    playingRowFrame = requestAnimationFrame(() => { playingRowFrame = null; renderPlayingRows(); });
+  }
+  function renderPlayingRows() {
     // 1. Demote old active table rows that are no longer the current track
     const prevActiveRows = document.querySelectorAll('.tracks-table tbody tr.playing-row');
     prevActiveRows.forEach(tr => {
@@ -3034,7 +3054,9 @@
   }
 
   function updatePlayBtnUI() {
-    document.documentElement.dataset.playing = String(state.isPlaying);
+    const playing=String(state.isPlaying);
+    if(document.documentElement.dataset.playing===playing)return;
+    document.documentElement.dataset.playing = playing;
     if(typeof HomeView!=='undefined')HomeView.setPlaying(state.isPlaying);
     if (state.isPlaying) {
       DOM.bottomPlayIcon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
@@ -3064,7 +3086,7 @@
     updateExcludedUI(track);
     updateFavoriteMomentUI(track);
 
-    renderVinylPlayerView();
+    if (state.currentView === 'player') renderVinylPlayerView();
   }
 
   function updateFavoriteUI(isFav) {

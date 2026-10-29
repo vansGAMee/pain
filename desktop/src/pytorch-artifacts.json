@@ -1,0 +1,30 @@
+{
+  "win32": [
+    {
+      "file": "torch-2.5.1%2Bcpu-cp311-cp311-win_amd64.whl",
+      "sha256": "81531d4d5ca74163dc9574b87396531e546a60cceb6253303c7db6a21e867fdf"
+    },
+    {
+      "file": "torchvision-0.20.1%2Bcpu-cp311-cp311-win_amd64.whl",
+      "sha256": "ebdeb19a49da0b5d11cc512a76b24a43971e17cfb9c1ec42564d0e300670d5fa"
+    },
+    {
+      "file": "torchaudio-2.5.1%2Bcpu-cp311-cp311-win_amd64.whl",
+      "sha256": "e08047b9f1997bd303ea6528e5b8009719665a55516a49b6acc359dac20c474d"
+    }
+  ],
+  "linux": [
+    {
+      "file": "torch-2.5.1%2Bcpu-cp311-cp311-linux_x86_64.whl",
+      "sha256": "07d7c9e069123d5af08b0cf0013d74f680b2d8be7d9e2cf561a52c90c55d9409"
+    },
+    {
+      "file": "torchvision-0.20.1%2Bcpu-cp311-cp311-linux_x86_64.whl",
+      "sha256": "a4153bcc9f6219596c65761aa00588704e91e3db91d911c251e614f6140ed047"
+    },
+    {
+      "file": "torchaudio-2.5.1%2Bcpu-cp311-cp311-linux_x86_64.whl",
+      "sha256": "209f8e7efff818d2066f49c27c8097f2246f8bf6fd743c69bcf8dce80c63ee80"
+    }
+  ]
+}
