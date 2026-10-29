@@ -6,7 +6,7 @@
   try { const saved=localStorage.getItem('pain_pulseflow_policy');q.pulseflowPolicy=['smooth','contrast','personal','live','taste'].includes(saved)?saved:'personal'; } catch (_) {}
   policy.value = q.pulseflowPolicy;
   policy.onchange = () => {
-    q.pulseflowPolicy = policy.value; q.pulseflowPlan = null; q.cancelPendingSelection();
+    q.pulseflowPolicy = policy.value; if(!q.pulseflowPlan?.preview)q.pulseflowPlan = null; q.cancelPendingSelection();
     try { localStorage.setItem('pain_pulseflow_policy', policy.value); } catch (_) {}
     window.dispatchEvent(new Event('pain:dj-changed'));
   };

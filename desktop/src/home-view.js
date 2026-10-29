@@ -4,7 +4,7 @@
  const root=document.getElementById('homeContent');if(!root)return;
  const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const icon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
- let snapshot,actions,mix=[],mixKey='',mixPending=false,mixError=false,variation=0,ticket=0;
+ let snapshot,actions,mix=[],mixKey='',mixPending=false,mixError=false,variation=0,mixVariation=-1,ticket=0;
  let mixScope='';
  const shown=new Set();
  function movePastMix(){for(const item of mix)shown.add(String(item.track.id));}
@@ -23,31 +23,36 @@
   const artist=track=>track?.artist||t('Неизвестный исполнитель','Unknown artist');
   const current=data.current||m.recent[0]||data.tracks[0];
   const vibes=window.PainDJVibes?.list()||{items:[],activeId:null};
+  const library=new Map(data.tracks.map(t=>[String(t.id),t]));
+  mix=mix.filter(item=>library.has(String(item.track.id))&&!data.queue?.isExcluded?.(item.track.id))
+    .map(item=>({...item,track:library.get(String(item.track.id))}));
   const isPlayingMix=Boolean(data.isPlaying&&data.current&&mix.some(x=>String(x.track.id)===String(data.current.id)));
   const scope=JSON.stringify([data.tracks.map(t=>String(t.id)),[...(data.queue?.excludedTracks||[])]]);
   if(scope!==mixScope){mixScope=scope;shown.clear();}
   const anchor=String(current?.id||'');
-  const key=JSON.stringify([scope,variation]);
-  if(key!==mixKey){
-   mixKey=key;mixPending=true;mixError=false;const generation=++ticket;
+  if(variation!==mixVariation||(!mix.length&&scope!==mixKey)){
+   mixKey=scope;mixVariation=variation;mixPending=true;mixError=false;const generation=++ticket;
    // Paint Home first; bounded existing DJ scoring runs once per mix, not per frame.
    requestAnimationFrame(()=>setTimeout(async ()=>{
     if(generation!==ticket)return;
-    let nextMix=[],nextError=false;
+    let nextMix=[],nextError=false,captured;
     try{
-      if(globalThis.DJWorker?.request&&typeof snapshot.queue?.workerSnapshot==='function'){
-        const captured=snapshot.queue.workerSnapshot(),excluded=new Set(captured.excludedTracks||[]);
+      if(typeof snapshot.queue?.workerSnapshot==='function'){
+        captured=snapshot.queue.workerSnapshot();const excluded=new Set(captured.excludedTracks||[]);
         const available=snapshot.tracks.filter(t=>!excluded.has(String(t.id))&&String(t.id)!==anchor);
         // A refresh advances through the catalog; it never changes taste scores.
         // Start a new preview cycle only once every eligible track was shown.
         if(!available.some(t=>!shown.has(String(t.id))))shown.clear();
         captured.excludedTracks=[...new Set([...excluded,...shown])];
+        if(!globalThis.DJWorker?.request)throw new Error('Background worker unavailable');
         nextMix=await globalThis.DJWorker.request({action:'mix',tracks:snapshot.tracks,snapshot:captured,limit:6,variation});
       }else{
         throw new Error('PulseFlow requires a background worker');
       }
     }catch(_){
-      nextError=true;
+      // Only the cheap, existing frequency fallback may run on the UI thread.
+      if(captured&&typeof QueueEngine!=='undefined')nextMix=QueueEngine.previewFromSnapshot(captured,snapshot.tracks).frequencyMix(6);
+      else nextError=true;
     }
     if(generation!==ticket)return;
     mix=nextMix;mixError=nextError;
@@ -93,7 +98,7 @@
     <figure class="home-explored"><figcaption><strong>${t('Глубина фонотеки','Library explored')}</strong><span>${d.heardLibrary} ${t('из','of')} ${d.librarySize}</span></figcaption><div class="home-ring" style="--ring-value:${explored||0}"><span>${explored===null?'—':explored+'%'}</span></div><small>${t('Хотя бы 30 секунд или половина короткого трека','At least 30 seconds or half a short track')}</small></figure>
    </div>
    <div class="home-dj-layout">
-    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Треки играют по порядку. Новая подборка — по кнопке «Обновить».','Tracks play in order. Use Refresh for a new mix.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending&&!mix.length?empty(t('Собираем подборку…','Building your mix…')):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):mix.length?rows(mix.map(x=>x.track),'mix',6):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(isPlayingMix?t('Пауза','Pause'):t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending&&!mix.length||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
+    ${section(t('Следующая хорошая песня','Your next good song'),`<p class="home-section-note">${t('Сначала эти треки по порядку, затем — обычные рекомендации. Новая подборка — по кнопке «Обновить».','These tracks play in order, followed by regular recommendations. Use Refresh for a new mix.')}</p><div class="home-mix" aria-busy="${mixPending}">${mixPending&&!mix.length?empty(t('Собираем подборку…','Building your mix…')):mix.length?rows(mix.map(x=>x.track),'mix',6):mixError?empty(t('Не удалось собрать подборку. Попробуйте обновить.','Could not build the mix. Try refreshing.')):empty(t('Добавьте музыку или разрешите треки для подбора.','Add music or allow tracks in recommendations.'))}</div><div class="home-actions">${button(isPlayingMix?t('Пауза','Pause'):t('Слушать подборку','Play the mix'),'mix-play','home-primary','',mixPending&&!mix.length||!mix.length)}${button(t('Обновить','Refresh'),'refresh','home-text-button','',mixPending)}</div>`, '<span class="home-section-note">Smart DJ</span>')}
     ${section(t('Настроение на сегодня','A mood for today'),`<p class="home-section-note">${t('Сохранённое вами звучание — ориентир для следующего подбора.','Sounds you saved guide the next selection.')}</p><div class="home-vibes">${button(t('Свободный подбор','Free selection'),'vibe',!vibes.activeId?'is-selected':'','')}${vibes.items.map(v=>button(v.name,'vibe',v.id===vibes.activeId?'is-selected':'',v.id)).join('')}</div>${!vibes.items.length?empty(t('Сохраните вайб понравившегося трека, чтобы возвращаться к его звучанию.','Save a track’s vibe to return to its sound.')):''}${button(t('Сохранить текущий вайб','Save the current vibe'),'save-vibe','home-text-button','',!data.current)}<div class="home-fact"><h3>${t('Чуть больше о вас','A little more about you')}</h3><p>${outside===null?t('Факты появятся после первых прослушиваний.','Facts appear after your first listens.'):t(`${outside}% времени вы слушаете музыку за пределами избранного.`,`${outside}% of your listening time is spent outside your favourites.`)}</p><p>${t(`Музыка звучала в ${activeDays} из последних 28 дней.`,`Music played on ${activeDays} of the last 28 days.`)}</p></div>`)}</div>
    <div class="home-pair">${section(t('Недавно звучало','Recently played'),m.recent.length?rows(m.recent):empty(t('Здесь будет история полноценных прослушиваний.','Your meaningful listening history will appear here.')))}${section(t('Недавно открыты','Recently discovered'),`<p class="home-section-note">${t('Впервые в сохранённой истории за последние 30 дней.','First heard in your saved history within the last 30 days.')}</p>`+(m.fresh.length?rows(m.fresh):empty(t('Новые открытия ещё впереди.','Your next discoveries are ahead.'))))}</div>
    ${section(t('Всегда рядом','Always close'),m.favorites.length?`<div class="home-favorite-grid">${m.favorites.slice(0,6).map(track=>`<button type="button" class="home-favorite" data-home-action="track" data-id="${escape(track.id)}"><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></button>`).join('')}</div>`:empty(t('Отмечайте любимые треки сердцем — они появятся здесь.','Like your favourite tracks to keep them here.')),button(t('Всё избранное','All favourites'),'favorites','home-text-button'))}
@@ -212,7 +217,7 @@
   else if(action==='reel-next'){if(actions.nextReel)actions.nextReel();}
   else if(action==='reel-keep'){if(actions.keepFull)actions.keepFull();}
   else if(action==='reel-duration'){if(actions.setSnippetSec)actions.setSnippetSec(Number(id));}
-  else if(action==='vibe'){if(window.PainDJVibes?.select(id||null)){mixKey='';render(snapshot,actions);}}
+  else if(action==='vibe'){if(window.PainDJVibes?.select(id||null))render(snapshot,actions);}
   else if(action==='resume')actions.resume();
   else if(action==='playlist')actions.navigate('playlist',id);
   else if(action==='new-playlist')document.getElementById('newPlaylistBtn').click();

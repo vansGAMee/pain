@@ -262,6 +262,13 @@
       return q;
     }
 
+    static previewFromSnapshot(snapshot, tracks) {
+      const q = QueueEngine.fromWorkerSnapshot(snapshot), current = q.getCurrentTrack()?.id;
+      const index = tracks.findIndex(t => String(t.id) === String(current));
+      q.setContext('library', tracks, Math.max(0,index), 'Smart DJ', true);
+      return q;
+    }
+
     selectionKey() {
       // CLAP does not consume live MFCC frames, likes, play counters or BPM.
       // Invalidating on those updates discarded valid Python replies while
@@ -296,6 +303,7 @@
     }
 
     async peekNextAsync() {
+      if(this.previewChoice())return this.peekNext();
       if(this.shuffleMode !== 'smart' || !this.selectInWorker)return this.peekNext();
       try {
         const job = this.workerSelection(), result = await job.promise;
@@ -308,6 +316,7 @@
 
     async nextAsync() {
       const generation = ++this._selectionGeneration;
+      if(this.previewChoice())return this.next();
       if(this.shuffleMode !== 'smart' || !this.selectInWorker)return this.next();
       if(this.loopMode === 'one' && this.currentIndex >= 0)return this.tracks[this.currentIndex];
       const tracks = this.tracks, index = this.currentIndex, visit = this.currentStartedAt, step = this.smartStep;
@@ -501,9 +510,10 @@
 
     // Keep listened/unplayed identities when a device sync replaces track objects.
     refreshLibrary(library, includeNew = false) {
-      this.pulseflowPlan = null;
       const old=this.tracks,current=this.getCurrentTrack()?.id;
       const live=new Map((Array.isArray(library)?library:[]).filter(t=>t&&t.id!=null&&String(t.id)!=='').map(t=>[String(t.id),t]));
+      const plan=this.pulseflowPlan;
+      this.pulseflowPlan=plan?.preview?{...plan,remaining:plan.remaining.filter(row=>live.has(String(row.id)))}:null;
       const oldIds=new Set(old.map(t=>String(t.id)));
       const selected=old.map(t=>live.get(String(t.id))).filter(Boolean);
       if(includeNew)selected.push(...[...live.values()].filter(t=>!oldIds.has(String(t.id))));
@@ -682,6 +692,28 @@
         explanation:{method:'frequency-fallback', plays:best}};
     }
 
+    frequencyMix(length=6) {
+      let remaining=this.tracks.map((_,i)=>i).filter(i=>i!==this.currentIndex&&!this.isExcluded(this.tracks[i].id));
+      if(!remaining.length&&this.getCurrentTrack()&&!this.isExcluded(this.getCurrentTrack().id))remaining=[this.currentIndex];
+      const result=[];
+      while(remaining.length&&result.length<length){
+        const chosen=this.frequencyChoose(remaining);if(!chosen)break;
+        result.push({track:chosen.track,decision:{fromTrack:this.getCurrentTrack(),toTrack:chosen.track,reasons:chosen.reasons,explanation:chosen.explanation}});
+        remaining.splice(remaining.indexOf(chosen.index),1);
+      }
+      return result;
+    }
+
+    previewChoice() {
+      if(this.shuffleMode!=='smart'||!this.pulseflowPlan?.preview)return null;
+      const indices=new Map(this.tracks.map((t,i)=>[String(t.id),i]));
+      for(const [position,row] of this.pulseflowPlan.remaining.entries()){
+        const index=indices.get(String(row.id));
+        if(index!==undefined&&!this.isExcluded(row.id))return {position,row,index,track:this.tracks[index]};
+      }
+      return null;
+    }
+
     next(options = {}) {
       if (this.tracks.length === 0) return null;
 
@@ -698,6 +730,17 @@
         this.markPlayed(this.currentIndex,false);this._notify();
         return this.getCurrentTrack();
       }
+
+      // An accepted Home list is an explicit queue, independent of model,
+      // frequency tiers, visited recordings, refits and network availability.
+      const preview=this.previewChoice();
+      if(preview){
+        const fromTrack=this.getCurrentTrack();
+        this.pulseflowPlan={...this.pulseflowPlan,remaining:this.pulseflowPlan.remaining.slice(preview.position+1)};
+        this.lastTransition={fromTrack,toTrack:preview.track,reasons:preview.row.reasons||[],explanation:preview.row.explanation||null};
+        this.currentIndex=preview.index;this.markPlayed(preview.index);this._notify();return preview.track;
+      }
+      if(this.pulseflowPlan?.preview)this.pulseflowPlan=null;
 
       // Check if current cycle exhausted
       const exhausted = this.shuffleMode === 'smart'
@@ -770,6 +813,7 @@
       }
       const forward=[...this.forwardHistory].reverse().find(i=>this.shuffleMode!=='smart'||!this.isExcluded(this.tracks[i]?.id));
       if(forward!==undefined)return this.tracks[forward];
+      const preview=this.previewChoice();if(preview)return preview.track;
       if (this.loopMode === 'off' && this.unplayedIndices.size === 0) return null;
       if (this.shuffleMode === 'off') {
         if (this.currentIndex < this.tracks.length - 1) {

@@ -1348,14 +1348,14 @@
       playMix:(track,tracks,items)=>{
         playTrackInContext(track,state.tracks,{type:'library',title:'Smart DJ',allowNew:true});
         const start=tracks.findIndex(t=>String(t.id)===String(track.id));
-        const decision=items?.[start]?.decision,details=decision?.explanation;
-        if(['pulseflow-clap-faiss','frequency-pulseflow-ties','pulseflow-uniform','personal-taste','personal-taste-fallback'].includes(details?.method)){
-          queue.setShuffleMode('smart');state.shuffleMode='smart';
-          queue.lastTransition=decision;
-          queue.pulseflowPlan={seed:decision.fromTrack,policy:details.policy,personal:details.method==='frequency-pulseflow-ties',preview:true,vibeKey:JSON.stringify(queue.pulseflowVibe||null),
-            remaining:items.slice(start+1).map(row=>({id:row.track.id,score:row.decision.explanation.score,reasons:row.decision.reasons,explanation:row.decision.explanation}))};
-          // Finish the selected preview, then continue through the library.
-        }
+        const rows=new Map((items||[]).map(row=>[String(row.track.id),row]));
+        queue.setShuffleMode('smart');state.shuffleMode='smart';
+        queue.lastTransition=rows.get(String(track.id))?.decision||null;
+        queue.pulseflowPlan={preview:true,remaining:tracks.slice(start+1).map(t=>{
+          const decision=rows.get(String(t.id))?.decision;
+          return {id:t.id,reasons:decision?.reasons||[],explanation:decision?.explanation||null};
+        })};
+        queue.cancelPendingSelection();
       },
       playMoment:id=>{
         if (momentsReel && momentsReel.getState().active) {

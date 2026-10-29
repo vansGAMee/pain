@@ -299,3 +299,18 @@ test('Explicit refresh advances the eligible catalog without changing scores', a
   assert.match(root.innerHTML, /data-home-action="mix" data-id="t6"/);
   assert.doesNotMatch(root.innerHTML, /data-home-action="mix" data-id="t0"/);
 });
+
+test('new files, library reordering and changed exclusions keep the existing preview until Refresh',async()=>{
+ const {HomeView,root,getMixCalls}=setupTestEnvironment();
+ const tracks=Array.from({length:12},(_,i)=>({id:'t'+i,title:'Song '+i}));
+ const excluded=new Set(),queue={workerSnapshot:()=>({}),excludedTracks:excluded,isExcluded:id=>excluded.has(id)};
+ const data={tracks,stats:{},playlists:[],queue,lang:'ru',current:tracks[0],isPlaying:true};
+ const handlers={cover:()=>'',fallbackCover:()=>''};
+ HomeView.render(data,handlers);await new Promise(resolve=>setImmediate(resolve));assert.equal(getMixCalls(),1);
+ HomeView.render({...data,tracks:[...tracks].reverse().concat({id:'new',title:'New file'})},handlers);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(getMixCalls(),1);
+ assert.ok(root.innerHTML.indexOf('data-home-action="mix" data-id="t0"')<root.innerHTML.indexOf('data-home-action="mix" data-id="t1"'));
+ excluded.add('t1');HomeView.render(data,handlers);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(getMixCalls(),1);assert.doesNotMatch(root.innerHTML,/data-home-action="mix" data-id="t1"/);
+ assert.match(root.innerHTML,/data-home-action="mix" data-id="t2"/);
+});

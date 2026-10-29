@@ -69,7 +69,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
   await page.click('#djRelease');await page.click('#djClose');
   await page.reload();await page.click('#settingsToggleBtn');assert.equal(await page.locator('#pulseflowPolicy').inputValue(),'taste');await page.click('#settingsCloseBtn');
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('pain_dj_vibes_v1')).items.find(v=>v.name==='Audit vibe').embedding.length),512);
+  await page.click('.nav-item[data-view="home"]');await page.waitForSelector('.home-mix[aria-busy="false"]');
+  const homeIds=()=>page.locator('.home-mix [data-home-action="mix"]').evaluateAll(rows=>rows.map(row=>row.dataset.id));
+  const displayed=await homeIds();assert.equal(displayed.length,6,'real library must produce a Home preview');
+  await page.click('[data-home-action="mix-play"]');
+  for(let i=0;i<displayed.length;i++){
+    if(i)await page.click('#bottomNextBtn');
+    await page.waitForFunction(id=>painQueue.getCurrentTrack()?.id===id&&!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.05,displayed[i]);
+    assert.deepEqual(await homeIds(),displayed,'the real-library Home sequence must stay visible and play in order');
+  }
+  await page.click('#bottomNextBtn');
+  await page.waitForFunction(id=>painQueue.getCurrentTrack()?.id!==id&&!PainPlayer.getAudio().paused,displayed.at(-1));
+  assert.deepEqual(await homeIds(),displayed);await page.screenshot({path:'/tmp/pain-home-real.png'});
   const after=await Promise.all(['library.json','stats.json','dj-state.json'].map(n=>fs.readFile(path.join(data,n),'utf8')));assert.deepEqual(after,before);assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({mode:'taste',firstResponseMs,firstMethod,realPlayback:true,historyEvents:decision.historyEvents,savedEmbedding:512,explanation:true,persistence:true,copyUnchanged:true,errors}));
+  console.log(JSON.stringify({mode:'taste',firstResponseMs,firstMethod,realPlayback:true,historyEvents:decision.historyEvents,savedEmbedding:512,explanation:true,persistence:true,homeSequential:6,homeContinued:true,copyUnchanged:true,errors}));
  }finally{await browser.close();service.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

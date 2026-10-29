@@ -41,6 +41,7 @@
     return selected;
   }
   async function next(q, query = request) {
+    if(q.previewChoice()){const track=q.next();return {trackId:track?.id??null,navigation:q.navigationSnapshot()};}
     q.forwardHistory = q.forwardHistory.filter(i => !q.isExcluded(q.tracks[i]?.id));
     if (q.loopMode === 'one' || q.forwardHistory.length || !q.smartCandidates().length) {
       // These are navigation operations, not recommendations.

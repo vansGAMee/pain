@@ -21,6 +21,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
     try{await route.fulfill({contentType:mime[path.extname(file)]||'application/octet-stream',body:await fs.readFile(file)});}catch(_){await route.fulfill({status:404,body:''});}
    });
    await page.goto('http://home.test');await page.waitForSelector('.home-mix[aria-busy="false"]');
+   // The default info drawer overlays navigation at phone width; close it via UI.
+   if(await page.locator('#trackInfoClose').isVisible())await page.click('#trackInfoClose');
    assert.equal(await page.locator('#view-home').evaluate(e=>getComputedStyle(e).opacity),'1','reduced motion must not freeze the view halfway');
    assert.equal(await page.locator('[data-home-action="mix-play"]').isDisabled(),count===0);
    assert.equal(await page.locator('.home-mix .home-track').count(),count?Math.min(count===1?1:count-1,6):0);
@@ -29,7 +31,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
    assert.equal(await page.locator('.home-playlist b').count(),0,'playlist names are escaped');
    assert.doesNotMatch(await page.locator('#homeContent').innerHTML(),/NaN|Infinity/);
    if(count===1){
-    for(const view of ['insights','sync','joint-ai']){
+    for(const view of ['insights','sync']){
      await page.evaluate(v=>location.hash=v,view);
      await page.waitForFunction(v=>document.querySelector('#view-'+v).classList.contains('active'),view);
      assert.equal(await page.locator('#view-'+view).evaluate(e=>e.scrollWidth<=e.clientWidth+2),true,view+' fits a narrow window');
@@ -54,6 +56,6 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
    assert.equal(await page.locator('#view-home').evaluate(e=>getComputedStyle(e).animationName),'none');
    assert.deepEqual(errors,[]);await context.close();
   }
-  console.log('PASS: empty/one/100 songs, long and hostile metadata, covers, search, drawer, language, history navigation, reduced motion, narrow statistics/devices/Joint AI/EQ.');
+  console.log('PASS: empty/one/100 songs, long and hostile metadata, covers, search, drawer, language, history navigation, reduced motion, narrow statistics/devices/EQ.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

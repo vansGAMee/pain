@@ -5,6 +5,7 @@
  const payload=(q,eligible,length)=>({eligible,length,scope:JSON.stringify([q.context.type,q.tracks.map(t=>String(t.id))]),kind:length===1?'next':'mix',seed:(q.smartSeed+Math.imul(q.smartStep,2654435761))>>>0,now:q.now(),offset:new Date().getTimezoneOffset(),vibe:q.pulseflowVibe});
  function choice(q,row){const index=q.tracks.findIndex(t=>String(t.id)===String(row.id));if(index<0||q.isExcluded(row.id))throw Error('Ineligible personal recommendation');return {...row,index,track:q.tracks[index]};}
  async function next(q,query=request){
+  if(q.previewChoice()){preparing=false;const track=q.next();return {trackId:track?.id??null,navigation:q.navigationSnapshot()};}
   preparing=false;q.forwardHistory=q.forwardHistory.filter(i=>!q.isExcluded(q.tracks[i]?.id));
   if(q.loopMode==='one'||q.forwardHistory.length||!q.smartCandidates().length){const t=q.next({fallback:true});return {trackId:t?.id??null,navigation:q.navigationSnapshot()};}
   let plan=q.pulseflowPlan?.preview?q.pulseflowPlan:null;

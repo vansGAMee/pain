@@ -23,7 +23,7 @@
   function applyVibe(){
     const v=active();
     queue.pulseflowVibe=v?{trackId:v.trackId,name:v.name,source:v.source,embedding:v.embedding,profile:v.profile}:null;
-    queue.pulseflowPlan=null;
+    if(!queue.pulseflowPlan?.preview)queue.pulseflowPlan=null;
     queue.setVibeProfile(v?.profile||null);
   }
   function draftProfile(){
