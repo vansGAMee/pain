@@ -180,13 +180,32 @@
 @keyframes night-playing {from {transform:scaleY(.35)} to {transform:scaleY(1)}}
 @media(prefers-reduced-motion:no-preference) {
   :root[data-theme="form-night"]:not([data-performance-mode="maximum"]):not([data-reduced-motion]) .night-metal-glint {
+    position:relative;
+  }
+  /* Never make the real glyphs transparent. Custom fonts, accents and joined
+     scripts can paint beyond their line box. The padded decorative copy has
+     identical text geometry, and an empty accessibility alternative. */
+  :root[data-theme="form-night"]:not([data-performance-mode="maximum"]):not([data-reduced-motion]) .night-metal-glint::after {
+    content:attr(data-night-glint-text) / "";position:absolute;inset:-.35em -.25em;padding:.35em .25em;box-sizing:border-box;
+    pointer-events:none;font:inherit;font-variation-settings:inherit;font-feature-settings:inherit;font-kerning:inherit;letter-spacing:inherit;word-spacing:inherit;text-transform:inherit;text-align:inherit;white-space:inherit;overflow-wrap:inherit;
     color:transparent;-webkit-text-fill-color:transparent;
-    background-image:linear-gradient(108deg,var(--ink) 0%,var(--ink) 39%,#bcb6c6 44%,#fff 49%,#e4d9ed 51%,var(--ink) 58%,var(--ink) 100%);
+    background-image:linear-gradient(108deg,transparent 0%,transparent 39%,#bcb6c6 44%,#fff 49%,#e4d9ed 51%,transparent 58%,transparent 100%);
     background-size:320% 100%;background-clip:text;-webkit-background-clip:text;
     animation:night-metal 2200ms cubic-bezier(.25,.1,.25,1) both!important;
   }
+  :root[data-theme="form-night"] .night-edge-glint {position:relative}
+  :root[data-theme="form-night"]:not([data-performance-mode="maximum"]):not([data-reduced-motion]):not([data-window-hidden]) .app-layout:not(.karaoke-open) .night-edge-glint::after {
+    content:'';position:absolute;pointer-events:none;inset:0 15% auto;height:1px;
+    background:linear-gradient(90deg,transparent,#e3e0e88c,transparent);
+    animation:night-edge 1800ms var(--night-ease) both;
+  }
+  :root[data-theme="form-night"]:not([data-performance-mode="maximum"]):not([data-reduced-motion]):not([data-window-hidden]) .app-layout:not(.karaoke-open) .night-cover-glint {
+    animation:night-cover 2100ms ease-in-out both;
+  }
 }
 @keyframes night-metal {from {background-position:100% 50%} to {background-position:0% 50%}}
+@keyframes night-edge {0% {opacity:0;transform:translateX(-12px)} 42% {opacity:.65} 100% {opacity:0;transform:translateX(12px)}}
+@keyframes night-cover {0%,100% {box-shadow:0 0 0 1px #e3e0e800} 45% {box-shadow:0 0 0 1px #e3e0e85c}}
 @media(prefers-reduced-motion:reduce) {
   :root[data-theme="form-night"] *, :root[data-theme="form-night"] *::before, :root[data-theme="form-night"] *::after {animation:none!important;transition:none!important}
 }
