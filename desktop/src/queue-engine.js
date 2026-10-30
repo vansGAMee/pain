@@ -310,7 +310,7 @@
         if(job.key !== this.selectionKey())return undefined;
         return result.trackId == null ? null : this.tracks.find(t => String(t.id) === String(result.trackId));
       } catch (_) {
-        return this.frequencyChoose(this.smartCandidates())?.track || null;
+        return this.fallbackChoose(this.smartCandidates())?.track || null;
       }
     }
 
@@ -438,11 +438,12 @@
 
     copyDecision(result){return {...result,reasons:[...result.reasons],explanation:result.explanation?{...result.explanation}:null};}
 
-    randomChoice(indices) {
+    randomUnit() {
       let z=(this.smartSeed+Math.imul(this.smartStep,2654435761)+0x6d2b79f5)>>>0;
       z=Math.imul(z^(z>>>15),z|1);z^=z+Math.imul(z^(z>>>7),z|61);
-      return indices[Math.floor((((z^(z>>>14))>>>0)/4294967296)*indices.length)];
+      return ((z^(z>>>14))>>>0)/4294967296;
     }
+    randomChoice(indices) { return indices[Math.floor(this.randomUnit()*indices.length)]; }
 
     setAudioProfile(id, profile) {
       this.audioProfiles[id] = profile;
@@ -692,6 +693,26 @@
         explanation:{method:'frequency-fallback', plays:best}};
     }
 
+    fallbackChoose(indices) {
+      if(this.pulseflowPolicy!=='taste')return this.frequencyChoose(indices);
+      const counts=this.completedCounts();
+      const candidates=indices.filter(i=>this.tracks[i]&&!this.isExcluded(this.tracks[i].id));
+      // The same categorical baseline used by PersonalModel/ExpertGuard:
+      // Laplace counts (completed listens + an explicit like + one prior).
+      // An argmax here alternates the top two forever in an open radio queue.
+      const weights=candidates.map(i=>(counts.get(String(this.tracks[i].id))||0)+
+        Number(this.tracks[i].favorite===true||this.tracks[i].favorite===1)+1);
+      const total=weights.reduce((a,b)=>a+b,0);let draw=this.randomUnit()*total;
+      for(let at=0;at<candidates.length;at++){
+        draw-=weights[at];if(draw>=0&&at<candidates.length-1)continue;
+        const index=candidates[at],track=this.tracks[index];
+        return {index,track,reasons:['По истории и лайкам'],bpm:this.getTrackBpm(track),
+          explanation:{method:'frequency-fallback',plays:counts.get(String(track.id))||0,
+            sampling:'categorical',probability:weights[at]/total}};
+      }
+      return null;
+    }
+
     frequencyMix(length=6) {
       let remaining=this.tracks.map((_,i)=>i).filter(i=>i!==this.currentIndex&&!this.isExcluded(this.tracks[i].id));
       if(!remaining.length&&this.getCurrentTrack()&&!this.isExcluded(this.getCurrentTrack().id))remaining=[this.currentIndex];
@@ -770,7 +791,7 @@
         if (candidates.length === 0) {
           return null;
         } else {
-          const chosen = options.fallback ? this.frequencyChoose(candidates) : this.smartChoose(current, candidates);
+          const chosen = options.fallback ? this.fallbackChoose(candidates) : this.smartChoose(current, candidates);
           nextIndex = chosen ? chosen.index : candidates[0];
           if (chosen) {
             this.lastTransition = {

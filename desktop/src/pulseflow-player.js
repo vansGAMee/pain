@@ -33,7 +33,7 @@
   // Copy the RNG cursor so preview/prefetch never advances real navigation.
   function sample(rows, q, length) {
     const remaining = [...new Map(rows.map(row=>[String(row.id),row])).values()], selected = [];
-    const rng = { smartSeed:q.smartSeed, smartStep:q.smartStep, randomChoice:q.randomChoice };
+    const rng = { smartSeed:q.smartSeed, smartStep:q.smartStep, randomUnit:q.randomUnit, randomChoice:q.randomChoice };
     while (remaining.length && selected.length < length) {
       const index = rng.randomChoice(remaining.map((_,i)=>i));
       selected.push(remaining.splice(index,1)[0]); rng.smartStep++;

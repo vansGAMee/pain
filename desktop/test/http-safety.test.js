@@ -15,6 +15,13 @@ test('static file lookup cannot leave its root through traversal or a symlink',a
  assert.ok(await safety.staticFile(path.join(root,'public'),'index.html'));assert.equal(await safety.staticFile(path.join(root,'public'),'../secret'),null);
  if(process.platform!=='win32'){fs.symlinkSync(path.join(root,'secret'),path.join(root,'public','escape'));assert.equal(await safety.staticFile(path.join(root,'public'),'escape'),null);}
 });
+test('packaged static assets remain readable when the Promise realpath API does not support the virtual filesystem',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-packaged-static-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ fs.writeFileSync(path.join(root,'index.html'),'packaged page');
+ t.mock.method(fs.promises,'realpath',async()=>{throw Object.assign(Error('Virtual path unavailable'),{code:'ENOENT'});});
+ const asset=await safety.staticFile(root,'index.html');assert.ok(asset);assert.equal(fs.readFileSync(asset.file,'utf8'),'packaged page');assert.equal(asset.size,13);
+ assert.equal(await safety.staticFile(root,'missing.html'),null);assert.equal(await safety.staticFile(root,'../secret'),null);
+});
 test('real server preserves music and playlists after hostile or interrupted writes',async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'pain-security-'));for(const dir of ['data','cache','covers'])fs.mkdirSync(path.join(root,dir));
  const audio=Buffer.alloc(8192,7),cover=Buffer.alloc(4096,8);fs.writeFileSync(path.join(root,'cache','song.mp3'),audio);fs.writeFileSync(path.join(root,'covers','song.jpg'),cover);fs.writeFileSync(path.join(root,'data','playlists.json'),'[]');fs.writeFileSync(path.join(root,'data','last_phone_ip.txt'),'127.0.0.1:9');

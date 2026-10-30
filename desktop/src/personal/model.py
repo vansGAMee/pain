@@ -74,10 +74,10 @@ def canonical(plays):
 class Library:
     def __init__(self, folder, offset=0):
         self.folder = Path(folder)
-        self.tracks = json.loads((self.folder / 'library.json').read_text())['tracks']
+        self.tracks = json.loads((self.folder / 'library.json').read_text(encoding='utf-8'))['tracks']
         self.ids = {str(t['id']): i for i, t in enumerate(self.tracks)}
         self.offset = offset
-        profiles = json.loads((self.folder / 'dj-state.json').read_text()).get('profiles', {}) if (self.folder / 'dj-state.json').exists() else {}
+        profiles = json.loads((self.folder / 'dj-state.json').read_text(encoding='utf-8')).get('profiles', {}) if (self.folder / 'dj-state.json').exists() else {}
         self.embeddings = np.full((len(self.tracks), 512), np.nan)
         catalog = self.folder / 'pulseflow/catalog.npz'
         if catalog.exists():
@@ -121,7 +121,7 @@ class Library:
             warnings.simplefilter('ignore', RuntimeWarning)
             med = np.nanmedian(self.sound, axis=0)
         self.sound = np.where(np.isfinite(self.sound), self.sound, np.nan_to_num(med))
-        stats = json.loads((self.folder / 'stats.json').read_text()) if (self.folder / 'stats.json').exists() else {}
+        stats = json.loads((self.folder / 'stats.json').read_text(encoding='utf-8')) if (self.folder / 'stats.json').exists() else {}
         self.plays = [p for p in canonical(stats.get('plays', []))
                       if str(p['track']) in self.ids and p.get('duration', 0) > 0 and p.get('started', 0) > 0
                       and p['started'] <= time.time() * 1000 and (p.get('finished') or p.get('skipped'))]

@@ -12,8 +12,8 @@
   const allowed=new Set(q.smartCandidates().map(i=>String(q.tracks[i].id)));
   if(plan)plan={...plan,remaining:plan.remaining.filter(r=>allowed.has(String(r.id)))};
   let row=plan?.remaining[0];
-  if(!row){const response=await query(payload(q,[...allowed],1));preparing=!!response.preparing;
-   if(preparing){const track=q.next({fallback:true});return {trackId:track?.id??null,navigation:q.navigationSnapshot()};}
+  if(!row){const response=await query(payload(q,[...allowed],1));preparing=!!(response.preparing||response.updating);
+   if(response.preparing){const track=q.next({fallback:true});return {trackId:track?.id??null,navigation:q.navigationSnapshot()};}
    row=response.tracks[0];}
   if(!row||!allowed.has(String(row.id)))throw Error('Ineligible personal recommendation');
   const selected=choice(q,row);q.pulseflowPlan=plan?{...plan,remaining:plan.remaining.slice(1)}:null;
@@ -22,9 +22,9 @@
  async function mix(tracks,q,length,query=request){
   preparing=false;
   const current=q.getCurrentTrack(),eligible=tracks.filter(t=>String(t.id)!==String(current?.id)&&!q.isExcluded(t.id)).map(t=>String(t.id));
-  const allowed=new Set(eligible),response=await query(payload(q,eligible,length));preparing=!!response.preparing;
+  const allowed=new Set(eligible),response=await query(payload(q,eligible,length));preparing=!!(response.preparing||response.updating);
   let rows=response.tracks;
-  if(preparing){
+  if(response.preparing){
    rows=[];const remaining=q.tracks.map((t,i)=>allowed.has(String(t.id))?i:-1).filter(i=>i>=0);
    while(remaining.length&&rows.length<length){const item=q.frequencyChoose(remaining);if(!item)break;rows.push({id:item.track.id,reasons:['Модель готовится · частотный подбор'],explanation:{method:'personal-taste-fallback',plays:item.explanation.plays}});remaining.splice(remaining.indexOf(item.index),1);}
   }

@@ -1,5 +1,8 @@
 'use strict';
 const os=require('node:os'),path=require('node:path'),fs=require('node:fs');
+// pkg's virtual filesystem supports callback realpath; its promises.realpath
+// asks Windows for nonexistent C:\snapshot files and makes the whole UI 404.
+const realpath=require('node:util').promisify(fs.realpath);
 const MiB=1024*1024;
 let localHosts,hostsUntil=0;
 function trustedHosts(){
@@ -57,6 +60,6 @@ function limitUpload(req,res,stream,file,limit){
 async function staticFile(root,relative){
  const base=path.resolve(root),candidate=path.resolve(base,relative),within=file=>file===base||file.startsWith(base+path.sep);
  if(!within(candidate))return null;
- try{const real=await fs.promises.realpath(candidate);if(!within(real))return null;const stat=await fs.promises.stat(real);return stat.isFile()?{file:real,size:stat.size}:null;}catch(_){return null;}
+ try{const real=await realpath(candidate);if(!within(real))return null;const stat=await fs.promises.stat(real);return stat.isFile()?{file:real,size:stat.size}:null;}catch(_){return null;}
 }
 module.exports={guard,readBody,limitUpload,staticFile,bodyLimit};

@@ -71,9 +71,16 @@
         + (data.current&&installed ? ` · ${data.current}` : '');
       if(runtime.running&&runtime.source)status.textContent+=' · '+runtime.source;
       if(runtime.running&&runtime.progress)status.textContent+=' '+Math.floor(runtime.progress.received/1048576)+(runtime.progress.total?' / '+Math.ceil(runtime.progress.total/1048576):'')+(ru()?' МБ':' MB');
+      let personalDiagnostic='';
       if(q.pulseflowPolicy==='taste'&&installed&&!runtime.running){
         try{const response=await fetch('/api/personal/recommend',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'personal'},body:JSON.stringify({action:'status'})});
-          if(response.ok){const own=await response.json();const label=own.state==='ready'&&own.method==='insufficient-evidence'?(ru()?'Пока мало истории — частота и лайки':'Little history yet — frequency and likes'):own.state==='ready'?(ru()?`Весь вкус готов · ${own.events} событий`:`Whole taste ready · ${own.events} events`):own.state==='training'?(ru()?'Весь вкус: обучение в фоне, плеер доступен':'Whole taste: learning in the background'):own.state==='error'?(ru()?'Пока используется подбор по истории':'Using history-based selection for now'):(ru()?'Первый подбор обучит модель в фоне':'The first selection trains the model in the background');status.textContent+=' · '+label;}
+          if(response.ok){const own=await response.json();personalDiagnostic=own.error||own.updateError||'';
+            const label=own.state==='ready'&&own.method==='insufficient-evidence'?(ru()?'Пока мало истории — частота и лайки':'Little history yet — frequency and likes'):
+              own.state==='ready'?(ru()?`Весь вкус готов · ${own.events} событий`:`Whole taste ready · ${own.events} events`):
+              own.state==='updating'?(ru()?`Весь вкус работает · ${own.events} событий · обновление в фоне`:`Whole taste is active · ${own.events} events · updating in the background`):
+              own.state==='training'?(ru()?'Весь вкус: первое обучение в фоне, плеер доступен':'Whole taste: initial training in the background'):
+              own.state==='error'?(ru()?'Ошибка обучения · временный подбор по истории':'Training failed · temporary history-based selection'):
+              (ru()?'Первый подбор обучит модель в фоне':'The first selection trains the model in the background');status.textContent+=' · '+label;}
         }catch(_){}
       }
       start.hidden=!installed||runtime.running;start.disabled = data.running || !installed || runtime.running; stop.hidden = !data.running;
@@ -84,7 +91,7 @@
       details.hidden=!installed||!unavailable.length;
       document.getElementById('pulseflowMissingSummary').textContent=ru()?`Недоступны для анализа: ${unavailable.length} · показать список`:`Unavailable for analysis: ${unavailable.length} · show list`;
       missing.textContent=unavailable.slice(0,10).map(t=>[t.artist,t.title].filter(Boolean).join(' — ')+': '+(reasons[t.code]||(ru()?'нет локального файла':'no local file'))).join('\n')+(unavailable.length>10?`\n${ru()?'И ещё':'And'} ${unavailable.length-10}`:'');
-      const diagnostic=runtime.error||(installed&&data.state!=='no-audio'&&!runtime.running?(data.error||data.lastError||(data.failures?.length?data.failures.slice(0,3).map(e=>e.error).join('\n'):'')):'');
+      const diagnostic=runtime.error||personalDiagnostic||(installed&&data.state!=='no-audio'&&!runtime.running?(data.error||data.lastError||(data.failures?.length?data.failures.slice(0,3).map(e=>e.error).join('\n'):'')):'');
       document.getElementById('pulseflowDiagnostics').hidden=!diagnostic;
       document.getElementById('pulseflowDiagnosticText').textContent=String(diagnostic||'').slice(-12000);
     } catch (error) { if(token===revision){status.textContent = error.message;start.disabled=false;stop.hidden=true;} }

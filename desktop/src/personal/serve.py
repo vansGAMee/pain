@@ -2,7 +2,7 @@
 One coalesced refit runs in a background thread; until ready, the player uses
 its real frequency fallback. Immutable fitted models are published atomically.
 """
-import argparse,json,threading,time
+import argparse,hashlib,json,threading,time
 from pathlib import Path
 import sys
 import numpy as np
@@ -15,6 +15,23 @@ lock=threading.RLock();output_lock=threading.Lock()
 model=key=training=failed_key=processed=None
 parameters=None;selected_at=0;last_error=None
 guard=ExpertGuard()
+file_versions={}
+
+def fingerprint_for(offset):
+    versions=[]
+    for name in ('library.json','stats.json','dj-state.json','pulseflow/catalog.npz'):
+        file=folder/name
+        try:
+            stat=file.stat();stamp=(stat.st_size,stat.st_mtime_ns)
+        except FileNotFoundError:
+            versions.append(None);continue
+        cached=file_versions.get(name)
+        if cached is None or cached[0]!=stamp:
+            # Rewriting unchanged sync data is not a new training example.
+            cached=(stamp,hashlib.sha256(file.read_bytes()).hexdigest())
+            file_versions[name]=cached
+        versions.append(cached[1])
+    return (offset,tuple(versions))
 
 def send(value):
     with output_lock:
@@ -37,7 +54,8 @@ def fit_model(fingerprint,offset,chosen,chosen_at):
     except Exception as error:
         with lock:
             training=None;failed_key=fingerprint;last_error=str(error)
-            send({'event':'error','error':last_error})
+            send({'event':'error','error':last_error,
+                  'diagnostics':model.diagnostics if model is not None else None})
 
 def embedding(track):
     file=folder/'pulseflow/catalog.npz'
@@ -51,6 +69,7 @@ def embedding(track):
                 return (vector/np.linalg.norm(vector)).tolist()
     return None
 
+send({'event':'booted'})
 for line in sys.stdin:
     request={}
     try:
@@ -63,22 +82,29 @@ for line in sys.stdin:
         guard.set_context(request)
         offset=int(request.get('offset',0))
         if not -840<=offset<=840:raise ValueError('Invalid local timezone')
-        files=[folder/n for n in ('library.json','stats.json','dj-state.json','pulseflow/catalog.npz')]
-        fingerprint=(offset,tuple((p.stat().st_size,p.stat().st_mtime_ns) if p.exists() else None for p in files))
+        fingerprint=fingerprint_for(offset)
         with lock:
-            if fingerprint==failed_key:raise ValueError(last_error)
-            if fingerprint!=key:
+            if fingerprint==failed_key and model is None:raise ValueError(last_error)
+            if fingerprint!=key and fingerprint!=failed_key:
                 if training is None:
                     chosen=parameters if key is None or key[0]==offset else None
                     training=threading.Thread(target=fit_model,args=(fingerprint,offset,chosen,selected_at),daemon=True)
                     training.start()
-                # Hold the publication lock through this response: a subsequent
-                # ready notification cannot be overwritten by a stale training reply.
+            if model is None:
+                # Only the first fit needs the baseline. Later fits retain the
+                # last usable model even when listening/sync changes files again.
                 send({'id':request.get('id'),'result':{'preparing':True,'tracks':[],'diagnostics':{'state':'training'}}})
                 continue
             active=model
+            update_error=last_error if fingerprint==failed_key else None
         if active is not processed:
             guard.update(active.data.plays);processed=active
-        send({'id':request.get('id'),'result':active.recommend(request)})
+        result=active.recommend(request)
+        with lock:
+            # A completed refit notification cannot be downgraded by an older
+            # prediction that started just before publication.
+            result['updating']=training is not None
+            if update_error:result['updateError']=update_error
+            send({'id':request.get('id'),'result':result})
     except Exception as error:
         send({'id':request.get('id'),'error':str(error)})
