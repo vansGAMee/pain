@@ -71,7 +71,7 @@ async function launch({ platform = 'linux', lock = true, ready = true, listening
     process: { platform, env, execPath: '/isolated/Pain', versions: { electron: 'test' } },
     require(name) {
       if (name === 'electron') return {
-        app, BrowserWindow, Tray, Menu: { buildFromTemplate: template => template },
+        app, BrowserWindow, Tray, Menu: { buildFromTemplate: template => template, setApplicationMenu: () => {} },
         shell: { openExternal: async url => { opened.push(url); } }
       };
       if (name === 'path') return path;

@@ -377,8 +377,10 @@
   window.painQueue = queue;
   window.PainPlayer = {
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
+    getTracks: () => state.tracks || [],
     getAudio: () => activeDeck || deckA,
-    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve();}
+    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve();},
+    playTrackInContext: (track, trackList, contextInfo, startPosition = 0) => playTrackInContext(track, trackList, contextInfo, startPosition)
   };
   let audioCtx = null;
   let audioObservationStops = [];
@@ -1563,6 +1565,15 @@
         return;
       }
 
+      const artistEl = e.target.closest('.track-row-sub, .clickable-artist');
+      if (artistEl) {
+        e.stopPropagation();
+        if (track.artist && window.ArtistCard) {
+          window.ArtistCard.open(track.artist);
+        }
+        return;
+      }
+
       if (!e.target.closest('button')) {
         playTrackInContext(track, trackList, contextInfo);
       }
@@ -1655,7 +1666,7 @@
       </td>
       <td class="col-title">
         <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(displayTrackTitle(track))}</div>
-        <div class="track-row-sub">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+        <div class="track-row-sub clickable-artist" title="${state.lang === 'ru' ? 'Карточка артиста' : 'Artist card'}">${escapeHtml(track.artist || 'Unknown Artist')}</div>
       </td>
       <td class="col-album">${escapeHtml(track.album || '—')}</td>
       <td class="col-plays">${plays}</td>
@@ -1744,6 +1755,15 @@
         return;
       }
 
+      const artistEl = e.target.closest('.track-card-artist, .clickable-artist');
+      if (artistEl) {
+        e.stopPropagation();
+        if (track.artist && window.ArtistCard) {
+          window.ArtistCard.open(track.artist);
+        }
+        return;
+      }
+
       playTrackInContext(track, trackList, contextInfo);
     });
 
@@ -1782,7 +1802,7 @@
         </div>
       </div>
       <div class="track-card-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(displayTrackTitle(track))}</div>
-      <div class="track-card-artist">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+      <div class="track-card-artist clickable-artist" title="${state.lang === 'ru' ? 'Карточка артиста' : 'Artist card'}">${escapeHtml(track.artist || 'Unknown Artist')}</div>
       <div class="track-card-footer">
         <span class="track-card-duration">${formatTime(durationSec)}</span>
         <div style="display: flex; gap: 4px; align-items: center;">
@@ -2170,6 +2190,13 @@
 
     DOM.bigTrackTitle.textContent = displayTrackTitle(track);
     DOM.bigTrackArtist.textContent = track.artist || 'Unknown Artist';
+    if (track.artist) {
+      DOM.bigTrackArtist.classList.add('clickable-artist');
+      DOM.bigTrackArtist.title = state.lang === 'ru' ? 'Карточка артиста' : 'Artist card';
+    } else {
+      DOM.bigTrackArtist.classList.remove('clickable-artist');
+      DOM.bigTrackArtist.removeAttribute('title');
+    }
     DOM.bigTrackAlbum.textContent = track.album || '';
 
     const ctx = queue ? queue.getContext() : null;
@@ -2339,7 +2366,15 @@
     const ru=state.lang==='ru',[start,end]=TrackLeaderboard.bounds(period,Date.now()),artists=new Map(),tracks=new Map(state.tracks.map(t=>[String(t.id),t]));
     for(const p of leaderboardPlays){if(p.started<start||p.started>=end)continue;const artist=tracks.get(String(p.track))?.artist||(ru?'Неизвестный исполнитель':'Unknown artist');artists.set(artist,(artists.get(artist)||0)+p.heard);}
     const rows=[...artists].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,50),fragment=document.createDocumentFragment();
-    for(const [index,[artist,ms]] of rows.entries()){const item=document.createElement('div');item.className='leaderboard-item';item.innerHTML=`<div class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><div class="leaderboard-text"><div class="leaderboard-title">${escapeHtml(artist)}</div><div class="leaderboard-sub">${ru?'Исполнитель':'Artist'}</div></div></div><div class="leaderboard-stat">${Math.round(ms/60000)} ${ru?'мин':'min'}</div>`;fragment.append(item);}
+    for(const [index,[artist,ms]] of rows.entries()){
+      const item=document.createElement('div');
+      item.className='leaderboard-item clickable-artist';
+      item.style.cursor='pointer';
+      item.title=ru?'Открыть карточку артиста':'Open artist card';
+      item.onclick=()=>{ if(window.ArtistCard) window.ArtistCard.open(artist); };
+      item.innerHTML=`<div class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><div class="leaderboard-text"><div class="leaderboard-title">${escapeHtml(artist)}</div><div class="leaderboard-sub">${ru?'Исполнитель':'Artist'}</div></div></div><div class="leaderboard-stat">${Math.round(ms/60000)} ${ru?'мин':'min'}</div>`;
+      fragment.append(item);
+    }
     if(!rows.length){const p=document.createElement('p');p.className='chart-sub';p.textContent=ru?'За этот период данных пока нет.':'No listening in this period yet.';fragment.append(p);}
     DOM.topArtistsList.replaceChildren(fragment);
   }
@@ -3102,6 +3137,13 @@
     if (!track) return;
     DOM.bottomTrackTitle.textContent = displayTrackTitle(track);
     DOM.bottomTrackArtist.textContent = (track.artist || 'Unknown Artist') + (track.album ? ` · ${track.album}` : '');
+    if (track.artist) {
+      DOM.bottomTrackArtist.classList.add('clickable-artist');
+      DOM.bottomTrackArtist.title = state.lang === 'ru' ? 'Карточка артиста' : 'Artist card';
+    } else {
+      DOM.bottomTrackArtist.classList.remove('clickable-artist');
+      DOM.bottomTrackArtist.removeAttribute('title');
+    }
 
     DOM.bottomCoverImg.src = getCoverUrl(track);
     DOM.bottomCoverImg.onerror = function() {
@@ -4859,6 +4901,24 @@
         toggleFavorite(state.currentTrackId, DOM.bottomFavoriteBtn);
       }
     });
+
+    if (DOM.bottomTrackArtist) {
+      DOM.bottomTrackArtist.addEventListener('click', () => {
+        const curTrack = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+        if (curTrack && curTrack.artist && window.ArtistCard) {
+          window.ArtistCard.open(curTrack.artist);
+        }
+      });
+    }
+
+    if (DOM.bigTrackArtist) {
+      DOM.bigTrackArtist.addEventListener('click', () => {
+        const curTrack = (queue ? queue.getCurrentTrack() : null) || state.tracks.find(t => t.id === state.currentTrackId);
+        if (curTrack && curTrack.artist && window.ArtistCard) {
+          window.ArtistCard.open(curTrack.artist);
+        }
+      });
+    }
 
     if (DOM.bottomExcludeBtn) {
       DOM.bottomExcludeBtn.addEventListener('click', () => {

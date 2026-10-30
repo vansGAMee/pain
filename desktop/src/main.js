@@ -44,9 +44,11 @@ function setTray(enabled,refresh=false) {
   }
 }
 function createWindow() {
+  if (Menu && typeof Menu.setApplicationMenu === 'function') Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
     width: 1100, height: 780, minWidth: 900, minHeight: 650,
     show: false, backgroundColor: '#EFEDE6', title: 'PAIN', icon,
+    autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox:true, webSecurity:true, allowRunningInsecureContent:false }
   });
   const hideToTray = event => {

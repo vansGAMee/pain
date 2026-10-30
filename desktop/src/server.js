@@ -79,6 +79,7 @@ const deezerGenres=require('./deezer-genres')(DATA_DIR);
 const genres=require('./genre-service')(DATA_DIR,{localMedia,catalog,store:storeCatalog,wiki:wikiGenres,deezer:deezerGenres,getTracks:getLibraryTracks,loadStats:loadGenreStats});
 findOnlineCover.configure({ localMedia, catalog, dataDir: DATA_DIR });
 const trackInfo = require('./track-info-service')(DATA_DIR, { localMedia, catalog, genres, getTracks:getLibraryTracks });
+const artistInfo = require('./artist-info-service')(DATA_DIR, { genres, getTracks: getLibraryTracks });
 const genreProfiles=new Map();
 const saveStatsSnapshot = body => phoneSync.saveStats(JSON.parse(body));
 
@@ -725,6 +726,28 @@ const server = http.createServer((req, res) => {
     result.then(data=>{
       if(!res.destroyed){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));}
     }).catch(()=>{if(!res.destroyed){res.writeHead(503);res.end('{}');}});return;
+  }
+
+  if (pathname === '/api/artist-info' && req.method === 'GET') {
+    const artist = url.searchParams.get('artist');
+    if (!artist) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end('{"error":"Missing artist"}'); return; }
+    const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'ru';
+    const online = url.searchParams.get('online') !== '0';
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    artistInfo.lookup(artist, lang, { online, signal: abort.signal }).then(data => {
+      if (!res.destroyed) {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(JSON.stringify(data));
+      }
+    }).catch(err => {
+      if (!res.destroyed) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message, artist }));
+      }
+    });
+    return;
   }
 
   if (pathname === '/api/desktop-preferences') {

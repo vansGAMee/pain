@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="track-info.css">
   <link rel="stylesheet" href="genre-profile.css">
   <link rel="stylesheet" href="insight-charts.css">
+  <link rel="stylesheet" href="artist-card.css">
   <link rel="stylesheet" href="form-night-theme.css">
 </head>
 <body>
@@ -994,6 +995,13 @@
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
+              <label for="onlineArtistInfoSwitch" data-en="Find artist details online" data-ru="Искать сведения об артистах в сети">Искать сведения об артистах в сети</label>
+              <span class="fluid-row-hint" data-en="Biography, avatar, and related artists from Wikipedia and Deezer. When off, the artist card shows only name and tracks from your library." data-ru="Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.">Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineArtistInfoSwitch" checked><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
               <label for="saveHistorySwitch" data-en="Save listening history" data-ru="Сохранять историю">Сохранять историю</label>
               <span class="fluid-row-hint" data-en="When off, new listens and skips do not affect statistics or taste. Existing history and likes stay." data-ru="Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.">Когда выключено, новые прослушивания и пропуски не влияют на статистику и вкус. Прежняя история и лайки остаются.</span>
             </div>
@@ -1344,6 +1352,7 @@
   <script src="presence-engine.js"></script>
   <script src="performance-mode.js"></script>
   <script src="app.js"></script>
+  <script src="artist-card.js"></script>
   <script src="track-info.js"></script>
   <script src="discord-presence-ui.js"></script>
   <script src="genre-profile.js"></script>
