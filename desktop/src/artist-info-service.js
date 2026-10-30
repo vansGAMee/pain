@@ -46,7 +46,7 @@ module.exports = function createArtistInfoService(dir, { fetcher = fetch, genres
         exintro: '1', explaintext: '1', exchars: '1200', inprop: 'url'
       });
       const res = await request(`https://${l}.wikipedia.org/w/api.php?${params}`, {
-        headers: { 'User-Agent': 'PAIN/1.8.9 (https://github.com/vansGAMee/pain)' },
+        headers: { 'User-Agent': 'PAIN/1.8.10 (https://github.com/vansGAMee/pain)' },
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000)
       });
       if (!res.ok) throw new Error('Wiki ' + res.status);
@@ -67,7 +67,7 @@ module.exports = function createArtistInfoService(dir, { fetcher = fetch, genres
             prop: 'extracts', explaintext: '1'
           });
           const fullRes = await request(`https://${l}.wikipedia.org/w/api.php?${fullParams}`, {
-            headers: { 'User-Agent': 'PAIN/1.8.9 (https://github.com/vansGAMee/pain)' },
+            headers: { 'User-Agent': 'PAIN/1.8.10 (https://github.com/vansGAMee/pain)' },
             signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000)
           });
           if (fullRes.ok) {
@@ -102,7 +102,7 @@ module.exports = function createArtistInfoService(dir, { fetcher = fetch, genres
     const query = matching.primary(artistName) || artistName;
     try {
       const res = await request('https://api.deezer.com/search/artist?' + new URLSearchParams({ q: query, limit: '5' }), {
-        headers: { 'User-Agent': 'PAIN/1.8.9 (local music player)' },
+        headers: { 'User-Agent': 'PAIN/1.8.10 (local music player)' },
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000)
       });
       if (!res.ok) return null;
@@ -115,7 +115,7 @@ module.exports = function createArtistInfoService(dir, { fetcher = fetch, genres
       let related = [];
       try {
         const relRes = await request(`https://api.deezer.com/artist/${matched.id}/related?limit=6`, {
-          headers: { 'User-Agent': 'PAIN/1.8.9 (local music player)' },
+          headers: { 'User-Agent': 'PAIN/1.8.10 (local music player)' },
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4000)]) : AbortSignal.timeout(4000)
         });
         if (relRes.ok) {
