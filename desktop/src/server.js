@@ -68,6 +68,7 @@ const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:
 const discordPresence=require('./discord-presence')(DATA_DIR);
 const transitionAudio=require('./transition-audio')(DATA_DIR);
 const personalRecommender=require('./personal-service')(DATA_DIR);
+const together=require('./listen/service')(DATA_DIR,{getTracks:getLibraryTracks,getPort:()=>server.address().port,defaults:require('./listen/defaults.json')});
 const discordCovers=new Map();let discordTrackId;
 process.once('exit',()=>discordPresence.close());
 const catalog = require('./music-catalog')(DATA_DIR);
@@ -826,6 +827,7 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/music-runtime') { runtimeInstaller.route(req,res);return; }
   if (pathname === '/api/personal/recommend') { personalRecommender.route(req,res);return; }
+  if (pathname.startsWith('/api/listen/')) { together.route(req,res,pathname).catch(()=>{if(!res.destroyed)res.destroy();});return; }
 
   if (pathname.startsWith('/api/transition-audio/')) {
     if(req.method!=='GET'){res.writeHead(405);res.end();return;}
@@ -1615,6 +1617,7 @@ server.personalRecommender=personalRecommender;
 server.runtimeInstaller=runtimeInstaller;
 server.once('close',()=>runtimeInstaller.close());
 server.once('close',()=>personalRecommender.close());
+server.once('close',()=>together.close());
 server.headersTimeout=15000;
 server.requestTimeout=10*60*1000;
 

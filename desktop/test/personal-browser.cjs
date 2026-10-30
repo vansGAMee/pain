@@ -62,7 +62,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
   assert.match(await page.locator('#djWhyFull').textContent(),/Частотная основа сохранена/);
   await page.fill('#djVibeName','Audit vibe');await page.click('#djSave');
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pain_dj_vibes_v1'))?.items.some(v=>v.name==='Audit vibe'&&v.embedding?.length===512),null,{timeout:10000});
-  await page.screenshot({path:'/tmp/pain-personal-details.png'});await page.click('#djWhySummary');await page.screenshot({path:'/tmp/pain-personal-mode.png'});
+  await page.screenshot({path:'/tmp/pain-personal-details.png'});await page.click('#djWhySummary');await page.evaluate(()=>document.getElementById('djDialog').scrollTop=0);await page.screenshot({path:'/tmp/pain-personal-mode.png'});
   const decision=await page.evaluate(()=>painQueue.getLastTransition().explanation);
   assert.ok(decision.historyEvents>1000,'model must use the entire saved history');
   assert.ok(await page.evaluate(()=>!PainPlayer.getAudio().paused),'saving the vibe must preserve real playback');

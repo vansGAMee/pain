@@ -59,7 +59,7 @@
     ?text('Вайб включён со следующего подбора.','Vibe enabled for the next selection.')
     :text('Вайб выбран. Включите Smart DJ для подбора.','Vibe selected. Enable Smart DJ to use it.');
   function render(){
-    const smart=queue.getShuffleMode()==='smart',track=queue.getCurrentTrack(),vibe=active(),trigger=el('bottomTrackContext');
+    const smart=!window.PainTogether?.active&&queue.getShuffleMode()==='smart',track=queue.getCurrentTrack(),vibe=active(),trigger=el('bottomTrackContext');
     trigger.disabled=!track&&!saved.items.length;
     trigger.title=text('Почему этот трек и сохранённые вайбы','Why this track and saved vibes');
     trigger.setAttribute('aria-label',trigger.title);
@@ -81,12 +81,15 @@
     el('djRelease').textContent=text('Отпустить вайб','Release vibe');
     el('djRelease').hidden=!vibe;
     el('djTrack').textContent=track?[track.title,track.artist].filter(Boolean).join(' — '):text('Нет текущего трека','No current track');
+    const cover=el('djCover'),source=el('bottomCoverImg')?.getAttribute('src');cover.hidden=!track||!source;if(source&&cover.getAttribute('src')!==source)cover.src=source;
     const decision=queue.getLastTransition();
     const reasons=smart&&track&&String(decision?.toTrack?.id)===String(track.id)?decision.reasons:[];
     el('djReason').textContent=reasons?.length
       ?DJExplanation.describe(decision,localStorage.getItem('pain_lang'))
       :(!track?text('Нет текущего трека.','No current track.'):text('Трек запущен из очереди.','Started from the queue.'));
     const details=el('djWhyDetails'),personal=smart&&decision?.explanation?.method==='personal-taste'&&String(decision?.toTrack?.id)===String(track?.id);
+    const visual=el('djVisuals');visual.hidden=!personal;el('djReason').hidden=personal;
+    if(personal){const key=JSON.stringify([decision.explanation,text('ru','en')]);if(visual.dataset.decision!==key){visual.dataset.decision=key;visual.innerHTML=DJVisuals.render(decision.explanation,window.PainPlayer.getTracks(),text('ru','en'),track=>`/api/cover/${encodeURIComponent(track.id)}`);}}
     if(details){
       details.hidden=!personal;
       if(personal){

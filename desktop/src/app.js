@@ -379,6 +379,11 @@
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
     getTracks: () => state.tracks || [],
     getAudio: () => activeDeck || deckA,
+    sessionPause: () => {if(!audio.paused)audio.pause();syncPlaybackState();},
+    sessionResume: () => {initAudioNodes();if(audioCtx?.state==='suspended')audioCtx.resume().catch(()=>{});return audio.play();},
+    sessionSeek: seconds => seekToTime(seconds),
+    sessionReset: () => {for(const deck of [deckA,deckB])if(deck){deck.pause();deck.removeAttribute('src');deck.load();}state.currentTrackId=null;queue?.setContext('library',state.tracks,0);syncPlaybackState();},
+    sessionReload: (track,tracks,position) => {preparedDecks.delete(deckA);preparedDecks.delete(deckB);playTrackInContext(track,tracks,{type:'listening',title:state.lang==='ru'?'Слушаем вместе':'Listening together',allowNew:false},position);},
     flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve();},
     playTrackInContext: (track, trackList, contextInfo, startPosition = 0) => playTrackInContext(track, trackList, contextInfo, startPosition)
   };
@@ -2486,7 +2491,7 @@
       transitionProfiles.set(key, result); return result;
     } catch (_) { return null; }
   }
-  function sourceFor(track) { return `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`; }
+  function sourceFor(track) { if(window.PainTogether?.active&&track._listenUid)return `/api/listen/audio/${encodeURIComponent(track._listenUid)}`;return `/api/cached-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`; }
   function deckGain(deck) { return (deck === deckA ? gainNodeA : gainNodeB)?.gain; }
   function rampDeck(deck, target, seconds = .02) {
     const gain = deckGain(deck); if (!gain || !audioCtx) return;
@@ -2601,7 +2606,7 @@
 
     const isReelActive = typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active;
     const hasActivePlaying = activeDeck && !activeDeck.paused && activeDeck.currentTime > 0 && activeDeck.src;
-    const shouldCrossfade = hasActivePlaying && !plan.continuous && (state.trackTransition > 0 || isReelActive || isTrackFadingOut);
+    const shouldCrossfade = !window.PainTogether?.active && hasActivePlaying && !plan.continuous && (state.trackTransition > 0 || isReelActive || isTrackFadingOut);
     const crossfadeDuration = isReelActive ? 1.5 : (plan.duration || (state.trackTransition > 0 ? state.trackTransition : .35));
 
     isTrackFadingOut = false;
@@ -2755,6 +2760,7 @@
 
   function playTrackObject(track, startPosition = 0, options = {}) {
     if (!track) return;
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(track);return;}
     pendingNextSkips = 0;
     isNavigatingNext = false;
     if (queue) queue.cancelPendingSelection();
@@ -2831,6 +2837,7 @@
 
   function playTrackInContext(track, trackList, contextInfo, startPosition = 0) {
     if (!track) return;
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(track);return;}
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active && contextInfo?.type !== 'moments') {
       momentsReel.stop();
     }
@@ -2843,6 +2850,7 @@
   }
 
   function playTrackById(trackId, startPosition = 0) {
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(state.tracks.find(track=>String(track.id)===String(trackId)));return;}
     if (queue) {
       const inQueue = queue.jumpToTrack(trackId);
       if (inQueue) {
@@ -2860,6 +2868,7 @@
   }
 
   function playTrackIndex(index) {
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(state.tracks[index]);return;}
     if (index < 0 || index >= state.tracks.length) return;
     playTrackById(state.tracks[index].id);
   }
@@ -2879,13 +2888,13 @@
       ctxName = info.context.type === 'favorites' ? (isRu ? 'Избранное' : 'Favorites') : (isRu ? 'Фонотека' : 'Library');
     }
     const pos = info.index >= 0 ? info.index + 1 : 1;
-    const isSmart = info.shuffleMode === 'smart';
+    const isSmart = !window.PainTogether?.active && info.shuffleMode === 'smart';
     DOM.bottomTrackContext.classList.toggle('smart-active', isSmart);
 
     let badge = '';
     if (isSmart) {
       badge = ' · Smart DJ';
-    } else if (info.shuffleMode === 'random') {
+    } else if (!window.PainTogether?.active && info.shuffleMode === 'random') {
       badge = isRu ? ' · 🔀 Случайно' : ' · 🔀 Shuffle';
     }
     DOM.bottomTrackContext.dataset.contextLabel = `${ctxName} · ${pos} ${isRu ? 'из' : 'of'} ${info.total}`;
@@ -2905,6 +2914,7 @@
   }
 
   function seekToTime(targetTime) {
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.seek(targetTime);return;}
     const time = Number(targetTime);
     if (!Number.isFinite(time) || time < 0) return;
     const dur = getCurrentTrackDuration();
@@ -3059,6 +3069,7 @@
   async function reportPlaybackFailure(track,request,error) {
     if(request!==playbackRequest||error.name==='AbortError')return;
     audio.pause();syncPlaybackState();
+    if(window.PainTogether?.active&&track._listenUid){showToast(state.lang==='ru'?'Не удалось получить звук участника. Откройте «Слушать вместе» и повторите подключение звука.':'Could not receive the participant’s audio. Open Listen together and retry the audio.','!',6500);return;}
     console.warn('Audio unavailable:',error);
     let status;
     try { status=await (await fetch(`/api/audio-status/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`)).json(); } catch (_) {}
@@ -3074,6 +3085,7 @@
     showToast(message,'!',6500);
   }
   function togglePlay() {
+    if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.toggle();return;}
     initAudioNodes();
     if (!audio.getAttribute('src') || audio.error) {
       const target = (queue ? queue.getCurrentTrack() : null) || state.tracks[0];
@@ -3892,6 +3904,7 @@
 
   // --- SLEEP-RESISTANT PREFETCHING ---
   async function prefetchNextTrack() {
+    if(window.PainTogether?.active)return;
     if (state.hasPrefetchedNext) return;
     state.hasPrefetchedNext = true;
     const request = playbackRequest, signal = transitionAbort?.signal;
@@ -3929,6 +3942,7 @@
   });
 
   function getNextTrack() {
+    if(window.PainTogether?.active)return null;
     if (queue) {
       return queue.peekNext();
     }
@@ -3942,6 +3956,7 @@
   let pendingNextSkips = 0;
 
   async function playNextTrack(isAutoAdvance = false) {
+    if(window.PainTogether?.active){window.PainTogether.next(isAutoAdvance===true);return;}
     isAutoAdvance = isAutoAdvance === true;
     sampleListening();
     // DOM click handlers pass an Event; only an explicit true means natural end.
@@ -4012,6 +4027,7 @@
   }
 
   function playPrevTrack() {
+    if(window.PainTogether?.active){window.PainTogether.previous();return;}
     pendingNextSkips = 0;
     isNavigatingNext = false;
     if (queue) queue.cancelPendingSelection();
@@ -5188,6 +5204,7 @@
       if (state.currentTrackId) {
         recordTrackFinished(state.currentTrackId);
       }
+      if(window.PainTogether?.active){window.PainTogether.next(true);return;}
 
       if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
         const nowMs = Date.now();

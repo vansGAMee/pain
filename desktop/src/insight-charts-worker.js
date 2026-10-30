@@ -1,4 +1,4 @@
-importScripts('listening-insights.js','insight-charts-model.js');
+importScripts('listening-records.js','listening-insights.js','insight-charts-model.js');
 let cached,at=0,controller;
 self.onmessage=async({data})=>{
  const {id,range,force}=data;controller?.abort();controller=new AbortController();const signal=controller.signal;

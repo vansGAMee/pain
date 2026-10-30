@@ -9,6 +9,7 @@
  const shown=new Set();
  function movePastMix(){for(const item of mix)shown.add(String(item.track.id));}
  function playSelectedMix(track,tracks){
+  if(window.PainTogether?.active){for(const item of tracks)window.PainTogether.offer(item);return;}
   // Starting a preview accepts that exact list, including during a pending refresh.
   ticket++;mixPending=false;mixError=false;
   actions.playMix(track,tracks,mix);

@@ -18,6 +18,8 @@
   <link rel="stylesheet" href="track-info.css">
   <link rel="stylesheet" href="genre-profile.css">
   <link rel="stylesheet" href="insight-charts.css">
+  <link rel="stylesheet" href="dj-visuals.css">
+  <link rel="stylesheet" href="together.css">
   <link rel="stylesheet" href="artist-card.css">
   <link rel="stylesheet" href="form-night-theme.css">
 </head>
@@ -209,7 +211,7 @@
 
       <!-- Scrollable Views Viewport -->
       <div class="views-viewport">
-        <section class="view-pane" id="view-home"><div id="homeContent"></div></section>
+        <section class="view-pane" id="view-home"><div id="homeContent"></div><section class="together-entry"><div><h2 data-ru="На одной волне" data-en="On the same wavelength">На одной волне</h2><p data-ru="Одна очередь, один момент песни — даже с разными фонотеками. Ведущий с предложениями или равные права. Ваш сервер, ваше приглашение." data-en="One queue and a shared playhead, even with different libraries. Host with suggestions or equal controls. Your server, your invitation.">Одна очередь, один момент песни — даже с разными фонотеками. Ведущий с предложениями или равные права. Ваш сервер, ваше приглашение.</p></div><button type="button" id="togetherOpen"><span data-ru="Слушать вместе" data-en="Listen together">Слушать вместе</span><small id="togetherBadge"></small></button></section></section>
 
         <!-- VIEW 1: LIBRARY -->
         <section class="view-pane active" id="view-library">
@@ -1169,6 +1171,7 @@
           </div>
         </div>
 
+        <div class="settings-section"><div class="settings-section-head"><div class="settings-section-title" data-ru="Совместное прослушивание" data-en="Listening together">Совместное прослушивание</div><div class="settings-section-desc" data-ru="Можно подключить собственный совместимый сервер. Файлы через него только транслируются и не сохраняются." data-en="Connect your own compatible relay. Audio is streamed through it and never stored.">Можно подключить собственный совместимый сервер. Файлы через него только транслируются и не сохраняются.</div></div><button type="button" id="togetherSettingsOpen" class="btn-minimal" data-ru="Сервер и имя участника" data-en="Server and participant name">Сервер и имя участника</button></div>
         <div class="settings-section data-guard-settings-section">
           <div class="settings-section-head">
             <div class="settings-section-title" data-en="Data Safety & Backup (DataGuard)" data-ru="Защита данных и бэкапы (DataGuard)">Защита данных и бэкапы (DataGuard)</div>
@@ -1252,15 +1255,29 @@
     </div>
   </div>
 
+  <dialog id="togetherDialog" class="together-dialog" aria-labelledby="togetherTitle">
+    <header><h2 id="togetherTitle" data-ru="На одной волне" data-en="On the same wavelength">На одной волне</h2><button type="button" id="togetherClose" data-ru="Закрыть" data-en="Close">Закрыть</button></header>
+    <div id="togetherLobby"><p data-ru="Создайте комнату и передайте приглашение другу. Передаётся только музыка, которую вы добавили в общую очередь." data-en="Create a room and send your friend an invitation. Only songs you add to the shared queue can be streamed.">Создайте комнату и передайте приглашение другу. Передаётся только музыка, которую вы добавили в общую очередь.</p>
+      <div class="together-actions"><select id="togetherCreateMode" aria-label="Режим комнаты"><option value="host" data-ru="Ведущий и предложения" data-en="Host and suggestions">Ведущий и предложения</option><option value="equal" data-ru="Равные права" data-en="Equal rights">Равные права</option></select><button type="button" id="togetherCreate" class="together-primary" data-ru="Создать комнату" data-en="Create a room">Создать комнату</button></div>
+      <label for="togetherInviteInput" data-ru="Или вставьте приглашение друга" data-en="Or paste your friend's invitation">Или вставьте приглашение друга</label><input id="togetherInviteInput" placeholder="pain-listen://join?..." autocomplete="off"><div class="together-actions"><button type="button" id="togetherJoin" data-ru="Присоединиться" data-en="Join">Присоединиться</button></div>
+    </div>
+    <div id="togetherRoom" hidden><div class="together-room-heading"><p id="togetherMembers"></p><p id="togetherRole"></p><div class="together-actions"><select id="togetherMode" aria-label="Режим комнаты"><option value="host" data-ru="Ведущий и предложения" data-en="Host and suggestions">Ведущий и предложения</option><option value="equal" data-ru="Равные права" data-en="Equal rights">Равные права</option></select><button type="button" id="togetherCopy" data-ru="Пригласить друга" data-en="Invite a friend">Пригласить друга</button><button type="button" id="togetherLeave" data-ru="Выйти" data-en="Leave">Выйти</button></div><input id="togetherInviteOutput" readonly hidden aria-label="Ссылка приглашения"></div>
+      <h3 data-ru="Общая очередь" data-en="Shared queue">Общая очередь</h3><ol id="togetherQueue" class="together-queue"></ol>
+      <section id="togetherProposalsSection" hidden><h3 data-ru="Предложения" data-en="Suggestions">Предложения</h3><ol id="togetherProposals" class="together-queue"></ol></section>
+      <h3 data-ru="Добавить из вашей фонотеки" data-en="Add from your library">Добавить из вашей фонотеки</h3><input id="togetherSearch" type="search" placeholder="Название или исполнитель / Song or artist" aria-label="Поиск в своей фонотеке"><div id="togetherSongs" class="together-songs"></div>
+    </div>
+    <details id="togetherServerDetails"><summary data-ru="Свой сервер и имя" data-en="Your server and name">Свой сервер и имя</summary><label for="togetherName" data-ru="Как вас зовут в комнате" data-en="Your name in the room">Как вас зовут в комнате</label><input id="togetherName" maxlength="40" autocomplete="nickname"><label for="togetherServer" data-ru="Адрес сервера" data-en="Server address">Адрес сервера</label><input id="togetherServer" type="url" placeholder="https://your-server:8448" autocomplete="off"><label for="togetherPin" data-ru="SHA-256 сертификата (для собственного сертификата)" data-en="Certificate SHA-256 (for a self-signed certificate)">SHA-256 сертификата (для собственного сертификата)</label><input id="togetherPin" autocomplete="off" spellcheck="false"><p data-ru="Для публичного HTTPS-сертификата отпечаток можно оставить пустым. Приглашение само передаст адрес и отпечаток другу." data-en="Leave the fingerprint empty for a publicly trusted HTTPS certificate. The invitation carries your server and fingerprint automatically.">Для публичного HTTPS-сертификата отпечаток можно оставить пустым. Приглашение само передаст адрес и отпечаток другу.</p><button type="button" id="togetherSaveServer" data-ru="Сохранить сервер" data-en="Save server">Сохранить сервер</button></details>
+    <button type="button" id="togetherRetryAudio" hidden data-ru="Повторить подключение звука" data-en="Retry audio connection">Повторить подключение звука</button><p id="togetherStatus" role="status" aria-live="polite"></p>
+  </dialog>
   <dialog id="djDialog" class="dj-dialog" aria-labelledby="djTitle">
     <header class="dj-heading">
       <h2 id="djTitle">Smart DJ</h2>
       <button type="button" id="djClose" class="dj-text-button">Закрыть</button>
     </header>
     <section class="dj-section">
-      <h3 id="djWhyLabel">Почему этот трек</h3>
-      <p id="djTrack" class="dj-track"></p>
+      <div class="dj-record-heading"><img id="djCover" alt="" hidden><div><h3 id="djWhyLabel">Почему этот трек</h3><p id="djTrack" class="dj-track"></p></div></div>
       <p id="djReason"></p>
+      <div id="djVisuals" hidden></div>
       <details id="djWhyDetails" class="dj-why-details" hidden><summary id="djWhySummary">Подробнее о решении</summary><p id="djWhyFull"></p></details>
     </section>
     <section class="dj-section">
@@ -1359,7 +1376,9 @@
   <script src="insight-charts.js"></script>
   <script src="pulseflow-settings.js"></script>
   <script src="dj-explanation.js"></script>
+  <script src="dj-visuals.js"></script>
   <script src="dj-panel.js"></script>
+  <script src="together.js"></script>
   <script src="font-settings.js"></script>
   <script src="form-night-motion.js"></script>
   <script src="presentation.js"></script>

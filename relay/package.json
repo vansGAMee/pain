@@ -1,0 +1,8 @@
+{
+  "name": "pain-listening-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent, bounded-memory relay for Pain listening rooms",
+  "license": "ISC",
+  "dependencies": { "ws": "8.22.0" }
+}
