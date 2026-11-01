@@ -4,7 +4,7 @@ android {
  compileSdk 36
  defaultConfig {
   applicationId 'dev.mono.local'; minSdk 26; targetSdk 35
-  versionCode 38; versionName '1.8.11'
+  versionCode 39; versionName '1.9.0'
   testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
  }
  buildFeatures { buildConfig true }
@@ -25,14 +25,16 @@ dependencies {
 
 // One source of truth: Android packages the exact same algorithms as desktop.
 def sharedMusic = ['audio-timbre.js','audio-profile.js','session-graph.js','recommendation-model.js','taste-model.js',
-                   'queue-engine.js','listening-records.js','listening-insights.js','auto-eq.js','smart-volume.js',
+                   'queue-engine.js','listening-records.js','listening-insights.js','insight-charts-model.js','auto-eq.js','smart-volume.js',
                    'dj-state.js','mobile-engine.js']
 def generateMusicEngine = tasks.register('generateMusicEngine') {
+ inputs.files(['insight-charts.js','insight-charts.css'].collect { rootProject.file("desktop/src/$it") })
  inputs.files(sharedMusic.collect { rootProject.file("desktop/src/$it") })
  outputs.dir(layout.buildDirectory.dir('generated/musicAssets'))
  doLast {
   def directory = layout.buildDirectory.dir('generated/musicAssets').get().asFile
   directory.mkdirs()
+  ['insight-charts.js','insight-charts.css'].each { name -> new File(directory,name).text=rootProject.file("desktop/src/$name").getText('UTF-8') }
   new File(directory, 'music-engine.js').text = sharedMusic.collect {
    rootProject.file("desktop/src/$it").getText('UTF-8')
   }.join('\n;\n') + '''

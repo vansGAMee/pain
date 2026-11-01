@@ -13,7 +13,7 @@ function parseBody(body){
  return lines;
 }
 module.exports=class CompanionStore{
- constructor(dir){this.dir=dir;}
+ constructor(dir,removals){this.dir=dir;this.removals=removals||new (require('./library-removals'))(dir);}
  file(name){return path.join(this.dir,name);}
  tracks(){return read(this.file('library.json'),{tracks:[]}).tracks;}
  capture(){
@@ -42,10 +42,10 @@ module.exports=class CompanionStore{
   }
   // A song unavailable on this device remains portable and can resolve later.
   for(const[key,v]of Object.entries(retained))if(!entities[key]){const t=Model.resolve(v.track||{},indexed);if(v.kind!=='lyrics'||!t||!manualFiles.has(hash(String(t.id))+'.json'))entities[key]=v;}
-  return Model.validate(entities);
+  return Model.validate(this.removals.collections(entities));
  }
  apply(entities){
-  Model.validate(entities);const tracks=this.tracks(),indexed=Model.index(tracks),old=read(this.file('playlists.json'),[]),oldEntities=this.capture(),playlists=[],retained=Object.create(null),excluded=new Set(read(this.file('excluded-tracks.json'),[])),moments=read(this.file('favorite-moments.json'),{});
+  entities=this.removals.collections(Model.validate(entities));const tracks=this.tracks(),indexed=Model.index(tracks),old=read(this.file('playlists.json'),[]),oldEntities=this.capture(),playlists=[],retained=Object.create(null),excluded=new Set(read(this.file('excluded-tracks.json'),[])),moments=read(this.file('favorite-moments.json'),{});
   for(const[key,v]of Object.entries(entities)){
    if(v.kind==='playlist'){
     const existing=old.find(p=>(p.companionKey||'playlist:'+p.id)===key),id=existing?.id||'shared_'+hash(key).slice(0,24),resolved=v.tracks.map(p=>Model.resolve(p,indexed)).filter(Boolean);

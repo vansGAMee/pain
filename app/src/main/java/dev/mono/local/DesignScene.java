@@ -191,11 +191,14 @@ public final class DesignScene extends FrameLayout {
   }
 
   private int themed(int color) {
-    String theme = app.prefs.getString("theme", "paper");
+    String theme = app.prefs.getString("theme", "sakura");
     int a = Color.alpha(color);
     float lum =
         (Color.red(color) * .2126f + Color.green(color) * .7152f + Color.blue(color) * .0722f)
             / 255;
+    if(theme.equals("sakura")){
+      float t=Math.max(0,Math.min(1,(.94f-lum)/.87f));return Color.argb(a,Math.round(12+t*232),Math.round(9+t*228),Math.round(17+t*231));
+    }
     if (theme.equals("night")) {
       int v=(int)(8+(1-lum)*224);return Color.argb(a,v,v,v);
     }
@@ -269,8 +272,8 @@ public final class DesignScene extends FrameLayout {
   static boolean baking;
   Bitmap exportBitmap() { return background.bitmap; }
   private void requestRaster(JSONArray nodes) {
-    if(!baking) {
-      String asset="surfaces/"+app.prefs.getString("theme","paper")+"-"+page+".png";
+    if(!baking&&page!=0&&page!=2&&page!=3) {
+      String asset="surfaces/"+app.prefs.getString("theme","sakura")+"-"+page+".png";
       Bitmap baked=cache.get(asset);
       if(baked==null) try(java.io.InputStream input=getContext().getAssets().open(asset)) {
         baked=BitmapFactory.decodeStream(input);if(baked!=null)cache.put(asset,baked);
@@ -291,7 +294,7 @@ public final class DesignScene extends FrameLayout {
             + ":"
             + hidden
             + ":"
-            + app.prefs.getString("theme", "paper")
+            + app.prefs.getString("theme", "sakura")
             + ":"
             + app.prefs.getInt("depth", 72);
     Bitmap ready = cache.get(key);
@@ -349,9 +352,11 @@ public final class DesignScene extends FrameLayout {
     protected void onDraw(Canvas c) {
       super.onDraw(c);
       if(bitmap!=null) {
+        p.setAlpha(app.prefs.getString("theme","sakura").equals("sakura")?239:255);
         if(whole) c.drawBitmap(bitmap,new Rect(0,Math.round(from*2),bitmap.getWidth(),Math.min(bitmap.getHeight(),Math.round(to*2))),new Rect(0,0,getWidth(),getHeight()),p);
         else c.drawBitmap(bitmap,0,0,p);
       }
+
     }
   }
 
@@ -458,9 +463,9 @@ public final class DesignScene extends FrameLayout {
         JSONObject off = e.getJSONObject("offset");
         p.setColor(Color.BLACK);
         int col = color(e.getJSONObject("color"));
-        if (app.prefs.getString("theme", "paper").equals("dark"))
+        if (app.prefs.getString("theme", "sakura").equals("dark"))
           col = (col & 0xffffff) == 0xffffff ? 0x164f4f49 : 0x66000000;
-        if (app.prefs.getString("theme", "paper").equals("night"))
+        if (List.of("night","sakura").contains(app.prefs.getString("theme", "sakura")))
           col = (col & 0xffffff) == 0xffffff ? 0x182f2d32 : 0x99000000;
         p.setShadowLayer(
             (float) e.optDouble("radius") / 2 * depth,
@@ -493,7 +498,7 @@ public final class DesignScene extends FrameLayout {
             Math.max(.2f, (float) e.optDouble("radius") / 2 * depth),
             (float) off.optDouble("x") * depth,
             (float) off.optDouble("y") * depth,
-            app.prefs.getString("theme","paper").equals("night")
+            List.of("night","sakura").contains(app.prefs.getString("theme","sakura"))
                 ? ((color(e.getJSONObject("color"))&0xffffff)==0xffffff?0x182f2d32:0x99000000)
                 : themed(color(e.getJSONObject("color"))));
         c.drawPath(inv, p);
@@ -533,6 +538,7 @@ public final class DesignScene extends FrameLayout {
                 pos,
                 Shader.TileMode.CLAMP));
       }
+      if(app.prefs.getString("theme","sakura").equals("sakura")&&List.of("3:29","3:122","3:195").contains(n.optString("id"))){p.setShader(null);p.setColor(0xff100d16);}
       c.drawPath(path, p);
     }
     p.setShader(null);

@@ -2,6 +2,14 @@
  'use strict';
  const dialog=document.getElementById('togetherDialog'),el=id=>document.getElementById(id),player=window.PainPlayer;
  if(!dialog||!player)return;
+ const placement=document.getElementById('togetherPlacement'),entry=document.querySelector('#view-home > .together-entry'),home=document.getElementById('view-home');
+ function place(value){
+  const position=value==='top'?'top':'bottom';if(placement)placement.value=position;
+  if(entry&&home){if(position==='top')home.insertBefore(entry,home.firstChild);else home.appendChild(entry);entry.dataset.placement=position;}
+ }
+ try{place(localStorage.getItem('pain_together_placement'));}catch(_){place('bottom');}
+ if(placement)placement.addEventListener('change',()=>{place(placement.value);try{localStorage.setItem('pain_together_placement',placement.value);}catch(_){} });
+
  const ru=()=>localStorage.getItem('pain_lang')!=='en',t=(a,b)=>ru()?a:b;
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  let snapshot={},previous=null,applying=false,ticker,received=performance.now(),submitting=false,searchTimer,sessionTracks=[],queueKey='';
@@ -43,8 +51,9 @@
   const memberName=id=>state.members.find(m=>m.id===id)?.name||t('Слушатель','Listener');
   el('togetherMembers').textContent=state.members.map(m=>`${m.name}${m.id===state.host?t(' · ведущий',' · host'):''}${m.connected?'':t(' · не в сети',' · offline')}`).join('  /  ');
   el('togetherRole').textContent=state.mode==='equal'?t('Равные права: оба управляете очередью и воспроизведением.','Equal rights: both control playback and the queue.'):control()?t('Вы ведущий. Принимайте предложения и задавайте порядок.','You host. Accept suggestions and arrange the queue.'):t('Ведущий управляет музыкой. Вы можете предлагать песни.','The host controls playback. You can suggest songs.');
+  el('togetherSharing').checked=state.allowDownloads===true;el('togetherSharing').disabled=state.host!==snapshot.identity||state.capabilities?.downloads!==1;
   el('togetherMode').value=state.mode;el('togetherMode').disabled=state.host!==snapshot.identity;
-  const itemHTML=(item,index,proposal)=>`<li><div><strong>${esc(item.title)}</strong><span>${esc(item.artist)} · ${esc(memberName(item.owner))}${item.uid===state.playback.uid?t(' · сейчас',' · now'):''}</span></div><div class="together-item-actions">${control()?proposal?`<button data-together-action="accept" data-uid="${item.uid}" title="${t('В очередь','Accept')}">＋</button>`:`<button data-together-action="play" data-uid="${item.uid}" title="${t('Играть','Play')}">▷</button><button data-together-action="move" data-uid="${item.uid}" data-to="${index-1}"${index===0?' disabled':''} title="${t('Выше','Move up')}">↑</button>`:''}${control()?`<button data-together-action="remove" data-uid="${item.uid}" title="${t('Убрать','Remove')}">×</button>`:''}</div></li>`;
+  const itemHTML=(item,index,proposal)=>`<li><div><strong>${esc(item.title)}</strong><span>${esc(item.artist)} · ${esc(memberName(item.owner))}${item.uid===state.playback.uid?t(' · сейчас',' · now'):''}</span></div><div class="together-item-actions">${!proposal&&!item.localId?`<button data-together-action="save" data-uid="${item.uid}" ${!state.allowDownloads||state.capabilities?.downloads!==1?'disabled':''} title="${t('С разрешения ведущего сохранить в свою библиотеку','Save to your library with host permission')}">${t('Сохранить','Save')}</button>`:''}${control()?proposal?`<button data-together-action="accept" data-uid="${item.uid}" title="${t('В очередь','Accept')}">＋</button>`:`<button data-together-action="play" data-uid="${item.uid}" title="${t('Играть','Play')}">▷</button><button data-together-action="move" data-uid="${item.uid}" data-to="${index-1}"${index===0?' disabled':''} title="${t('Выше','Move up')}">↑</button>`:''}${control()?`<button data-together-action="remove" data-uid="${item.uid}" title="${t('Убрать','Remove')}">×</button>`:''}</div></li>`;
   const queue=el('togetherQueue'),key=JSON.stringify([state.queue,state.proposals,state.playback.uid,control(),ru()]);
   if(queue.dataset.version!==key){queue.dataset.version=key;queue.innerHTML=state.queue.map((item,index)=>itemHTML(item,index,false)).join('')||`<li>${t('Добавьте первую песню из своей фонотеки.','Add the first song from your library.')}</li>`;el('togetherProposals').innerHTML=state.proposals.map((item,index)=>itemHTML(item,index,true)).join('');}
   el('togetherProposalsSection').hidden=!state.proposals.length;
@@ -57,7 +66,7 @@
   if(active()&&!wasActive){const q=window.painQueue;previous={track:player.getTrack(),tracks:[...q.tracks],context:{...q.context},position:player.getAudio().currentTime};ticker=setInterval(align,1000);}
   if(wasActive&&!active()){
    clearInterval(ticker);player.sessionPause();
-   if(previous?.track){applying=true;try{player.playTrackInContext(previous.track,previous.tracks,previous.context,previous.position);player.sessionPause();}finally{applying=false;}}
+   if(previous?.track&&player.getTracks().some(t=>String(t.id)===String(previous.track.id))){applying=true;try{player.playTrackInContext(previous.track,previous.tracks,previous.context,previous.position);player.sessionPause();}finally{applying=false;}}
    else player.sessionReset();
    previous=null;sessionTracks=[];queueKey='';
   }
@@ -66,7 +75,7 @@
  }
  function search(){
   const query=el('togetherSearch').value.trim().toLocaleLowerCase();
-  const songs=[];for(const track of player.getTracks()){if(!query||[track.title,track.artist,track.album].some(v=>String(v||'').toLocaleLowerCase().includes(query)))songs.push(track);if(songs.length===30)break;}
+  const songs=[];for(const track of player.getTracks()){if(player.isExcluded?.(track.id))continue;if(!query||[track.title,track.artist,track.album].some(v=>String(v||'').toLocaleLowerCase().includes(query)))songs.push(track);if(songs.length===30)break;}
   el('togetherSongs').innerHTML=songs.map(track=>`<button type="button" data-together-add="${esc(track.id)}"><span><strong>${esc(track.title)}</strong><small>${esc(track.artist)}</small></span><span>＋</span></button>`).join('');
  }
  async function open(){
@@ -81,10 +90,11 @@
  el('togetherCreate').onclick=async()=>{if(submitting)return;submitting=true;try{await saveSettings();await command('create',{mode:el('togetherCreateMode').value});}catch(error){showError(error);}finally{submitting=false;}};
  el('togetherJoin').onclick=()=>run('join',{invite:el('togetherInviteInput').value.trim()});
  el('togetherSaveServer').onclick=()=>saveSettings().then(()=>el('togetherStatus').textContent=t('Настройки сохранены.','Settings saved.')).catch(showError);
+ el('togetherSharing').onchange=()=>run('sharing',{enabled:el('togetherSharing').checked});
  el('togetherLeave').onclick=()=>run('leave');el('togetherMode').onchange=()=>run('mode',{mode:el('togetherMode').value});
  el('togetherRetryAudio').onclick=()=>{retryAudio();align();};
  el('togetherCopy').onclick=async()=>{try{const {invite}=await command('invite');el('togetherInviteOutput').value=invite;el('togetherInviteOutput').hidden=false;try{await navigator.clipboard.writeText(invite);el('togetherStatus').textContent=t('Приглашение скопировано. Передайте его другу.','Invitation copied. Send it to your friend.');}catch(_){el('togetherInviteOutput').select();}}catch(error){showError(error);}};
- dialog.addEventListener('click',event=>{const add=event.target.closest('[data-together-add]');if(add)return run('add',{trackId:add.dataset.togetherAdd});const button=event.target.closest('[data-together-action]');if(button)run(button.dataset.togetherAction,{uid:button.dataset.uid,to:Number(button.dataset.to)});});
+ dialog.addEventListener('click',event=>{const add=event.target.closest('[data-together-add]');if(add)return run('add',{trackId:add.dataset.togetherAdd});const button=event.target.closest('[data-together-action]');if(button){if(button.dataset.togetherAction==='save'){button.disabled=true;button.textContent=t('Сохраняем…','Saving…');command('save',{uid:button.dataset.uid}).then(async()=>{await player.reloadLibrary();const next=await(await fetch('/api/listen/status')).json();update(next);el('togetherStatus').textContent=t('Трек сохранён в вашу библиотеку.','Track saved to your library.');}).catch(error=>{button.disabled=false;button.textContent=t('Повторить','Retry');showError(error);});}else run(button.dataset.togetherAction,{uid:button.dataset.uid,to:Number(button.dataset.to)});}});
  el('togetherSearch').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(search,120);};
  const events=new EventSource('/api/listen/events');events.onmessage=event=>{try{update(JSON.parse(event.data));}catch(error){showError(error);}};
  events.onerror=()=>{if(active()){snapshot.connected=false;player.sessionPause();render();}};

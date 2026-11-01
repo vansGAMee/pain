@@ -204,6 +204,19 @@ public final class SyncServer {
           }else{sendResponse(out,405,"Method Not Allowed","application/json","{}");return;}
           sendResponse(out,result==null?409:200,result==null?"Conflict":"OK","application/json",result==null?"{\"error\":\"Phone changed during sync; retry\"}":result.toString());
         }catch(Exception error){sendResponse(out,400,"Bad Request","application/json","{\"error\":\"Shared collections were not applied\"}");}
+      } else if ("/api/playback-handoff".equals(cleanPath)&&"POST".equalsIgnoreCase(method)) {
+        try{org.json.JSONObject input=new org.json.JSONObject(request.body);org.json.JSONObject result=app.io.submit(()->PlaybackHandoff.receive(app,input)).get(15,TimeUnit.SECONDS);sendResponse(out,200,"OK","application/json",result.toString());}
+        catch(Exception error){sendResponse(out,409,"Conflict","application/json","{\"error\":\"Sync the track before continuing\"}");}
+      } else if ("/api/library-removals".equals(cleanPath)) {
+        try {
+          org.json.JSONObject result;
+          if("GET".equalsIgnoreCase(method))result=app.io.submit(()->app.repo.removals.entries()).get(15,TimeUnit.SECONDS);
+          else if("POST".equalsIgnoreCase(method)){
+            org.json.JSONObject entries=new org.json.JSONObject(request.body).getJSONObject("entries");
+            result=app.io.submit(()->app.repo.removals.merge(entries)).get(15,TimeUnit.SECONDS);app.refresh();
+          }else{sendResponse(out,405,"Method Not Allowed","application/json","{}");return;}
+          sendResponse(out,200,"OK","application/json",new org.json.JSONObject().put("entries",result).toString());
+        }catch(Exception error){sendResponse(out,400,"Bad Request","application/json","{\"error\":\"Removals were not applied\"}");}
       } else if ("/api/library".equals(cleanPath) && "GET".equalsIgnoreCase(method)) {
         String json = app.repo.exportLibraryJson();
         sendResponse(out, 200, "OK", "application/json", json);
@@ -416,6 +429,7 @@ public final class SyncServer {
         false
     );
 
+    if(app.repo.removals.blocked(newTrack)){dest.delete();sendResponse(out,409,"Conflict","application/json","{\"error\":\"Recording removed from library\"}");return;}
     app.repo.addTrack(newTrack);
     app.refresh();
 

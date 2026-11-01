@@ -3,12 +3,15 @@ const path = require('path');
 
 const PROTECTED_FILES = [
   'library.json',
+  'library-removals.json',
+  'removed-track-ids.json',
   'stats.json',
   'favorite-moments.json',
   'excluded-tracks.json',
   'dj-state.json',
   'playlists.json',
   'desktop-preferences.json',
+  'home-appearance.json',
   'sync-pending.json',
   'pending-uploads.json'
 ];
@@ -204,18 +207,24 @@ function importBundle(dataDir, bundle) {
 
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+  const removals=new (require('./library-removals'))(dataDir);
+  // Union first: importing an old backup must never undo a deletion.
+  if(bundle.files['library-removals.json'])removals.merge(bundle.files['library-removals.json']);
   // Safety snapshot before import
   createSnapshot(dataDir, 'pre-import');
 
   const importedFiles = [];
   for (const [filename, content] of Object.entries(bundle.files)) {
     if (PROTECTED_FILES.includes(filename)) {
+      if(filename==='library-removals.json')continue;
+      if(filename==='removed-track-ids.json'){for(const id of content)removals.ids.add(String(id));removals.write(filename,[...removals.ids]);continue;}
       const targetFile = path.join(dataDir, filename);
       safeWrite(targetFile, content);
       importedFiles.push(filename);
     }
   }
 
+  if(Object.keys(removals.entries).length)removals.purge();
   // Safety snapshot after import
   createSnapshot(dataDir, 'post-import');
 

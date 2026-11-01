@@ -29,6 +29,10 @@ public final class MainActivity extends Activity {
   private ListenableFuture<MediaController> controllerFuture;
   private LinearLayout root, body;
   private DesignScene scene, dock;
+  private TextView handoffView;
+  private int insightsPeriod=7,insightsRequest;
+  private Repository.Stats insightsSource;
+  private ScrollView insightsScroll;
   private int page = 0;
   private float scale;
   private boolean resumed;
@@ -45,7 +49,7 @@ public final class MainActivity extends Activity {
 
   private String state(String key,boolean value){return app.prefs.getBoolean(key,value)?"включено":"выключено";}
   private String themeName() {
-    return switch(app.prefs.getString("theme","paper")){case "dark"->"Графит";case "mist"->"Туман";case "night"->"Ночь";default->"Тёплая бумага";};
+    return switch(app.prefs.getString("theme","sakura")){case "dark"->"Графит";case "mist"->"Туман";case "night"->"Ночь";case "sakura"->"Сакура · Ночь";default->"Тёплая бумага";};
   }
   private boolean isRu() {
     return app.prefs.getString("lang", "ru").equals("ru");
@@ -76,7 +80,7 @@ public final class MainActivity extends Activity {
   private String lyricTrack = "", lyricBody = "";
   private int lyricOffset, lyricIndex = -2;
   private boolean lyricLoading;
-  private static final int AUDIO_FILES = 10, LRC_FILE = 11, EXPORT = 12, EXPORT_LRC = 13;
+  private static final int AUDIO_FILES = 10, LRC_FILE = 11, EXPORT = 12, EXPORT_LRC = 13, WALLPAPER=14;
   private String importLyricTrack = "", exportBody = "";
   private int statsTicks;
   private final Runnable ticker =
@@ -113,6 +117,7 @@ public final class MainActivity extends Activity {
     root.setOrientation(LinearLayout.VERTICAL);
     root.setGravity(Gravity.CENTER_HORIZONTAL);
     root.setBackgroundColor(paper());
+    if((app.prefs.getString("theme","sakura").equals("sakura")||(page==0&&new java.io.File(getFilesDir(),"home-wallpaper.bin").exists()))&&(page!=0||app.prefs.getBoolean("homeWallpaperEnabled",true)))root.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{new ColorDrawable(paper()),new SakuraArt(page==0)}));
     setContentView(root);
     androidx.core.view.WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
     root.setOnApplyWindowInsetsListener(
@@ -135,6 +140,7 @@ public final class MainActivity extends Activity {
           scale = Math.min(root.getWidth() - root.getPaddingLeft() - root.getPaddingRight(), dp(440)) / 390f;
 
           show(page, false);
+          if(getIntent().getBooleanExtra("weeklyReport",false)){getIntent().removeExtra("weeklyReport");weeklyReport();}
         });
     app.listeners.add(dataListener);
     SessionToken token = new SessionToken(this, new ComponentName(this, PlaybackService.class));
@@ -154,6 +160,8 @@ public final class MainActivity extends Activity {
     if (app.hasPermission() && app.prefs.getBoolean("autoScan", true)) app.scan();
     requestRefreshRate();
   }
+
+  @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent.getBooleanExtra("weeklyReport",false)){intent.removeExtra("weeklyReport");weeklyReport();}}
 
   @Override
   protected void onResume() {
@@ -232,19 +240,21 @@ public final class MainActivity extends Activity {
     return Math.round(v * scale);
   }
 
-  private boolean isDarkTheme(){String t=app.prefs.getString("theme","paper");return t.equals("dark")||t.equals("night");}
+  private boolean isDarkTheme(){String t=app.prefs.getString("theme","sakura");return t.equals("dark")||t.equals("night")||t.equals("sakura");}
 
   private int paper() {
-    String t = app.prefs.getString("theme", "paper");
-    return t.equals("night") ? 0xff0d0d0d : t.equals("dark") ? 0xff292928 : t.equals("mist") ? 0xffeeeeF0 : 0xffefede6;
+    String t = app.prefs.getString("theme", "sakura");
+    return t.equals("sakura") ? 0xff0c0911 : t.equals("night") ? 0xff0d0d0d : t.equals("dark") ? 0xff292928 : t.equals("mist") ? 0xffeeeeF0 : 0xffefede6;
   }
 
   private int ink() {
-    return app.prefs.getString("theme","paper").equals("night") ? 0xffe5e1e8 : isDarkTheme() ? 0xffdeded5 : 0xff11110f;
+    return app.prefs.getString("theme","sakura").equals("sakura") ? 0xfff4edf8 : app.prefs.getString("theme","sakura").equals("night") ? 0xffe5e1e8 : isDarkTheme() ? 0xffdeded5 : 0xff11110f;
   }
 
   private void onData() {
-    if (isFinishing() || scene == null) return;
+    if(isFinishing())return;
+    if(page==3){bindMini();if(insightsSource!=app.stats)buildInsights();return;}
+    if(scene==null)return;
     if(lastCompanionGeneration!=app.companion.generation){lastCompanionGeneration=app.companion.generation;lyricTrack="";}
     bind();
     if (page == 2 && lastTracks != app.tracks) {
@@ -258,7 +268,7 @@ public final class MainActivity extends Activity {
     Set<String> h = new HashSet<>();
     switch (p) {
       case 0:
-        Collections.addAll(h, "3:35", "16:2", "16:3", "16:4");
+        Collections.addAll(h, "3:35", "16:2", "16:3", "16:4", "3:13", "3:14", "3:15", "3:16", "3:17", "3:18");
         break;
       case 1:
         Collections.addAll(
@@ -286,6 +296,9 @@ public final class MainActivity extends Activity {
         Collections.addAll(h, "22:61", "22:62", "22:63", "22:71", "22:72", "22:84", "22:85");
         break;
     }
+    if(p==0)Collections.addAll(h,"3:31","3:32");
+    if(p==2)Collections.addAll(h,"3:124","3:125");
+    if(p==3)Collections.addAll(h,"3:197","3:198");
     int navStart = p==0?2:p==2?13:p==3?24:p==4?35:p==5?46:-1;
     if(navStart>=0)for(int i=navStart;i<navStart+11;i++)h.add("13:"+i);
     return h;
@@ -300,11 +313,13 @@ public final class MainActivity extends Activity {
     progressViews.clear();
     dial = clock = pulse = discovery = repeatView = heartView = null;
     scene = dock = null;
+    handoffView=null;
     playerArt=miniArt=homeArt=null;
     libraryList = null;
     message = null;
     root.removeAllViews();
     root.setBackgroundColor(paper());
+    if((app.prefs.getString("theme","sakura").equals("sakura")||(page==0&&new java.io.File(getFilesDir(),"home-wallpaper.bin").exists()))&&(page!=0||app.prefs.getBoolean("homeWallpaperEnabled",true)))root.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{new ColorDrawable(paper()),new SakuraArt(page==0)}));
     getWindow().setStatusBarColor(paper());
     getWindow().setNavigationBarColor(paper());
     getWindow()
@@ -322,6 +337,7 @@ public final class MainActivity extends Activity {
     root.addView(body, new LinearLayout.LayoutParams(sx(390), 0, 1));
     if (page == 2) {
       buildLibrary();
+    } else if(page==3){scene=null;buildInsights();
     } else {
       float end = (page == 0 || page == 3) ? 710 : (page == 4 || page == 5) ? 774 : 854;
       ScrollView scroll = new ScrollView(this);
@@ -390,9 +406,9 @@ public final class MainActivity extends Activity {
       nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));
     }
     if (start < 712) {
-      miniArt=cover(dock,33,724,30,36,4);
+      miniArt=cover(dock,26,720,40,40,9);
       dock.action("Открыть плеер", 18, 712, 288, 56, () -> show(1, true));
-      addPlay(dock, 326, 724, 28, 30, true);
+      addPlay(dock, 326, 724, 28, 30, !app.prefs.getString("theme","sakura").equals("sakura"));
     }
   }
 
@@ -412,11 +428,15 @@ public final class MainActivity extends Activity {
     if (scene == null) return;
     switch (page) {
       case 0:
-        homeArt=cover(scene,266,271,42,42,21);
-        scene.action("Настройки", 320, 48, 48, 48, () -> show(6, true));
+        handoffView=label(app.prefs.contains("playbackHandoff")?(isRu()?"Продолжить с компьютера  ›":"Continue from computer  ›"):(isRu()?"Инструменты и настройки  ›":"Tools & settings  ›"),14);
+        handoffView.setTextColor(isDarkTheme()?0xffd5b5f3:ink());scene.put(handoffView,24,169,342,38);handoffView.setOnClickListener(v->{if(app.prefs.contains("playbackHandoff"))resumeFromPC();else quickTools();});
+        homeArt=cover(scene,246,248,96,96,16);
+        GradientDrawable coverBG=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff493469,0xff100d16});coverBG.setCornerRadius(sx(16));homeArt.setBackground(coverBG);
+        scene.put(new QuietSheen(this),24,214,342,194);
+        scene.action("Настройки", 320, 48, 48, 48, this::quickTools);
         TextView gear = label("☷", 23);
         scene.put(gear, 338, 60, 26, 28);
-        gear.setOnClickListener(v -> show(6, true));
+        gear.setOnClickListener(v -> quickTools());
         MicroMotion.press(gear,gear,.97f);
         scene.action(
             "Продолжить слушать",
@@ -444,7 +464,10 @@ public final class MainActivity extends Activity {
               else openLibrary();
             });
         message = label("", 12);
-        scene.put(message, 24, 658, 342, 48);
+        message.setVisibility(View.GONE);
+        LinearLayout tools=new LinearLayout(this);String[] names=isRu()?new String[]{"Smart DJ","Звук","Отчёт","Ещё"}:new String[]{"Smart DJ","Sound","Report","More"};Runnable[] actions={this::smartDjMenu,this::equalizer,this::weeklyReport,this::quickTools};
+        for(int i=0;i<names.length;i++){final Runnable action=actions[i];TextView button=label(names[i],12);button.setGravity(Gravity.CENTER);button.setMinHeight(dp(44));GradientDrawable bg=new GradientDrawable();bg.setColor(isDarkTheme()?0xff100c16:0xffe2ded4);bg.setCornerRadius(sx(10));button.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(sx(3),0,sx(3),0);tools.addView(button,lp);button.setOnClickListener(v->action.run());}
+        scene.put(tools,21,624,348,46);
         break;
       case 1:
         playerArt=cover(scene,151,332,88,88,8);
@@ -485,13 +508,14 @@ public final class MainActivity extends Activity {
         scene.put(dial, 48, 229, 294, 294);
         break;
       case 3:
-        scene.action("Подробная статистика", 24, 140, 342, 104, () -> show(5, true));
+        scene.action("Отчёт за неделю", 24, 140, 342, 104, this::weeklyReport);
+        TextView weekly=label(isRu()?"Отчёт за неделю  ›":"Weekly report  ›",15);scene.put(weekly,24,102,342,34);weekly.setOnClickListener(v->weeklyReport());
         scene.action("Период и подробности", 24, 270, 342, 434, () -> show(5, true));
         clock = new InstrumentView(this, "clock");
         clock.ink = ink();
         scene.put(clock, 50, 303, 106, 106);
         pulse = new InstrumentView(this, "bars");
-        pulse.ink = ink();
+        pulse.ink = app.prefs.getString("theme","sakura").equals("sakura")?0xffd5b5f3:ink();
         scene.put(pulse, 198, 672, 148, 32);
         discovery = new InstrumentView(this, "ratio");
         discovery.ink = ink();
@@ -581,7 +605,26 @@ public final class MainActivity extends Activity {
     }
   }
 
+  private void bindMini(){
+    Track track=current();if(miniArt!=null)Art.load(this,miniArt,track,true);
+    if(dock!=null){String title=track==null?(isRu()?"Выберите музыку":"Choose music"):track.title,artist=track==null?(isRu()?"Открыть библиотеку":"Open library"):track.artist;
+      for(String id:new String[]{"3:33","3:126","3:199"}){dock.text(id,title);if(app.prefs.getString("theme","sakura").equals("sakura")&&dock.texts.get(id)!=null)dock.texts.get(id).setTextColor(ink());}
+      for(String id:new String[]{"3:34","3:127","3:200"}){dock.text(id,artist);if(app.prefs.getString("theme","sakura").equals("sakura")&&dock.texts.get(id)!=null)dock.texts.get(id).setTextColor(0xffb3a1c3);}
+    }
+  }
+  private void buildInsights(){
+    insightsSource=app.stats;int request=++insightsRequest,period=insightsPeriod;
+    int scroll=insightsScroll==null?0:insightsScroll.getScrollY();
+    app.io.execute(()->{long from=period==0?0:LocalDate.now().minusDays(period-1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Repository.Stats stats=period==0?app.stats:app.repo.stats(from);
+      app.main.post(()->{if(page!=3||request!=insightsRequest||isFinishing())return;body.removeAllViews();insightsScroll=new ScrollView(this);insightsScroll.setVerticalScrollBarEnabled(false);
+        InsightsPanel panel=new InsightsPanel(this,app,stats,period,paper(),ink(),isDarkTheme(),days->{insightsPeriod=days;insightsScroll=null;buildInsights();},this::weeklyReport,this::quickTools,id->{Track track=app.track(id);if(track!=null)play(List.of(track),0);},()->show(5,true));
+        insightsScroll.addView(panel);body.addView(insightsScroll,new LinearLayout.LayoutParams(-1,-1));insightsScroll.post(()->insightsScroll.scrollTo(0,scroll));
+      });
+    });
+  }
   private void bind() {
+    bindMini();
+    if(handoffView!=null)handoffView.setText(app.prefs.contains("playbackHandoff")?(isRu()?"Продолжить с компьютера  ›":"Continue from computer  ›"):(isRu()?"Инструменты и настройки  ›":"Tools & settings  ›"));
     if (scene == null) return;
     Repository.Stats s = app.stats;
     if(isRu()) {
@@ -591,8 +634,8 @@ public final class MainActivity extends Activity {
     }
     Track t = current();
     if(playerArt!=null)Art.load(this,playerArt,t,false);
-    if(miniArt!=null)Art.load(this,miniArt,t,false);
-    if(homeArt!=null)Art.load(this,homeArt,t,false);
+    if(miniArt!=null)Art.load(this,miniArt,t,true);
+    if(homeArt!=null)Art.load(this,homeArt,t,true);
     String title = t == null ? (isRu() ? "Выберите музыку" : "Choose music") : t.title,
         artist = t == null ? (isRu() ? "Локальная библиотека" : "Local library") : t.artist;
     if(dock != null) for(String id:new String[]{"3:33","3:34","3:126","3:127","3:199","3:200"}) {
@@ -685,11 +728,11 @@ public final class MainActivity extends Activity {
                   ? "Доброй\nночи."
                   : hour < 12 ? "Доброе\nутро." : hour < 18 ? "Добрый\nдень." : "Добрый\nвечер.";
           scene.text("3:7", greet);
-          scene.text("3:8", "Твоя музыка, не алгоритмы.");
+          scene.text("3:8", "");
           scene.text("3:10", "ПРОДОЛЖИТЬ");
-          scene.text("3:11", t == null ? "Локальная\nбиблиотека" : t.album);
+          scene.text("3:11", t == null ? "Ваша\nмузыка" : t.title);
           scene.bounds("3:11", 42, 260, 181, 66);
-          scene.text("3:12", artist);
+          scene.text("3:12", t==null?(isRu()?"Открыть библиотеку":"Open library"):artist);
           scene.bounds("3:12", 42, 331, 175, 24);
           scene.text("12:3", "ЛОКАЛЬНО  •  " + app.tracks.size() + " ТРЕКОВ");
           scene.bounds("12:3", 42, 375, 230, 14);
@@ -710,10 +753,10 @@ public final class MainActivity extends Activity {
               hour < 6
                   ? "Good\nnight."
                   : hour < 12 ? "Good\nmorning." : hour < 18 ? "Good\nafternoon." : "Good\nevening.";
-          scene.text("3:7", greet);
-          scene.text("3:11", t == null ? "Your local\nlibrary" : t.album);
+          scene.text("3:7", greet);scene.text("3:8", "");
+          scene.text("3:11", t == null ? "Your\nmusic" : t.title);
           scene.bounds("3:11", 42, 260, 181, 66);
-          scene.text("3:12", artist);
+          scene.text("3:12", t==null?(isRu()?"Открыть библиотеку":"Open library"):artist);
           scene.bounds("3:12", 42, 331, 175, 24);
           scene.text("12:3", "LOCAL  •  " + app.tracks.size() + " TRACKS");
           scene.bounds("12:3", 42, 375, 230, 14);
@@ -969,7 +1012,7 @@ public final class MainActivity extends Activity {
           scene.bounds("22:35", 42, 562, 280, 20);
           scene.text(
               "22:36",
-              app.prefs.getString("theme", "paper")
+              app.prefs.getString("theme", "sakura")
                   + " · Language: English · depth "
                   + app.prefs.getInt("depth", 72)
                   + "%");
@@ -1584,7 +1627,7 @@ public final class MainActivity extends Activity {
               "Альбомы", "Треки", "Исполнители", "Папки", "Избранное", "Плейлисты", "＋ Новый плейлист"
             }
             : modes;
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(isRu() ? "Раздел библиотеки" : "Library")
         .setItems(
             titles,
@@ -1615,7 +1658,7 @@ public final class MainActivity extends Activity {
               "Длительность"
             }
             : options;
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(isRu() ? "Сортировка" : "Sort library")
         .setSingleChoiceItems(
             titles,
@@ -1663,7 +1706,7 @@ public final class MainActivity extends Activity {
       if (libraryMode.equals("Playlists") && !group.isEmpty()) options.add("Убрать из плейлиста");
     }
     if (e.playlist >= 0) options.add("Удалить плейлист");
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(e.title)
         .setItems(
             options.toArray(new String[0]),
@@ -1802,7 +1845,7 @@ public final class MainActivity extends Activity {
                 List<Long> ids = new ArrayList<>(lists.keySet());
                 List<String> names = new ArrayList<>(lists.values());
                 names.add("＋ New playlist");
-                new AlertDialog.Builder(this)
+                new PainMenu(this)
                     .setTitle("Добавить в плейлист")
                     .setItems(
                         names.toArray(new String[0]),
@@ -1845,7 +1888,7 @@ public final class MainActivity extends Activity {
               + "\n"
               + item.mediaMetadata.artist);
     }
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Очередь: " + rows.size())
         .setItems(rows.toArray(new String[0]), (d, index) -> queueItem(index))
         .setPositiveButton("Умная сортировка", (d, w) -> smartSortQueue())
@@ -1856,7 +1899,7 @@ public final class MainActivity extends Activity {
 
   private void queueItem(int index) {
     if (player == null || index >= player.getMediaItemCount()) return;
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("" + player.getMediaItemAt(index).mediaMetadata.title)
         .setItems(
             new String[] {"Воспроизвести", "Поднять", "Опустить", "Убрать"},
@@ -1897,7 +1940,7 @@ public final class MainActivity extends Activity {
         player.getRepeatMode() == Player.REPEAT_MODE_OFF
             ? "Выключено"
             : player.getRepeatMode() == Player.REPEAT_MODE_ONE ? "Один трек" : "Вся очередь";
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Порядок воспроизведения")
         .setItems(
             new String[] {
@@ -1906,7 +1949,7 @@ public final class MainActivity extends Activity {
               "Очистить следующие треки"
             },
             (d, i) -> {
-              if (i == 0) new AlertDialog.Builder(this).setTitle("Порядок воспроизведения")
+              if (i == 0) new PainMenu(this).setTitle("Порядок воспроизведения")
                   .setItems(new String[]{"По очереди","Случайный","Smart DJ"},(dd,mode)->{
                     if(app.service!=null)app.service.setSmart(mode==2);
                     player.setShuffleModeEnabled(mode==1);
@@ -1934,7 +1977,7 @@ public final class MainActivity extends Activity {
       "Настройки",
       "Smart DJ и сохранённые вайбы", "О треке", "Любимый момент"
     };
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(t == null ? "Плеер" : t.title)
         .setItems(
             names,
@@ -1980,7 +2023,7 @@ public final class MainActivity extends Activity {
 
   private void sleepDialog() {
     int[] values = {0, 15, 30, 60, 90, -1};
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(
             "Таймер сна"
                 + (app.service != null && app.service.sleepDeadline > 0 ? " включён" : ""))
@@ -1997,7 +2040,7 @@ public final class MainActivity extends Activity {
 
   private void speedDialog() {
     float[] speeds = {.75f, 1f, 1.25f, 1.5f, 2f};
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Скорость воспроизведения")
         .setItems(
             new String[] {"0.75×", "1×", "1.25×", "1.5×", "2×"},
@@ -2010,7 +2053,7 @@ public final class MainActivity extends Activity {
 
   private void equalizer() {
     String[] rows={"Автоэквалайзер: "+state("autoEq",false),"Умная громкость: "+state("smartVolume",false),"Ручной эквалайзер","Выключить эквалайзер","Предел громкости: "+app.prefs.getInt("volumeLimit",100)+"%","Системная панель звука"};
-    new AlertDialog.Builder(this).setTitle("Звук").setItems(rows,(d,i)->{
+    new PainMenu(this).setTitle("Звук").setItems(rows,(d,i)->{
       if(i==0){flip("autoEq",false);}
       else if(i==1)flip("smartVolume",false);
       else if(i==2){manualEqualizer();return;}
@@ -2052,7 +2095,7 @@ public final class MainActivity extends Activity {
   private void smartDjMenu(){
     Track t=current();boolean enabled=app.service!=null&&app.service.smartEnabled();
     String reason=app.service==null?"":app.service.smartReason;
-    new AlertDialog.Builder(this).setTitle("Smart DJ").setItems(new String[]{
+    new PainMenu(this).setTitle("Smart DJ").setItems(new String[]{
       "Подбор: "+(enabled?"включён":"выключен"),"Почему этот трек","Сохранить вайб текущего трека","Сохранённые вайбы","Исключить текущий трек из подбора","Вернуть исключённые треки"},(d,i)->{
       try{
         if(i==0){if(app.service!=null)app.service.setSmart(!enabled);toast(app.music.error.isEmpty()?"Smart DJ: "+state("smartDj",false):app.music.error);}
@@ -2077,14 +2120,79 @@ public final class MainActivity extends Activity {
       if(items==null||items.length()==0){info("Сохранённые вайбы","Выберите трек, послушайте его и сохраните его звучание через меню Smart DJ.");return;}
       String[] names=new String[items.length()+1];names[0]="Отпустить вайб";
       for(int i=0;i<items.length();i++){JSONObject item=items.getJSONObject(i);names[i+1]=(item.optString("id").equals(state.optString("activeId"))?"✓ ":"")+item.optString("name");}
-      new AlertDialog.Builder(this).setTitle("Сохранённые вайбы").setItems(names,(d,index)->{
+      new PainMenu(this).setTitle("Сохранённые вайбы").setItems(names,(d,index)->{
         try{if(index==0){changeVibe(new JSONObject().put("action","activate"));return;}
-          String id=items.getJSONObject(index-1).getString("id");new AlertDialog.Builder(this).setTitle(names[index]).setItems(new String[]{"Включить","Удалить"},(dd,i)->{
+          String id=items.getJSONObject(index-1).getString("id");new PainMenu(this).setTitle(names[index]).setItems(new String[]{"Включить","Удалить"},(dd,i)->{
             try{changeVibe(new JSONObject().put("action",i==0?"activate":"delete").put("id",id));}catch(Exception ignored){}
           }).show();
         }catch(Exception ignored){}
       }).setNegativeButton("Закрыть",null).show();
     }catch(Exception e){toast("Не удалось прочитать вайбы");}
+  }
+
+  private AppSheet panel(String title){return new AppSheet(this,title,paper(),ink(),isDarkTheme());}
+  private void quickTools(){
+    AppSheet sheet=panel(isRu()?"Всё под рукой":"Your music tools");
+    if(app.prefs.contains("playbackHandoff"))sheet.button(isRu()?"Продолжить с компьютера":"Continue from computer",null,this::resumeFromPC);
+    sheet.button(isRu()?"Отчёт за неделю":"Weekly report",isRu()?"Время, график и любимая музыка":"Listening time, chart and favorites",this::weeklyReport);
+    sheet.button("Smart DJ",isRu()?"Рекомендации и сохранённые вайбы":"Recommendations and saved vibes",this::smartDjMenu);
+    sheet.button(isRu()?"20 графиков как на ПК":"20 desktop listening charts",null,()->ChartGallery.open(this,app));
+    sheet.button(isRu()?"Звук и эквалайзер":"Sound & equalizer",null,this::equalizer);
+    sheet.button(isRu()?"Текст и караоке":"Lyrics & karaoke",null,()->{if(current()!=null)show(7,true);else toast(isRu()?"Сначала выберите трек":"Choose a track first");});
+    sheet.button(isRu()?"Исключённые треки":"Excluded tracks",isRu()?"Вернуть в рекомендации или удалить навсегда":"Restore recommendations or remove from library",this::excludedTracks);
+    sheet.button(isRu()?"Библиотека и файлы":"Library & files",null,this::scanOptions);
+    sheet.button(isRu()?"Устройства и синхронизация":"Devices & sync",null,this::syncOptions);
+    sheet.button(isRu()?"Внешний вид":"Appearance",null,this::appearance);
+    sheet.button(isRu()?"Очередь воспроизведения":"Playback queue",null,this::queue);
+    sheet.button(isRu()?"Избранное":"Favorites",null,()->{libraryMode="Favorites";group="";show(2,true);});
+    sheet.button(isRu()?"Плейлисты":"Playlists",null,()->{libraryMode="Playlists";group="";show(2,true);});
+    sheet.button(isRu()?"Таймер сна":"Sleep timer",null,this::sleepDialog);
+    sheet.button(isRu()?"Скорость воспроизведения":"Playback speed",null,this::speedDialog);
+    sheet.button(isRu()?"Любимый момент трека":"Favorite track moment",null,()->{if(current()!=null)momentMenu(current());else toast(isRu()?"Выберите трек":"Choose a track");});
+    sheet.button(isRu()?"Комфорт и история":"Comfort & history",null,this::comfortSettings);
+    sheet.button(isRu()?"Все настройки":"All settings",null,()->show(6,true));sheet.show();
+  }
+  private void excludedTracks(){
+    AppSheet sheet=panel(isRu()?"Исключённые треки":"Excluded tracks");
+    sheet.text(isRu()?"Исключение отключает рекомендации. Удаление очищает библиотеку и передаётся на ПК при синхронизации.":"Exclusion stops recommendations. Removal cleans the library and reaches your PC at the next sync.",14);
+    try{
+      JSONArray ids=new JSONArray(app.prefs.getString("djExcluded","[]"));int count=0;
+      for(int i=0;i<ids.length();i++){String id=ids.getString(i);Track track=app.track(id);if(track==null)continue;count++;
+        sheet.button(track.title+" · "+track.artist,null,()->{
+          AppSheet actions=panel(track.title);
+          actions.button(isRu()?"Вернуть в рекомендации":"Restore recommendations",null,()->{try{JSONArray old=new JSONArray(app.prefs.getString("djExcluded","[]")),next=new JSONArray();for(int j=0;j<old.length();j++)if(!old.getString(j).equals(id))next.put(old.getString(j));app.prefs.edit().putString("djExcluded",next.toString()).apply();app.music.refresh();excludedTracks();}catch(Exception error){toast(error.getMessage());}});
+          actions.button(isRu()?"Удалить из библиотеки на всех устройствах":"Remove from library on all devices",isRu()?"Также очистит плейлисты и историю этого трека":"Also clears playlists and this track’s history",()->{
+            AppSheet confirm=panel(isRu()?"Удалить этот трек?":"Remove this track?");
+            confirm.text(isRu()?"Исходный файл вне PAIN останется, но больше не появится после сканирования. Офлайн-ПК очистится при следующей синхронизации.":"Original files outside PAIN are kept and hidden from future scans. An offline PC is cleaned at the next sync.",15);
+            confirm.button(isRu()?"Удалить навсегда":"Remove permanently",null,()->app.io.execute(()->{try{app.repo.removals.remove(track);app.companion.generation++;app.refresh();app.main.post(()->toast(isRu()?"Удалено. Ожидает синхронизации с ПК.":"Removed. Waiting for PC sync."));}catch(Exception error){app.main.post(()->toast(error.getMessage()));}}),true,true);confirm.show();
+          },true,true);actions.show();
+        });
+      }
+      if(count==0)sheet.text(isRu()?"Исключённых треков нет":"No excluded tracks",16);
+    }catch(Exception error){sheet.text(error.getMessage(),14);}sheet.show();
+  }
+  private void resumeFromPC(){
+    if(player==null){toast(isRu()?"Плеер подключается. Повторите через секунду.":"Player is connecting. Try again in a moment.");return;}
+    String raw=app.prefs.getString("playbackHandoff",null);if(raw==null)return;
+    app.io.execute(()->{try{JSONObject saved=new JSONObject(raw);Track track=PlaybackHandoff.resolve(app,saved.getJSONObject("track"));
+      if(track==null)throw new IllegalStateException(isRu()?"Трек недоступен. Повторите синхронизацию.":"Track unavailable. Sync again.");
+      long position=saved.getLong("positionMs");app.main.post(()->{if(player==null||isFinishing())return;player.setMediaItem(track.mediaItem(),Math.min(position,Math.max(0,track.duration-1)));player.prepare();player.play();if(raw.equals(app.prefs.getString("playbackHandoff",null)))app.prefs.edit().remove("playbackHandoff").apply();show(1,true);});
+    }catch(Exception error){app.main.post(()->toast(error.getMessage()));}});
+  }
+
+  private void weeklyReport(){
+    app.io.execute(()->{LocalDate end=LocalDate.now().plusDays(1),start=end.minusDays(7);Repository.Stats report=app.repo.stats(start.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli());
+      app.main.post(()->{if(isFinishing()||isDestroyed())return;AppSheet sheet=panel(isRu()?"Ваша неделя в музыке":"Your week in music");
+        sheet.text(start+" — "+end.minusDays(1),14);sheet.text(Repository.formatTime(report.heard),32);
+        sheet.text(isRu()?report.unique+" треков · "+report.artists.size()+" исполнителей":report.unique+" songs · "+report.artists.size()+" artists",16);
+        sheet.content.addView(new WeekChart(this,report.days,start,ink(),isDarkTheme()?0xffd5b5f3:0xff76539a),new LinearLayout.LayoutParams(-1,dp(190)));
+        sheet.text(isRu()?"Любимая музыка":"Most played",20);
+        report.trackMs.entrySet().stream().filter(e->app.track(e.getKey())!=null).sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(5).forEach(e->{Track track=app.track(e.getKey());sheet.button(track.title,track.artist+" · "+Repository.formatTime(e.getValue()),()->play(List.of(track),0));});
+        if(report.heard==0)sheet.text(isRu()?"Послушайте музыку — здесь появится ваш отчёт.":"Listen to music to build your report.",15);
+        sheet.button(isRu()?"Вся статистика":"All listening stats",null,()->show(5,true));
+        sheet.button((isRu()?"Уведомление раз в неделю: ":"Weekly notification: ")+state("weeklyReport",false),null,()->{flip("weeklyReport",false);WeeklyReportJob.schedule(app);if(Build.VERSION.SDK_INT>=33&&app.prefs.getBoolean("weeklyReport",false)&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},102);weeklyReport();});sheet.show();
+      });
+    });
   }
 
   private void scanOptions() {
@@ -2095,9 +2203,10 @@ public final class MainActivity extends Activity {
       "Исключённые папки",
       "Только музыка: " + state("musicOnly", true),
       "Автосканирование: " + state("autoScan", true),
-      "Playlists"
+      "Playlists",
+      "Исключённые треки · удалить из библиотеки"
     };
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Музыка на устройстве")
         .setMessage(null)
         .setItems(
@@ -2117,7 +2226,7 @@ public final class MainActivity extends Activity {
                   break;
                 case 2:
                   int[] seconds = {0, 5, 10, 30, 60};
-                  new AlertDialog.Builder(this)
+                  new PainMenu(this)
                       .setTitle("Минимальная длительность")
                       .setItems(
                           new String[] {
@@ -2157,6 +2266,9 @@ public final class MainActivity extends Activity {
                   break;
                 case 5:
                   flip("autoScan", true);
+                  break;
+                case 7:
+                  excludedTracks();
                   break;
                 case 6:
                   libraryMode = "Playlists";
@@ -2205,26 +2317,41 @@ public final class MainActivity extends Activity {
     app.prefs.edit().putBoolean(key, !app.prefs.getBoolean(key, defaultValue)).apply();
   }
 
+  private void wallpaperOptions(){
+    AppSheet sheet=panel(isRu()?"Фон главной":"Home wallpaper");
+    sheet.button((isRu()?"Показывать изображение: ":"Show wallpaper: ")+state("homeWallpaperEnabled",true),null,()->{flip("homeWallpaperEnabled",true);show(page,false);});
+    sheet.button(isRu()?"Выбрать своё изображение":"Choose your image",isRu()?"До 5 МБ. Сохраняется только на телефоне.":"Up to 5 MB. Stored only on your phone.",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),WALLPAPER));
+    sheet.button(isRu()?"Вернуть сакуру":"Restore sakura",null,()->{new java.io.File(getFilesDir(),"home-wallpaper.bin").delete();SakuraArt.custom(null);app.prefs.edit().putBoolean("homeWallpaperEnabled",true).apply();show(page,false);});sheet.show();
+  }
+  private void saveWallpaper(Uri uri){
+    app.io.execute(()->{java.io.File temp=new java.io.File(getFilesDir(),"home-wallpaper.tmp");try{
+      try(java.io.InputStream in=getContentResolver().openInputStream(uri);java.io.OutputStream out=new java.io.FileOutputStream(temp)){if(in==null)throw new java.io.IOException("Изображение недоступно");byte[] buffer=new byte[32768];int size=0;for(int n;(n=in.read(buffer))!=-1;){size+=n;if(size>5*1024*1024)throw new java.io.IOException("Изображение должно быть не больше 5 МБ");out.write(buffer,0,n);}}
+      Bitmap decoded=SakuraArt.decode(temp);java.nio.file.Files.move(temp.toPath(),new java.io.File(getFilesDir(),"home-wallpaper.bin").toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      app.prefs.edit().putBoolean("homeWallpaperEnabled",true).commit();SakuraArt.custom(decoded);app.main.post(()->{if(!isFinishing())show(page,false);});
+    }catch(Exception error){app.main.post(()->toast(error.getMessage()));}finally{temp.delete();}});
+  }
+
   private void appearance() {
     String[] options = {
       (isRu() ? "Язык интерфейса: " : "Language: ") + (isRu() ? "Русский" : "English"),
-      (isRu() ? "Тема: " : "Theme: ") + (isRu()?themeName():app.prefs.getString("theme", "paper")),
+      (isRu() ? "Тема: " : "Theme: ") + (isRu()?themeName():app.prefs.getString("theme", "sakura")),
       (isRu() ? "Глубина рельефа: " : "Relief depth: ") + app.prefs.getInt("depth", 72) + "%",
       (isRu() ? "Анимации: " : "Motion: ") + state("motion", true),
       (isRu() ? "Вращение диска: " : "Disc motion: ") + state("discMotion", true),
       (isRu() ? "Высокая частота кадров: " : "High refresh rate: ") + state("highRefresh", true),
       (isRu() ? "Тактильный отклик: " : "Haptics: ") + state("haptic", true),
       isRu() ? "Масштаб текста" : "Размер текста",
-      isRu() ? "Ваше имя" : "Your name"
+      isRu() ? "Ваше имя" : "Your name",
+      isRu() ? "Фон главной" : "Home wallpaper"
     };
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(isRu() ? "Внешний вид и язык" : "Appearance & Language")
         .setItems(
             options,
             (d, i) -> {
               switch (i) {
                 case 0:
-                  new AlertDialog.Builder(this)
+                  new PainMenu(this)
                       .setTitle(isRu() ? "Язык интерфейса" : "Language")
                       .setItems(
                           new String[] {"English (Default)", "Русский"},
@@ -2235,14 +2362,14 @@ public final class MainActivity extends Activity {
                       .show();
                   break;
                 case 1:
-                  new AlertDialog.Builder(this)
+                  new PainMenu(this)
                       .setTitle("Тема")
                       .setItems(
-                          new String[] {"Тёплая бумага", "Туман", "Графит", "Ночь"},
+                          new String[] {"Сакура · Ночь", "Тёплая бумага", "Туман", "Графит", "Ночь"},
                           (dd, n) -> {
                             app.prefs
                                 .edit()
-                                .putString("theme", new String[] {"paper", "mist", "dark", "night"}[n])
+                                .putString("theme", new String[] {"sakura", "paper", "mist", "dark", "night"}[n])
                                 .apply();
                             setTheme(isDarkTheme()?R.style.DarkAppTheme:R.style.AppTheme);
                             show(page, false);
@@ -2277,7 +2404,7 @@ public final class MainActivity extends Activity {
                   flip("haptic", true);
                   break;
                 case 7:
-                  new AlertDialog.Builder(this)
+                  new PainMenu(this)
                       .setTitle("Размер текста")
                       .setItems(
                           new String[] {"100%", "110%", "120%"},
@@ -2286,6 +2413,9 @@ public final class MainActivity extends Activity {
                             show(page, false);
                           })
                       .show();
+                  break;
+                case 9:
+                  wallpaperOptions();
                   break;
                 case 8:
                   EditText input = input("Имя", app.prefs.getString("name", ""));
@@ -2319,7 +2449,7 @@ public final class MainActivity extends Activity {
       isRu() ? "Экспорт библиотеки в файл" : "Export library to JSON file",
       isRu() ? "Перезапустить сервер синхронизации" : "Restart sync server"
     };
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle(isRu() ? "Синхронизация с Windows" : "Windows & Desktop Sync")
         .setItems(
             items,
@@ -2465,7 +2595,7 @@ public final class MainActivity extends Activity {
       "Smart DJ и вайбы",
       isRu() ? "Для себя · громкость, движение, история" : "Everyday comfort · volume, motion, history"
     };
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Дополнительно")
         .setItems(
             names,
@@ -2539,7 +2669,7 @@ public final class MainActivity extends Activity {
 
   private void rangeDialog() {
     String[] titles = {"Сегодня", "7 дней", "30 дней", "Этот год", "Всё время"};
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Statistics range")
         .setItems(
             titles,
@@ -2689,7 +2819,7 @@ public final class MainActivity extends Activity {
         .sorted(Map.Entry.<String, Long>comparingByKey().reversed())
         .limit(31)
         .forEach(e -> rows.add(e.getKey() + " · " + Repository.formatTime(e.getValue())));
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Ваши привычки")
         .setItems(rows.toArray(new String[0]), (dialog,index)->{if(index==0)topFifty(false);if(index==1)topFifty(true);})
         .setPositiveButton(
@@ -2715,7 +2845,7 @@ public final class MainActivity extends Activity {
     if(artists){s.artists.entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(50).forEach(e->labels.add((labels.size()+1)+". "+e.getKey()+" · "+Repository.formatTime(e.getValue())));}
     else{s.counts.entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey())).filter(e->app.track(e.getKey())!=null).limit(50).forEach(e->{Track t=app.track(e.getKey());songs.add(t);labels.add(songs.size()+". "+t.title+" — "+t.artist+" · "+e.getValue());});}
     if(labels.isEmpty()){toast(isRu()?"За этот период пока нет данных":"No listening in this period yet");return;}
-    new AlertDialog.Builder(this).setTitle(artists?(isRu()?"Топ-50 исполнителей":"Top 50 artists"):(isRu()?"Топ-50 треков":"Top 50 songs")).setItems(labels.toArray(new String[0]),(d,i)->{if(!artists)play(songs,i);}).setNegativeButton(isRu()?"Закрыть":"Close",null).show();
+    new PainMenu(this).setTitle(artists?(isRu()?"Топ-50 исполнителей":"Top 50 artists"):(isRu()?"Топ-50 треков":"Top 50 songs")).setItems(labels.toArray(new String[0]),(d,i)->{if(!artists)play(songs,i);}).setNegativeButton(isRu()?"Закрыть":"Close",null).show();
   }
 
   private void trackInfo(Track track){
@@ -2728,7 +2858,7 @@ public final class MainActivity extends Activity {
   private void momentMenu(Track track){
     double position=player==null?0:player.getCurrentPosition()/1000.0;
     app.io.execute(()->{Double saved=null;try{saved=app.companion.moment(track);}catch(Exception ignored){}Double point=saved;
-      app.main.post(()->{if(isFinishing())return;new AlertDialog.Builder(this).setTitle(isRu()?"Любимый момент":"Favorite moment").setItems(new String[]{isRu()?"Сохранить текущий момент":"Save current moment",(isRu()?"Перейти к моменту":"Go to moment")+(point==null?" —": " · "+time(Math.round(point*1000))),isRu()?"Убрать отметку":"Remove marker"},(d,index)->{
+      app.main.post(()->{if(isFinishing())return;new PainMenu(this).setTitle(isRu()?"Любимый момент":"Favorite moment").setItems(new String[]{isRu()?"Сохранить текущий момент":"Save current moment",(isRu()?"Перейти к моменту":"Go to moment")+(point==null?" —": " · "+time(Math.round(point*1000))),isRu()?"Убрать отметку":"Remove marker"},(d,index)->{
         if(index==1){if(point!=null&&current()!=null&&current().id.equals(track.id)&&player!=null)player.seekTo(Math.round(point*1000));return;}
         app.io.execute(()->{try{if(index==0)app.companion.saveMoment(track,Math.round(position*10)/10.0);else app.companion.removeMoment(track);app.main.post(()->toast(index==0?(isRu()?"Отметка сохранена":"Marker saved"):(isRu()?"Отметка удалена":"Marker removed")));}catch(Exception ignored){}});
       }).setNegativeButton(isRu()?"Закрыть":"Close",null).show();});
@@ -2828,7 +2958,7 @@ public final class MainActivity extends Activity {
       openLibrary();
       return;
     }
-    new AlertDialog.Builder(this)
+    new PainMenu(this)
         .setTitle("Текст песни: " + t.title)
         .setItems(
             new String[] {
@@ -2871,7 +3001,7 @@ public final class MainActivity extends Activity {
                   break;
                 case 7:
                   String[] modes={"auto","regional","primary"};
-                  new AlertDialog.Builder(this).setTitle("Источники текста").setSingleChoiceItems(new String[]{"Автоматически: LRCLIB → KuGou","Сначала запасной (без VPN)","Только LRCLIB"},Arrays.asList(modes).indexOf(app.lyricsLookup.mode()),(dialog,choice)->{app.lyricsLookup.mode(modes[choice]);dialog.dismiss();toast("Источник изменён. Можно повторить поиск текста.");}).setNegativeButton("Закрыть",null).show();
+                  new PainMenu(this).setTitle("Источники текста").setSingleChoiceItems(new String[]{"Автоматически: LRCLIB → KuGou","Сначала запасной (без VPN)","Только LRCLIB"},Arrays.asList(modes).indexOf(app.lyricsLookup.mode()),(dialog,choice)->{app.lyricsLookup.mode(modes[choice]);dialog.dismiss();toast("Источник изменён. Можно повторить поиск текста.");}).setNegativeButton("Закрыть",null).show();
                   break;
               }
             })
@@ -3011,6 +3141,7 @@ public final class MainActivity extends Activity {
     super.onActivityResult(code, result, data);
     if (result != RESULT_OK || data == null) return;
     Uri uri = data.getData();
+    if(code==WALLPAPER&&uri!=null){saveWallpaper(uri);return;}
     if (code == AUDIO_FILES) {
       List<Uri> uris = new ArrayList<>();
       if (data.getClipData() != null)

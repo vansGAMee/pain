@@ -10,6 +10,7 @@ module.exports=function createScanner({cacheDir,downloadsDir,getTracks,io=fs}){
   for(const t of getTracks()){
    const id=String(t.id).replace(/[/\\?%*:|"<>]/g,'_');
    const ext=t.path?String(t.path).split('.').pop():'mp3',name=`${t.artist} - ${t.title}.${ext}`.replace(/[/\\?%*:|"<>]/g,'_').trim();
+   if(t.path&&names.has(String(t.path))&&path.basename(String(t.path))===String(t.path))candidates.set(id,[...(candidates.get(id)||[]),path.join(downloadsDir,t.path)]);
    if(names.has(name))candidates.set(id,[...(candidates.get(id)||[]),path.join(downloadsDir,name)]);
   }
   const entries=[...candidates],valid=new Array(entries.length);let cursor=0;

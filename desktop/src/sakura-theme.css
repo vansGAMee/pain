@@ -1,0 +1,26 @@
+/* Sakura uses Form Night's geometry, fonts and interaction states. Static art only. */
+:root[data-palette="sakura"] {
+ --form-shell:#050408;--form-surface:#0c0911;--form-raised:#100d16;
+ --ink:#f4edf8;--ink-secondary:#d3c6df;--ink-muted:#b3a1c3;
+ --accent:#d5b5f3;--heart-color:#eea6ce;--card-bg:#100d16;--card-relief:#07060b;
+ --border:#c0a3df29;--border-strong:#c0a3df4a;--night-edge:#c0a3df36;
+ --form-chart:#b798dc;--night-platinum:#ead8fa;--night-accent-ink:#241530;
+ --form-active-wash:#d5b5f31c;
+ --chart-1:#d5b5f3;--chart-2:#eea6ce;--chart-3:#f3c49e;--chart-4:#acb8f4;
+ --chart-5:#d68dc3;--chart-6:#a9d7ca;--chart-7:#ba99df;--chart-8:#a5c4ed;
+}
+[data-palette="sakura"] .app-layout {background:var(--form-shell)}
+[data-palette="sakura"] .sidebar {background:linear-gradient(160deg,#16101d,#07060b 70%)}
+[data-palette="sakura"] .views-viewport {background:linear-gradient(90deg,#0c0911f0 3%,#0c0911d9 52%,#0c091180),url('/assets/sakura-evening.png') right center/cover no-repeat,var(--form-surface)}
+[data-palette="sakura"] .bottom-player-bar {background:linear-gradient(120deg,#17101e,#09070e);border-color:var(--night-edge)}
+[data-palette="sakura"] :is(.home-turntable,.vinyl-outer-ring) {background:linear-gradient(145deg,#574165,#2b2237 65%);border-color:#d5b5f34d}
+[data-palette="sakura"] :is(.home-track.is-current,.tracks-table tbody tr.playing-row) {background:#d5b5f31c}
+[data-palette="sakura"] :is(.settings-panel,.joint-dialog) {background:var(--form-surface)}
+[data-palette="sakura"] .brand-night-mark {background:#d5b5f3}
+.preview-sakura {--preview-bg:#0c0911;--preview-side:#30213f;--preview-disc:#d5b5f3;--preview-bar:#eea6ce;background-image:linear-gradient(135deg,transparent,#b16a9650)}
+.together-sharing {display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.4;min-height:44px;color:var(--ink-secondary)}
+.together-sharing input {width:18px;height:18px;accent-color:var(--accent)}
+.together-item-actions button {min-height:36px}
+
+:root[data-home-wallpaper="off"] .views-viewport:has(#view-home.active){background:var(--form-surface)}
+:root[data-home-wallpaper="on"] .views-viewport:has(#view-home.active){background:linear-gradient(90deg,#0c0911f0,#0c0911a8),var(--home-wallpaper) center/cover no-repeat,var(--form-surface)}

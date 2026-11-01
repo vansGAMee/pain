@@ -4,13 +4,13 @@
 (function() {
   'use strict';
 
-  const isFormTheme = theme => theme === 'form' || theme === 'form-night';
+  const isFormTheme = theme => theme === 'form' || theme === 'form-night' || theme === 'sakura';
   let leaderboardPlays = [];
 
   // --- APPLICATION STATE ---
   const state = {
     lang: localStorage.getItem('pain_lang') || 'en',
-    theme: localStorage.getItem('pain_theme') || 'paper',
+    theme: localStorage.getItem('pain_theme') || 'sakura',
     viewMode: localStorage.getItem('pain_view_mode') || 'list',
     currentView: 'library',
     tracks: [],
@@ -209,6 +209,7 @@
         const remote = await res.json();
         if (Array.isArray(remote)) {
           let added = 0;
+          try{const removals=await(await fetch('/api/library-removals')).json();for(const id of removals.ids||[])if(state.excludedRecommendations.delete(String(id))){queue?.unexcludeTrack(String(id));added++;}}catch(_){}
           for (const id of remote) {
             const sid = String(id);
             if (!state.excludedRecommendations.has(sid)) {
@@ -375,9 +376,16 @@
     }
   }) : null;
   window.painQueue = queue;
+  document.getElementById('continueOnPhoneBtn')?.addEventListener('click',async event=>{
+    const track=window.PainPlayer.getTrack(),button=event.currentTarget;if(!track)return showToast(state.lang==='ru'?'Сначала выберите трек':'Choose a track first');
+    button.disabled=true;
+    try{const response=await fetch('/api/handoff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trackId:track.id,position:audio.currentTime||0})}),result=await response.json();if(!response.ok)throw Error(result.error);if(String(window.PainPlayer.getTrack()?.id)===String(track.id))window.PainPlayer.sessionPause();showToast(state.lang==='ru'?'На телефоне нажмите «Продолжить с компьютера».':'Tap “Continue from computer” on your phone.');}catch(error){showToast(error.message);}finally{button.disabled=false;}
+  });
   window.PainPlayer = {
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
     getTracks: () => state.tracks || [],
+    isExcluded: id => state.excludedRecommendations.has(String(id)),
+    reloadLibrary: async () => {const library=await(await fetch('/api/saved-library')).json();const previous=window.PainPlayer.getTrack();state.tracks=library.tracks||[];state.libraryDirty=true;if(previous&&!window.PainTogether?.active&&!state.tracks.some(t=>String(t.id)===String(previous.id)))window.PainPlayer.sessionReset();if(!window.PainTogether?.active)queue?.refreshLibrary(state.tracks,queue?.getContext().type==='library');state.playlists=await(await fetch("/api/playlists")).json();state.stats=await(await fetch("/api/saved-stats")).json();invalidatePlayCountsCache();if(queue)setQueueTasteStats(state.stats);renderPlaylistsSidebar();updateSidebarLikedCount();renderCurrentView();},
     getAudio: () => activeDeck || deckA,
     sessionPause: () => {if(!audio.paused)audio.pause();syncPlaybackState();},
     sessionResume: () => {initAudioNodes();if(audioCtx?.state==='suspended')audioCtx.resume().catch(()=>{});return audio.play();},
@@ -756,9 +764,28 @@
     }
   }
 
+  let homeWallpaperSettings;
+  function applyHomeWallpaper(){
+    if(!homeWallpaperSettings)return;const data=homeWallpaperSettings,enabled=data.enabled&&(state.theme==='sakura'||data.custom||data.userSet);
+    document.documentElement.dataset.homeWallpaper=enabled?'on':'off';
+    document.documentElement.style.setProperty('--home-wallpaper',`url("/api/appearance/wallpaper/image?v=${Number(data.version)||0}")`);
+    const toggle=document.getElementById('homeWallpaperSwitch');if(toggle)toggle.checked=data.enabled;
+  }
+  async function saveHomeWallpaper(data){const response=await fetch('/api/appearance/wallpaper',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}),result=await response.json();if(!response.ok)throw Error(result.error);homeWallpaperSettings=result;applyHomeWallpaper();}
+  async function initHomeWallpaper(){
+    try{const response=await fetch('/api/appearance/wallpaper');if(response.ok){homeWallpaperSettings=await response.json();applyHomeWallpaper();}}catch(_){}
+    const input=document.getElementById('homeWallpaperFile'),choose=document.getElementById('homeWallpaperChoose'),toggle=document.getElementById('homeWallpaperSwitch'),reset=document.getElementById('homeWallpaperReset');
+    choose.onclick=()=>input.click();toggle.onchange=()=>saveHomeWallpaper({enabled:toggle.checked}).catch(error=>{applyHomeWallpaper();showToast(error.message);});reset.onclick=()=>saveHomeWallpaper({reset:true}).catch(error=>showToast(error.message));
+    input.onchange=async()=>{const file=input.files[0];if(!file)return;choose.disabled=toggle.disabled=reset.disabled=true;try{if(file.size>5*1024*1024)throw Error(state.lang==='ru'?'Изображение должно быть не больше 5 МБ':'Image must be 5 MB or smaller');const bitmap=await createImageBitmap(file);const valid=bitmap.width>=16&&bitmap.height>=16&&bitmap.width*bitmap.height<=24000000;bitmap.close();if(!valid)throw Error(state.lang==='ru'?'Выберите изображение до 24 мегапикселей':'Choose an image up to 24 megapixels');const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});await saveHomeWallpaper({dataUrl});}catch(error){showToast(error.message);}finally{choose.disabled=toggle.disabled=reset.disabled=false;input.value='';}};
+  }
+
   // --- INITIALIZATION ---
   async function init() {
     applyTheme(state.theme);
+    initHomeWallpaper();
+    const changes=new EventSource('/api/library/events');let refreshing=false,repeat=false,first=true;
+    changes.onmessage=async()=>{if(first){first=false;return;}if(refreshing){repeat=true;return;}refreshing=true;try{do{repeat=false;await window.PainPlayer.reloadLibrary();await syncExcludedTracksFromServer();}while(repeat);}catch(_){}finally{refreshing=false;}};
+    window.addEventListener('focus',()=>window.PainPlayer.reloadLibrary().catch(()=>{}));
     applyLang(state.lang);
     applyViewMode(state.viewMode);
 
@@ -2001,14 +2028,17 @@
       resolveDuoPlaylist(pl);
       const count = (pl.trackIds || []).length;
       const li = document.createElement('li');
-      li.className = `custom-playlist-item ${state.activePlaylistId === pl.id ? 'active' : ''}`;
+      li.className = `custom-playlist-item playlist-list-item ${state.activePlaylistId === pl.id ? 'active' : ''}`;
       li.dataset.id = pl.id;
 
+      const first=state.tracks.find(track=>(pl.trackIds||[]).some(id=>String(id)===String(track.id)));
+      const countText=state.lang==='ru'?`${count} ${count%10===1&&count%100!==11?'трек':count%10>=2&&count%10<=4&&(count%100<12||count%100>14)?'трека':'треков'}`:`${count} ${count===1?'track':'tracks'}`;
+      li.setAttribute('role','button');li.tabIndex=0;li.title=pl.name;li.setAttribute('aria-label',`${pl.name}, ${countText}`);
       li.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        <span class="custom-pl-title">${escapeHtml(pl.name)}</span>
-        <span class="custom-pl-count">${count}</span>
+        <span class="custom-pl-art" aria-hidden="true">${first?`<img src="${escapeHtml(getCoverUrl(first))}" alt="" loading="lazy" decoding="async">`:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 11h11M4 16h8m5-3v7l4-2v-7z"/></svg>'}</span>
+        <span class="custom-pl-copy"><span class="custom-pl-title">${escapeHtml(pl.name)}</span><span class="custom-pl-count">${escapeHtml(countText)}</span></span>
       `;
+      li.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();li.click();}});
 
       li.addEventListener('click', () => {
         switchView('playlist', pl.id);
@@ -3004,7 +3034,7 @@
         if (titleEl) titleEl.classList.add('active-text');
         const indexNumSpan = tr.querySelector('.index-num');
         if (indexNumSpan) {
-          if (state.theme === 'form-night') {
+          if (['form-night','sakura'].includes(state.theme)) {
             if (!indexNumSpan.querySelector('.row-playback-mark')) indexNumSpan.innerHTML='<span class="row-playback-mark" role="img"><i></i><i></i><i></i></span>';
             indexNumSpan.firstElementChild.setAttribute('aria-label',state.isPlaying?(state.lang==='ru'?'Воспроизводится':'Playing'):(state.lang==='ru'?'Пауза':'Paused'));
             indexNumSpan.style.color='var(--accent)';
@@ -3302,11 +3332,26 @@
           <span class="excluded-track-title">${escapeHtml(title)}</span>
           <span class="excluded-track-artist">${escapeHtml(artist)}</span>
         </div>
+        <button type="button" class="btn-minimal" data-purge-id="${escapeHtml(id)}" style="padding:2px 8px; font-size:11px;">${state.lang==='ru'?'Удалить из библиотеки':'Remove from library'}</button>
         <button type="button" class="btn-minimal" data-restore-id="${escapeHtml(id)}" style="padding:2px 8px; font-size:11px;">
           ${state.lang === 'ru' ? 'Вернуть' : 'Restore'}
         </button>
       `;
-      const restoreBtn = item.querySelector('button');
+      const restoreBtn = item.querySelector('[data-restore-id]');
+      item.querySelector('[data-purge-id]').addEventListener('click',async e=>{
+        e.stopPropagation();
+        if(!confirm(state.lang==='ru'?'Убрать трек из библиотеки, плейлистов и статистики на ПК и телефоне? Удаление передастся при следующей синхронизации. Исходный файл вне PAIN останется, но больше не появится в библиотеке.':'Remove this recording from the library, playlists and history on PC and phone at the next sync? Original files outside PAIN are kept and hidden from future scans.'))return;
+        const button=e.currentTarget;button.disabled=true;
+        try{
+          const response=await fetch('/api/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trackId:id})}),result=await response.json();if(!response.ok)throw Error(result.error);
+          if(String(window.PainPlayer.getTrack()?.id)===String(id))window.PainPlayer.sessionReset();
+          state.excludedRecommendations.delete(String(id));localStorage.setItem('pain_excluded_recommendations',JSON.stringify([...state.excludedRecommendations]));
+          queue?.setExcludedTracks([...state.excludedRecommendations]);
+          await window.PainPlayer.reloadLibrary();
+          state.stats=await(await fetch('/api/saved-stats')).json();updateExcludedButtonsUI();updateSettingsExcludedSection();
+          showToast(state.lang==='ru'?'Трек удалён. Телефон очистится при следующей синхронизации.':'Removed. Phone will be cleaned at the next sync.');
+        }catch(error){showToast(error.message);button.disabled=false;}
+      });
       restoreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleExcludeRecommendation(id);
@@ -4093,9 +4138,12 @@
 
   // --- THEME & LANGUAGE ---
   function applyTheme(theme) {
-    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form', 'form-night'].includes(theme) ? theme : 'paper';
+    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form', 'form-night', 'sakura'].includes(theme) ? theme : 'sakura';
     state.theme = theme;
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-theme', theme==='sakura'?'form-night':theme);
+    document.documentElement.toggleAttribute('data-sakura',theme==='sakura');
+    if(theme==='sakura')document.documentElement.setAttribute('data-palette','sakura');else document.documentElement.removeAttribute('data-palette');
+    applyHomeWallpaper();
     window.dispatchEvent(new CustomEvent('pain:theme',{detail:theme}));
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => { input.checked = input.value === theme; });
     try {
@@ -4337,7 +4385,7 @@
         root.style.setProperty('--fluid-accent-base', hex);
         root.style.setProperty('--fluid-accent-light', `rgb(${rLight}, ${gLight}, ${bLight})`);
 
-        const isDark = ['dark', 'spotify', 'stereo', 'form-night'].includes(state.theme) || ['dark', 'spotify', 'stereo', 'form-night'].includes(root.getAttribute('data-theme'));
+        const isDark = ['dark', 'spotify', 'stereo', 'form-night', 'sakura'].includes(state.theme) || ['dark', 'spotify', 'stereo', 'form-night', 'sakura'].includes(root.getAttribute('data-theme'));
         if (isDark) {
           root.style.setProperty('--fluid-bg-color-1', `rgba(${rD1}, ${gD1}, ${bD1}, 0.45)`);
           root.style.setProperty('--fluid-bg-color-2', `rgba(${rD2}, ${gD2}, ${bD2}, 0.55)`);
@@ -4664,6 +4712,7 @@
         const oldIds = new Set(state.tracks.map(t => String(t.id)));
         const wholeLibrary = queue && queue.getContext().allowNew && queue.getTracks().length === oldIds.size && queue.getTracks().every(t => oldIds.has(String(t.id)));
         state.tracks = libData.tracks;
+        if(state.currentTrackId&&!state.tracks.some(t=>String(t.id)===String(state.currentTrackId))&&!window.PainTogether?.active)window.PainPlayer.sessionReset();
         if (queue) queue.refreshLibrary(state.tracks, wholeLibrary);
         state.currentTrackIndex = state.tracks.findIndex(t => t.id === state.currentTrackId);
         state.libraryDirty = true;

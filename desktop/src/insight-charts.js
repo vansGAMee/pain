@@ -120,6 +120,7 @@
  }
  function refresh(force=false){
   if(!active())return;
+  if(window.PainMobileCharts){root.setAttribute('aria-busy','true');window.PainMobileCharts.request(range);return;}
   if(!worker){worker=new Worker('insight-charts-worker.js');worker.onmessage=({data})=>{if(data.id!==sequence)return;root.setAttribute('aria-busy','false');if(data.error){status.textContent=t('Не удалось прочитать историю.','Could not read listening history.');return;}const key=JSON.stringify([ru(),data.result]);if(key!==fingerprint){fingerprint=key;render(data.result);}};worker.onerror=()=>{status.textContent=t('Не удалось построить графики.','Could not build charts.');root.setAttribute('aria-busy','false');};}
   root.setAttribute('aria-busy','true');worker.postMessage({id:++sequence,range,force});
  }
@@ -151,5 +152,6 @@
  window.addEventListener('pain:performance',()=>{for(const card of grid.children)card.classList.toggle('ic-animate',motion());});
  function motionUI(){const replay=root.querySelector('[data-insight-replay]');replay.disabled=!motion();replay.title=motion()?t('Повторить анимацию','Replay animation'):t('Анимация отключена в настройках движения или производительности','Animation is disabled by your motion or performance settings');for(const card of grid.children)card.classList.toggle('ic-animate',motion());}
  new MutationObserver(motionUI).observe(document.documentElement,{attributes:true,attributeFilter:['data-reduced-motion','data-performance-mode']});motionUI();
+ if(window.PainMobileCharts)window.PainMobileChartGallery={render(report){root.setAttribute('aria-busy','false');render(report);status.textContent=t('Нажмите на график или откройте числа ниже.','Tap a chart or open the numbers below.');},error(message){root.setAttribute('aria-busy','false');status.textContent=message;}};
  document.addEventListener('visibilitychange',visibility);visibility();
 })();

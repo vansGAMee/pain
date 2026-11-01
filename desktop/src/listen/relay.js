@@ -15,6 +15,7 @@ function createRelay(server,{maxRooms=32,maxClients=96,idleMs=30*60*1000}={}){
  function broadcast(room){
   room.touched=Date.now();
   const state={type:'state',room:room.id,mode:room.mode,host:room.host,revision:++room.revision,
+   allowDownloads:room.allowDownloads,capabilities:{downloads:1},
    members:[...room.members.values()].map(m=>({id:m.id,name:m.name,connected:!!m.ws})),
    queue:room.queue,proposals:room.proposals,playback:room.playback,serverNow:Date.now()};
   for(const member of room.members.values())send(member.ws,state);
@@ -50,7 +51,7 @@ function createRelay(server,{maxRooms=32,maxClients=96,idleMs=30*60*1000}={}){
     if(!member){
      if(m.type==='create'){
       if(rooms.size>=maxRooms)throw Error('Сервер заполнен, попробуйте позже');
-      room={id:token(),secret:token(),host:null,mode:m.mode==='equal'?'equal':'host',members:new Map(),queue:[],proposals:[],revision:0,touched:Date.now(),playback:{uid:null,position:0,paused:true,at:Date.now(),epoch:0}};rooms.set(room.id,room);
+      room={id:token(),secret:token(),host:null,mode:m.mode==='equal'?'equal':'host',allowDownloads:false,members:new Map(),queue:[],proposals:[],revision:0,touched:Date.now(),playback:{uid:null,position:0,paused:true,at:Date.now(),epoch:0}};rooms.set(room.id,room);
      }else{
       room=rooms.get(m.room);if(!room)throw Object.assign(Error('Комната закрыта или не существует'),{code:'ROOM_CLOSED'});
       if(m.type==='resume'){
@@ -65,15 +66,32 @@ function createRelay(server,{maxRooms=32,maxClients=96,idleMs=30*60*1000}={}){
     if(member.ws!==ws)return;
     room.touched=Date.now();
     if(m.type==='leave'){
+     for(const [id,t]of transfers)if(t.room===room.id&&(room.host===member.id||t.member===member.id||t.source===member.id))cancelTransfer(id);
      if(room.host===member.id){rooms.delete(room.id);for(const peer of room.members.values()){send(peer.ws,{type:'closed'});peer.ws?.close(1000,'Room closed');}}
      else{if(room.queue.find(t=>t.uid===room.playback.uid)?.owner===member.id)room.playback={uid:null,position:0,paused:true,at:Date.now(),epoch:room.playback.epoch+1};room.members.delete(member.id);room.queue=room.queue.filter(t=>t.owner!==member.id);room.proposals=room.proposals.filter(t=>t.owner!==member.id);broadcast(room);}
      return;
     }
-    if(m.type==='stream'){
+    if(m.type==='sharing'){
+     if(room.host!==member.id)throw Error('Разрешение на сохранение даёт ведущий');
+     room.allowDownloads=m.enabled===true;
+     if(!room.allowDownloads)for(const[id,t]of transfers)if(t.room===room.id&&t.download)cancelTransfer(id);
+     broadcast(room);return;
+    }
+    if(m.type==='withdraw'){
+     const item=[...room.queue,...room.proposals].find(t=>t.uid===m.uid);
+     if(item?.owner!==member.id)throw Error('Можно отозвать только свой файл');
+     room.queue=room.queue.filter(t=>t.uid!==m.uid);room.proposals=room.proposals.filter(t=>t.uid!==m.uid);
+     for(const[id,t]of transfers)if(t.room===room.id&&t.uid===m.uid)cancelTransfer(id);
+     if(room.playback.uid===m.uid)room.playback={uid:null,position:0,paused:true,at:Date.now(),epoch:room.playback.epoch+1};
+     broadcast(room);return;
+    }
+    if(m.type==='stream'||m.type==='download'){
+     if(m.type==='download'&&!room.allowDownloads)throw Error('Ведущий пока не разрешил сохранять треки');
+     if(m.type==='download'&&([...transfers.values()].filter(t=>t.download).length>=4||[...transfers.values()].some(t=>t.member===member.id&&t.download)))throw Error('Сохранение уже идёт. Дождитесь завершения');
      const item=room.queue.find(t=>t.uid===m.uid),owner=item&&room.members.get(item.owner);
      if(!owner?.ws)throw Error('Владелец файла сейчас не подключён');
      if(transfers.size>=64||[...transfers.values()].filter(t=>t.member===member.id).length>=4)throw Error('Слишком много потоков');
-     const id=token(),upload=token(),transfer={id,upload,member:member.id,room:room.id,source:item.owner};
+     const id=token(),upload=token(),transfer={id,upload,member:member.id,room:room.id,source:item.owner,uid:item.uid,download:m.type==='download'};
      transfer.timer=setTimeout(()=>cancelTransfer(id),60000);transfer.timer.unref();transfers.set(id,transfer);
      send(ws,{type:'stream-ready',request:m.request,ticket:id});
      send(owner.ws,{type:'serve',ticket:id,upload,track:item.trackId,range:typeof m.range==='string'&&/^bytes=\d+-\d*$/.test(m.range)?m.range:null});return;
@@ -90,6 +108,7 @@ function createRelay(server,{maxRooms=32,maxClients=96,idleMs=30*60*1000}={}){
     if(m.type==='accept'){
      const index=room.proposals.findIndex(t=>t.uid===m.uid);if(index>=0)room.queue.push(...room.proposals.splice(index,1));
     }else if(m.type==='remove'){
+     for(const[id,t]of transfers)if(t.room===room.id&&t.uid===m.uid)cancelTransfer(id);
      room.proposals=room.proposals.filter(t=>t.uid!==m.uid);room.queue=room.queue.filter(t=>t.uid!==m.uid);
      if(room.playback.uid===m.uid)room.playback={uid:null,position:0,paused:true,at:Date.now(),epoch:room.playback.epoch+1};
     }else if(m.type==='move'){

@@ -39,6 +39,30 @@ public class CompanionStoreTest {
   repo.removeFromPlaylist(list,"now-present");store.snapshot();assertEquals(List.of(a.id),repo.playlist(list));
   repo.saveLyrics(a.id,"Local edit while syncing",0);String id=result.getString("revision");assertNull(store.apply(id,entities));return null;
  });}
+ @Test public void removalSurvivesOfflineImportNewIdsOldBackupAndSharedCollections()throws Exception{io(()->{
+  String backup=repo.exportJson();long list=repo.createPlaylist("Keep list");repo.addToPlaylist(list,a.id);repo.addToPlaylist(list,b.id);
+  repo.saveLyrics(a.id,"Remove these lyrics",0);repo.record("removed-play",a.id,"test",1000,a.duration,1000,1000,1000,false,false);
+  repo.removals.remove(a);app.tracks=repo.tracks();assertNull(repo.track(a.id));assertEquals(List.of(b.id),repo.playlist(list));
+  repo.importJson(backup);assertNull(repo.track(a.id));
+  JSONObject alias=CompanionStore.pack(a).put("id","different-device-id").put("uri","file:///fixture/new-id");
+  repo.importJson(new JSONObject().put("tracks",new JSONArray().put(alias)).toString());assertNull(repo.track("different-device-id"));
+  repo.importJson(new JSONObject().put("plays",new JSONArray().put(new JSONObject().put("id","late-play").put("track",a.id).put("started",2000).put("heard",9000))).toString());
+  assertFalse(repo.exportStatsJson().contains("late-play"));assertFalse(repo.exportStatsJson().contains("removed-play"));
+  JSONObject entities=new JSONObject().put("playlist:stale",new JSONObject().put("kind","playlist").put("name","Old phone").put("tracks",new JSONArray().put(CompanionStore.pack(a)).put(CompanionStore.pack(b))));
+  JSONObject result=store.apply(store.snapshot().getString("revision"),entities);assertEquals(1,result.getJSONObject("entities").getJSONObject("playlist:stale").getJSONArray("tracks").length());
+  assertEquals(1,repo.removals.entries().length());assertNotNull(repo.track(b.id));return null;
+ });}
+ @Test public void handoffStoresExactPositionWithoutInterruptingPlaybackAndRejectsRemovedAudio()throws Exception{io(()->{
+  String prior=app.prefs.getString("playbackHandoff",null);
+  try{
+    JSONObject input=new JSONObject().put("track",CompanionStore.pack(a)).put("positionMs",12345);
+    assertEquals("ok",PlaybackHandoff.receive(app,input).getString("status"));
+    assertEquals(12345,new JSONObject(app.prefs.getString("playbackHandoff","{}")).getLong("positionMs"));
+    try{PlaybackHandoff.receive(app,new JSONObject(input.toString()).put("positionMs",a.duration));fail("Accepted end of file");}catch(IllegalArgumentException expected){}
+    repo.removals.remove(a);try{PlaybackHandoff.receive(app,input);fail("Accepted removed recording");}catch(IllegalArgumentException expected){}
+    return null;
+  }finally{if(prior==null)app.prefs.edit().remove("playbackHandoff").commit();else app.prefs.edit().putString("playbackHandoff",prior).commit();}
+ });}
  @Test public void actualHttpEndpointRejectsConcurrentEdits()throws Exception{
   JSONObject first=http(null);assertEquals(1,first.getInt("schema"));JSONObject entities=first.getJSONObject("entities");
   entities.put("playlist:wire",new JSONObject().put("kind","playlist").put("name","Over local HTTP").put("tracks",new JSONArray().put(CompanionStore.pack(a))));

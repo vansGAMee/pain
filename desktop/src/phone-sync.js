@@ -4,6 +4,7 @@ const mergeStats=require('./stats-store');
 const DjState=require('./dj-state');
 const { safeWrite, createSnapshot } = require('./data-guard');
 const CompanionStore=require('./companion-store'),CompanionModel=require('./companion-model');
+const LibraryRemovals=require('./library-removals');
 const flag=value=>value===true||value===1?1:0;
 function request(base,route,body,timeout=5000){
  return new Promise((resolve,reject)=>{
@@ -21,7 +22,7 @@ function request(base,route,body,timeout=5000){
 }
 class PhoneSync{
  constructor(dir){
-  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();this._djState=null;this.companion=new CompanionStore(dir);
+  this.dir=dir;this.pending=this.read('sync-pending.json',{favorites:[],plays:[]});this.chain=Promise.resolve();this._djState=null;this.removals=new LibraryRemovals(dir);if(Object.keys(this.removals.entries).length){this.removals.purge();this.pending=this.read('sync-pending.json',this.pending);}this.companion=new CompanionStore(dir,this.removals);
  }
  read(name,fallback){
   if(name==='dj-state.json'&&this._djState)return this._djState;
@@ -38,12 +39,14 @@ class PhoneSync{
   // and cannot contain PC files that are still waiting for upload.
   const tracks=new Map(this.read('library.json',{tracks:[]}).tracks.map(track=>[String(track.id),track]));
   for(const track of library.tracks)tracks.set(String(track.id),{...tracks.get(String(track.id)),...track});
+  for(const [id,track]of tracks)if(this.removals.blocked(track)){this.removals.ids.add(id);tracks.delete(id);}
+  this.removals.write('removed-track-ids.json',[...this.removals.ids]);
   const likes=new Map(this.pending.favorites.map(item=>[String(item.trackId),item.favorite]));
   return this.write('library.json',{...library,tracks:[...tracks.values()].map(track=>likes.has(String(track.id))?{...track,favorite:likes.get(String(track.id))}:track)});
  }
  saveStats(stats){
   if(!stats||!Array.isArray(stats.plays))throw new Error('Invalid statistics');
-  return this.write('stats.json',mergeStats(this.read('stats.json',{plays:[],slices:[]}),stats));
+  return this.write('stats.json',this.removals.stats(mergeStats(this.read('stats.json',{plays:[],slices:[]}),stats)));
  }
  saveDjState(state){
   const merged=DjState.merge(this.read('dj-state.json',{}),state);
@@ -51,6 +54,7 @@ class PhoneSync{
  }
  favorite(trackId,favorite){
   if(typeof trackId!=='string'||!trackId||trackId.length>1024)throw new Error('Invalid track');
+  if(this.removals.ids.has(trackId))return;
   const item={trackId,favorite:flag(favorite)};
   this.pending.favorites=this.pending.favorites.filter(p=>p.trackId!==trackId).concat(item);this.persist();
   this.saveLibrary(this.read('library.json',{tracks:[]}));
@@ -62,6 +66,7 @@ class PhoneSync{
   const media=input.media_heard??input.heard;if(!Number.isFinite(media)||media<0)throw new Error('Invalid coverage');
   const play={...input,id:input.id||'pc_'+createHash('sha256').update(input.track+'\0'+input.started).digest('hex'),session:input.session||'pc_companion',
    media_heard:Math.min(media,input.duration||media),finished:flag(input.finished),skipped:flag(input.skipped)};
+  if(this.removals.ids.has(input.track))return;
   const stats=this.saveStats({plays:[play]});
   const saved=stats.plays.find(p=>p.track===play.track&&(p.id===play.id||p.aliases?.includes(play.id)||p.started===play.started));
   this.pending.plays=mergeStats({plays:this.pending.plays},{plays:[saved]}).plays;this.persist();
@@ -78,6 +83,8 @@ class PhoneSync{
    }
   }
  }
+ mergeRemovals(entries){this.removals.merge(entries);this.pending={favorites:this.pending.favorites.filter(p=>!this.removals.ids.has(String(p.trackId))),plays:this.pending.plays.filter(p=>!this.removals.ids.has(String(p.track)))};this.persist();this.onRemovals?.();}
+ removeTrack(track){this.removals.remove(track);this.mergeRemovals(this.removals.entries);}
  flush(base){return this.serial(()=>this.sendPending(base));}
  async syncCompanion(base){
   const remote=await request(base,'/api/companion',undefined,15000);
@@ -92,6 +99,15 @@ class PhoneSync{
   return {items:Object.keys(applied.entities).length,conflicts:merged.conflicts.length+applied.conflicts.length};
  }
  synchronize(base){return this.serial(async()=>{
+  const initial=await request(base,'/api/library');
+  if(!Array.isArray(initial?.tracks))throw Error('Invalid phone snapshot');
+  if(initial.capabilities?.libraryRemovals===1){
+   const remote=await request(base,'/api/library-removals');
+   this.mergeRemovals(remote.entries);
+   // A local deletion made while awaiting HTTP must be included as well.
+   const ack=await request(base,'/api/library-removals',{entries:this.removals.entries},15000);
+   this.mergeRemovals(ack.entries);
+  }
   await this.sendPending(base);
   const [library,remote]=await Promise.all([request(base,'/api/library'),request(base,'/api/stats')]);
   let stats=remote;
@@ -115,8 +131,10 @@ class PhoneSync{
   }
   const result = {library:this.saveLibrary(library),stats:this.saveStats(stats),djState};
   if(library.capabilities?.companion===1){try{result.companion=await this.syncCompanion(base);}catch(error){result.companion={error:error.message};}}
+  result.library=this.read('library.json',result.library);result.stats=this.read('stats.json',result.stats);
   try { createSnapshot(this.dir, 'phone-sync'); } catch (_) {}
   return result;
  });}
 }
+PhoneSync.request=request;
 module.exports=PhoneSync;

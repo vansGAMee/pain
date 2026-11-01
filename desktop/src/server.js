@@ -51,6 +51,7 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
+const wallpaperRoute=require('./appearance-wallpaper')(DATA_DIR);
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
   resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
   getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
@@ -68,7 +69,9 @@ const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:
 const discordPresence=require('./discord-presence')(DATA_DIR);
 const transitionAudio=require('./transition-audio')(DATA_DIR);
 const personalRecommender=require('./personal-service')(DATA_DIR);
-const together=require('./listen/service')(DATA_DIR,{getTracks:getLibraryTracks,getPort:()=>server.address().port,defaults:require('./listen/defaults.json')});
+const together=require('./listen/service')(DATA_DIR,{getTracks:getLibraryTracks,getPort:()=>server.address().port,isExcluded:id=>phoneSync.read('excluded-tracks.json',[]).map(String).includes(String(id)),isRemoved:track=>phoneSync.removals.blocked(track),saveLibrary:track=>phoneSync.saveLibrary({tracks:[track]}),defaults:require('./listen/defaults.json')});
+phoneSync.onRemovals=()=>{libraryFileMtime=-1;together.withdrawUnavailable();};
+const libraryEvents=require('./library-events')(DATA_DIR,()=>{if(phoneSync.removals.reload())phoneSync.mergeRemovals(phoneSync.removals.entries);libraryFileMtime=-1;together.withdrawUnavailable();});
 const discordCovers=new Map();let discordTrackId;
 process.once('exit',()=>discordPresence.close());
 const catalog = require('./music-catalog')(DATA_DIR);
@@ -189,6 +192,7 @@ async function pushTrackToPhone(phoneBase, filePath, metadata) {
       if (metadata.artist) destUrl.searchParams.set('artist', metadata.artist);
       if (metadata.album) destUrl.searchParams.set('album', metadata.album);
       if (metadata.trackId) destUrl.searchParams.set('trackId', metadata.trackId);
+      if (metadata.duration) destUrl.searchParams.set('duration',String(metadata.duration));
 
       const stat = fs.statSync(filePath);
       const req = http.request(destUrl, {
@@ -499,6 +503,7 @@ function getLibraryTracks() {
 }
 
 function getResolvedAudioFilePath(trackId, readOnly = false, allowAlias = true) {
+  if(phoneSync.removals.ids.has(String(trackId)))return null;
   const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
   const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
 
@@ -827,6 +832,37 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/music-runtime') { runtimeInstaller.route(req,res);return; }
   if (pathname === '/api/personal/recommend') { personalRecommender.route(req,res);return; }
+  if(pathname==='/api/library/events'&&req.method==='GET'){libraryEvents.route(req,res);return;}
+  if(pathname.startsWith('/api/appearance/wallpaper')){wallpaperRoute(req,res,pathname);return;}
+  if(pathname==='/api/handoff'&&req.method==='POST'){
+    httpSafety.readBody(req,res,16384,async body=>{
+      try{
+        const input=JSON.parse(body),track=getLibraryTracks().find(t=>String(t.id)===String(input.trackId)),position=Number(input.position);
+        if(!track||!Number.isFinite(position)||position<0||position*1000>=track.duration)throw Error('Выберите доступный трек и позицию воспроизведения');
+        const base=getMobilePhoneBaseUrl(),library=await PhoneSync.request(base,'/api/library');
+        if(library.capabilities?.playbackHandoff!==1)throw Error('Обновите PAIN на телефоне для продолжения воспроизведения');
+        const model=require('./companion-model');
+        if(!model.resolve(model.pack(track),library.tracks)){
+          const file=await ensureAudio(String(track.id));
+          await pushTrackToPhone(base,file,{trackId:String(track.id),filename:(/^pc_upload_[0-9a-f]{16}$/.test(String(track.id))?String(track.id):'handoff-'+crypto.createHash('sha256').update(String(track.id)).digest('hex').slice(0,16))+path.extname(file),title:track.title,artist:track.artist,album:track.album,mime:track.mime,duration:track.duration});
+        }
+        // Recheck after the file transfer: an intervening deletion always wins.
+        if(phoneSync.removals.blocked(track))throw Error('Трек был удалён во время передачи');
+        const ack=await PhoneSync.request(base,'/api/playback-handoff',{track:model.pack(track),positionMs:Math.round(position*1000)},15000);
+        if(ack.status!=='ok')throw Error('Телефон не подтвердил сохранение позиции');
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(ack));
+      }catch(error){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error.message}));}
+    });return;
+  }
+  if(pathname==='/api/library/remove'&&req.method==='POST'){
+    httpSafety.readBody(req,res,16384,body=>{
+      try{const input=JSON.parse(body),track=getLibraryTracks().find(t=>String(t.id)===String(input.trackId));
+        if(!track)throw Error('Трек уже удалён или не найден');
+        phoneSync.removeTrack(track);together.withdrawUnavailable();
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok',pendingSync:true}));
+      }catch(error){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error.message}));}
+    });return;
+  }
   if (pathname.startsWith('/api/listen/')) { together.route(req,res,pathname).catch(()=>{if(!res.destroyed)res.destroy();});return; }
 
   if (pathname.startsWith('/api/transition-audio/')) {
@@ -939,6 +975,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  if(pathname==='/api/library-removals'&&req.method==='GET'){phoneSync.removals.reload();res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({entries:phoneSync.removals.entries,ids:[...phoneSync.removals.ids]}));return;}
   if (pathname === '/api/excluded-tracks') {
     const file = path.join(DATA_DIR, 'excluded-tracks.json');
     if (req.method === 'GET') {
@@ -954,7 +991,8 @@ const server = http.createServer((req, res) => {
           const parsed = JSON.parse(body);
           if (Array.isArray(parsed)) {
             const unique = Array.from(new Set(parsed.map(String)));
-            dataGuard.safeWrite(file, unique);
+            dataGuard.safeWrite(file, unique.filter(id=>!phoneSync.removals.ids.has(id)));
+            together.withdrawUnavailable();
             dataGuard.createSnapshot(DATA_DIR, 'excluded-change');
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(unique));
@@ -990,6 +1028,8 @@ const server = http.createServer((req, res) => {
       try {
         const bundle = JSON.parse(body);
         const result = dataGuard.importBundle(DATA_DIR, bundle);
+        phoneSync.mergeRemovals(phoneSync.read('library-removals.json',{}));
+        together.withdrawUnavailable();
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(result));
       } catch (err) {
@@ -1334,12 +1374,14 @@ const server = http.createServer((req, res) => {
   }
   if (pathname.startsWith('/api/cached-track/')) {
     const trackId=decodeURIComponent(pathname.substring('/api/cached-track/'.length));
+    if(phoneSync.removals.ids.has(trackId)){res.writeHead(410);res.end();return;}
     playbackStream(req,res,trackId,{phoneUrl:url.searchParams.get('phoneUrl')||undefined,refresh:url.searchParams.get('refresh')==='1'});return;
   }
 
   // Pre-fetch track in background for sleep-resistant seamless queue
   if (pathname.startsWith('/api/preload-track/') && req.method === 'POST') {
     const trackId = decodeURIComponent(pathname.substring('/api/preload-track/'.length));
+    if(phoneSync.removals.ids.has(trackId)){res.writeHead(410);res.end();return;}
     const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
     const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
     const tmpFile = path.join(CACHE_DIR, `${safeId}.${require("crypto").randomUUID()}.tmp`);
@@ -1617,7 +1659,7 @@ server.personalRecommender=personalRecommender;
 server.runtimeInstaller=runtimeInstaller;
 server.once('close',()=>runtimeInstaller.close());
 server.once('close',()=>personalRecommender.close());
-server.once('close',()=>together.close());
+server.once('close',()=>{together.close();libraryEvents.close();});
 server.headersTimeout=15000;
 server.requestTimeout=10*60*1000;
 

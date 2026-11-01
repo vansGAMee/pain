@@ -23,7 +23,7 @@ public final class Art {
  public static void load(Context context,ImageView view,Track track,boolean placeholder){
    String key=track==null?"":generation+":"+track.uri+":"+track.bytes+":"+track.added;
    if(key.equals(view.getTag()))return;
-   view.setTag(key);if(placeholder)view.setImageResource(R.drawable.ic_maple);else view.setImageDrawable(null);
+   view.setTag(key);if(placeholder)view.setImageResource(R.drawable.ic_music);else view.setImageDrawable(null);
    if(track==null)return;
    synchronized(pending){
      Bitmap hit=cache.get(key);if(hit!=null){view.setImageBitmap(hit);return;}

@@ -359,6 +359,13 @@ public final class PlaybackService extends MediaSessionService {
         .apply();
   }
 
+  public void pruneLibrary(){
+    if(player==null)return;
+    if(!currentId().isEmpty()&&app.track(currentId())==null)player.pause();
+    for(int i=player.getMediaItemCount()-1;i>=0;i--)if(app.track(player.getMediaItemAt(i).mediaId)==null)player.removeMediaItem(i);
+    smartScope.removeIf(id->app.track(id)==null);pinnedNext.removeIf(id->app.track(id)==null);saveQueue();
+  }
+
   private void restoreQueue() {
     if (player.getMediaItemCount() > 0) return;
     try {

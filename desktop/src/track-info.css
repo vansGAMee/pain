@@ -34,3 +34,4 @@
 .player-fullscreen .track-info-panel{display:none}
 .app-layout.player-fullscreen{grid-template-columns:minmax(0,1fr)!important}
 .player-fullscreen .main-stage{grid-column:1/-1;min-width:0}
+@media(min-width:1001px){:is([data-theme="form"],[data-theme="form-night"]) .app-layout.track-info-open:not(.player-fullscreen){grid-template-columns:180px minmax(0,1fr) clamp(240px,24vw,340px)}}

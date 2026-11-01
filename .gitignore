@@ -42,3 +42,7 @@ desktop/data/rating-pages/
 desktop/data/track-ratings/
 desktop/data/transition-audio/
 desktop/data/artist-info/
+
+# User-selected home wallpaper stays private
+desktop/data/home-wallpaper.bin
+desktop/data/home-wallpaper.bin.*.tmp

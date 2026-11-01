@@ -13,6 +13,8 @@ import java.util.*;
 /** Local durable store. All methods run on MonoApp.io, never on the render thread. */
 public final class Repository extends SQLiteOpenHelper {
   private final Context context;
+  public final LibraryRemovals removals=new LibraryRemovals(this);
+  SharedPreferences appPreferences(){return context.getSharedPreferences("mono",Context.MODE_PRIVATE);}
 
   public Repository(Context c) {
     this(c, "mono.db");
@@ -48,6 +50,8 @@ public final class Repository extends SQLiteOpenHelper {
   @Override
   public void onOpen(SQLiteDatabase d) {
     super.onOpen(d);
+    d.execSQL("CREATE TABLE IF NOT EXISTS library_removals(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
+    d.execSQL("CREATE TABLE IF NOT EXISTS removed_track_ids(id TEXT PRIMARY KEY)");
     d.execSQL("CREATE TABLE IF NOT EXISTS companion_entities(key TEXT PRIMARY KEY,kind TEXT NOT NULL,local_id INTEGER,value TEXT NOT NULL)");
   }
 
@@ -102,6 +106,7 @@ public final class Repository extends SQLiteOpenHelper {
   }
 
   private void upsert(SQLiteDatabase d, Track t) {
+    if(removals.blocked(t)){removals.rememberId(t.id);return;}
     ContentValues v = new ContentValues();
     v.put("id", t.id);
     v.put("uri", t.uri);
@@ -117,6 +122,18 @@ public final class Repository extends SQLiteOpenHelper {
     v.put("number", t.number);
     v.put("available", 1);
     if (d.update("tracks", v, "id=?", new String[] {t.id}) == 0) d.insertOrThrow("tracks", null, v);
+  }
+
+  void deleteManagedCopy(Track track){
+    if(track==null)return;try{
+      Uri uri=Uri.parse(track.uri);if(!"file".equals(uri.getScheme()))return;
+      java.io.File file=new java.io.File(uri.getPath()).getCanonicalFile(),external=context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC);
+      java.io.File[] roots={external,new java.io.File(context.getFilesDir(),"music")};boolean owned=false;
+      for(java.io.File root:roots)if(root!=null&&file.getPath().startsWith(root.getCanonicalPath()+java.io.File.separator))owned=true;
+      if(!owned)return;
+      try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM tracks WHERE uri=? LIMIT 1",new String[]{track.uri})){if(c.moveToFirst())return;}
+      file.delete();
+    }catch(java.io.IOException ignored){}
   }
 
   public void addTrack(Track t) {
@@ -255,6 +272,7 @@ public final class Repository extends SQLiteOpenHelper {
     SQLiteDatabase d = getWritableDatabase();
     d.beginTransaction();
     try {
+      if(removals.blockedId(track)){d.setTransactionSuccessful();return;}
       ContentValues v = new ContentValues();
       v.put("id", id);
       v.put("track", track);
@@ -298,6 +316,7 @@ public final class Repository extends SQLiteOpenHelper {
   public boolean hasLyrics(String id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM lyrics WHERE track=?",new String[]{id})){return c.moveToFirst();}}
 
   public void saveLyrics(String id, String body, int offset) {
+    if(removals.blockedId(id))return;
     ContentValues v = new ContentValues();
     v.put("track", id);
     v.put("body", body);
@@ -323,6 +342,7 @@ public final class Repository extends SQLiteOpenHelper {
   }
 
   public void addToPlaylist(long list, String track) {
+    if(removals.blockedId(track))return;
     getWritableDatabase()
         .execSQL(
             "INSERT OR IGNORE INTO playlist_tracks(list,track,position) VALUES(?,?,(SELECT"
@@ -540,6 +560,7 @@ public final class Repository extends SQLiteOpenHelper {
 
   public String exportJson() throws Exception {
     org.json.JSONObject root = new org.json.JSONObject();
+    root.put("libraryRemovals",removals.entries());
     root.put("schema", 1);
     root.put("exportedAt", Instant.now().toString());
     SharedPreferences prefs=context.getSharedPreferences("mono",Context.MODE_PRIVATE);
@@ -566,6 +587,7 @@ public final class Repository extends SQLiteOpenHelper {
   public int importJson(String json) throws Exception {
     org.json.JSONObject root = new org.json.JSONObject(json);
     SQLiteDatabase d = getWritableDatabase();
+    if(root.has("libraryRemovals"))removals.merge(root.getJSONObject("libraryRemovals"));
     int count = 0;
     d.beginTransaction();
     try {
@@ -573,6 +595,7 @@ public final class Repository extends SQLiteOpenHelper {
         org.json.JSONArray tracksArr = root.getJSONArray("tracks");
         for (int i = 0; i < tracksArr.length(); i++) {
           org.json.JSONObject tr = tracksArr.getJSONObject(i);
+          if(removals.blockedId(tr.optString("id"))||removals.blocked(tr)){removals.rememberId(tr.optString("id"));continue;}
           ContentValues v = new ContentValues();
           v.put("id", tr.optString("id"));
           if (tr.has("uri")) v.put("uri", tr.optString("uri"));
@@ -606,7 +629,7 @@ public final class Repository extends SQLiteOpenHelper {
           org.json.JSONObject pl = playsArr.getJSONObject(i);
           String id = pl.optString("id"), track = pl.optString("track");
           long started = pl.optLong("started", 0);
-          if (id.isEmpty() || track.isEmpty() || started <= 0) continue;
+          if (id.isEmpty() || track.isEmpty() || started <= 0 || removals.blockedId(track)) continue;
           String originalId = id;
           try (Cursor c = d.rawQuery("SELECT id FROM plays WHERE id=? OR (track=? AND started=?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1",
               new String[] {id, track, "" + started, id})) {
@@ -727,7 +750,8 @@ public final class Repository extends SQLiteOpenHelper {
     org.json.JSONObject root = new org.json.JSONObject();
     root.put("schema", 1);
     root.put("type", "library");
-    root.put("capabilities",new org.json.JSONObject().put("audioProfiles",1).put("companion",1));
+    root.put("libraryRemovals",removals.entries());
+    root.put("capabilities",new org.json.JSONObject().put("audioProfiles",1).put("companion",1).put("libraryRemovals",1).put("playbackHandoff",1));
     root.put("exportedAt", Instant.now().toString());
     org.json.JSONArray arr = new org.json.JSONArray();
     try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM tracks WHERE available=1", null)) {

@@ -34,12 +34,15 @@ public final class MonoApp extends Application {
     super.onCreate();
     repo = new Repository(this);
     prefs = getSharedPreferences("mono", MODE_PRIVATE);
+    if(!prefs.contains("theme"))prefs.edit().putString("theme","sakura").apply();
     companion = new CompanionStore(this);
     lyricsLookup = new LyricsLookup(this);
     music = new MusicEngine(this);
     syncServer = new SyncServer(this);
     syncServer.start();
+    io.execute(()->{SakuraArt.prepare(this);main.post(this::changed);});
     refresh();
+    WeeklyReportJob.schedule(this);
     observer =
         new ContentObserver(main) {
           @Override
@@ -72,6 +75,7 @@ public final class MonoApp extends Application {
           main.post(
               () -> {
                 tracks = t;
+                if(service!=null)service.pruneLibrary();
                 stats = s;
                 ready = true;
                 music.refresh();
@@ -117,6 +121,7 @@ public final class MonoApp extends Application {
           main.post(
               () -> {
                 tracks = t;
+                if(service!=null)service.pruneLibrary();
                 music.refresh();
                 scanning = false;
                 scanMessage = result;

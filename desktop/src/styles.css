@@ -4480,3 +4480,12 @@ html[data-reduced-motion] * {
 .performance-mode-select { max-width: 220px; padding: 8px 12px; border: 1px solid var(--border-color, #8886); border-radius: 8px; color: inherit; background: var(--bg-color, transparent); font: inherit; }
 html[data-performance-mode="maximum"] * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; transition: none !important; }
 #pulseflowSettings [hidden] { display: none !important; }
+
+/* Playlist rows share the actual class emitted by the sidebar renderer. */
+.custom-playlist-item{justify-content:flex-start;gap:10px;min-height:52px;min-width:0;padding:8px;border:1px solid transparent;font-weight:400}
+.custom-pl-art{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:8px;overflow:hidden;background:var(--card-relief);color:var(--ink-muted)}
+.custom-pl-art img{width:100%;height:100%;object-fit:cover}.custom-pl-art svg{width:21px;height:21px}
+.custom-pl-copy{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}.custom-pl-title{font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.custom-pl-count{font-size:10px;line-height:1.3;color:var(--ink-muted);font-weight:400}
+.custom-playlist-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sidebar,.custom-playlists-list,.views-viewport{scrollbar-width:none}.sidebar::-webkit-scrollbar,.custom-playlists-list::-webkit-scrollbar,.views-viewport::-webkit-scrollbar{display:none;width:0}
+@media(forced-colors:active){.sidebar,.custom-playlists-list,.views-viewport{scrollbar-width:auto}.sidebar::-webkit-scrollbar,.custom-playlists-list::-webkit-scrollbar,.views-viewport::-webkit-scrollbar{display:block;width:auto}}

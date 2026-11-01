@@ -74,6 +74,7 @@ public final class CompanionStore {
     }
     JSONArray excluded=new JSONArray(app.prefs.getString("djExcluded","[]"));
     for(int i=0;i<excluded.length();i++){Track t=app.repo.track(excluded.getString(i));if(t!=null){JSONObject song=pack(t);entities.put("excluded:"+trackKey(song),new JSONObject().put("kind","excluded").put("track",song));}}
+    entities=app.repo.removals.collections(entities);
     return new JSONObject().put("schema",1).put("entities",entities).put("revision",hash(canonical(entities)));
   }
   private JSONObject withResolved(JSONObject value)throws Exception{
@@ -96,6 +97,7 @@ public final class CompanionStore {
   /** Null means the user edited the phone after the PC fetched its snapshot. */
   public JSONObject apply(String expected,JSONObject entities)throws Exception{
     validate(entities);JSONObject current=snapshot();if(!current.getString("revision").equals(expected))return null;
+    entities=app.repo.removals.collections(entities);
     JSONObject previous=current.getJSONObject("entities");
     try(FileOutputStream out=new FileOutputStream(new File(app.getFilesDir(),"companion-before-sync.json"))){out.write(current.toString().getBytes(StandardCharsets.UTF_8));out.getFD().sync();}
     SQLiteDatabase d=app.repo.getWritableDatabase();Set<String> excluded=new LinkedHashSet<>();JSONArray beforeExcluded=new JSONArray(app.prefs.getString("djExcluded","[]"));for(int i=0;i<beforeExcluded.length();i++)excluded.add(beforeExcluded.getString(i));
