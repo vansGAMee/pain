@@ -33,6 +33,7 @@ public final class InstrumentView extends View {
   private android.animation.ValueAnimator playTransition;
 
   public void setPlaying(boolean value) {
+    if (playing == value) return;
     playing = value;
     if (playTransition != null) playTransition.cancel();
     float target = value ? 1f : 0f;

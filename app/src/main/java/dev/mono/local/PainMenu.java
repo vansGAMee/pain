@@ -20,9 +20,8 @@ final class PainMenu {
  PainMenu setNeutralButton(CharSequence label,DialogInterface.OnClickListener click){return button(label,click,DialogInterface.BUTTON_NEUTRAL);}
  private PainMenu button(CharSequence label,DialogInterface.OnClickListener click,int id){buttons.add(label);clicks.add(click);which.add(id);return this;}
  Dialog show(){
-  String theme=context.getSharedPreferences("mono",Context.MODE_PRIVATE).getString("theme","sakura");boolean dark=List.of("sakura","night","dark").contains(theme);
-  int paper=theme.equals("sakura")?0xff0c0911:theme.equals("night")?0xff0d0d0d:theme.equals("dark")?0xff292928:theme.equals("mist")?0xffeeeef0:0xffefede6;
-  AppSheet sheet=new AppSheet(context,title.toString(),paper,dark?0xfff4edf8:0xff11110f,dark);
+  MobilePalette palette=new MobilePalette((MonoApp)context.getApplicationContext());
+  AppSheet sheet=new AppSheet(context,title.toString(),palette.paper,palette.ink,palette.dark);
   if(message!=null)sheet.text(message.toString(),15);if(view!=null)sheet.content.addView(view,new LinearLayout.LayoutParams(-1,-2));
   if(items!=null)for(int i=0;i<items.length;i++){final int index=i;sheet.button((checked==i?"✓  ":"")+items[i],null,()->{if(select!=null)select.onClick(sheet.dialog,index);});}
   for(int i=0;i<buttons.size();i++){final int index=i;sheet.button(buttons.get(i).toString(),null,()->{if(clicks.get(index)!=null)clicks.get(index).onClick(sheet.dialog,which.get(index));});}

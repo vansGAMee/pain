@@ -9,8 +9,10 @@ import java.util.*;
 /** Seven bounded bars, drawn only when the report is visible. */
 final class WeekChart extends View {
  private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final long[] values=new long[7];private final String[] labels=new String[7];private final int ink,accent;private final float density;
- WeekChart(Context c,Map<String,Long> days,LocalDate first,int ink,int accent){super(c);this.ink=ink;this.accent=accent;density=c.getResources().getDisplayMetrics().density;StringBuilder description=new StringBuilder();
-  for(int i=0;i<7;i++){LocalDate day=first.plusDays(i);values[i]=days.getOrDefault(day.toString(),0L);labels[i]=day.getDayOfWeek().getDisplayName(TextStyle.SHORT,Locale.forLanguageTag(c.getSharedPreferences("mono",Context.MODE_PRIVATE).getString("lang","ru")));description.append(day).append(": ").append(Repository.formatTime(values[i])).append(". ");}setContentDescription(description);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+ WeekChart(Context c,Map<String,Long> days,LocalDate first,int ink,int accent){super(c);this.ink=ink;this.accent=accent;density=c.getResources().getDisplayMetrics().density;bind(days,first);
+ }
+ void bind(Map<String,Long> days,LocalDate first){Context c=getContext();StringBuilder description=new StringBuilder();
+  for(int i=0;i<7;i++){LocalDate day=first.plusDays(i);values[i]=days.getOrDefault(day.toString(),0L);labels[i]=day.getDayOfWeek().getDisplayName(TextStyle.SHORT,Locale.forLanguageTag(c.getSharedPreferences("mono",Context.MODE_PRIVATE).getString("lang","ru")));description.append(day).append(": ").append(Repository.formatTime(values[i])).append(". ");}setContentDescription(description);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);invalidate();
  }
  @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);long max=1;for(long value:values)max=Math.max(max,value);float cell=getWidth()/7f,baseline=getHeight()-30*density,height=getHeight()-58*density;
   paint.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(10*density);

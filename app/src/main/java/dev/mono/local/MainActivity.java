@@ -28,20 +28,29 @@ public final class MainActivity extends Activity {
   private MediaController player;
   private ListenableFuture<MediaController> controllerFuture;
   private LinearLayout root, body;
-  private DesignScene scene, dock;
+  private DesignScene scene;
+  private MobileDock mobileDock;
+  private String appearanceKey = "";
+  private ScrollView pageScroll;
+  private final android.util.SparseIntArray scrollPositions = new android.util.SparseIntArray();
+  private Parcelable libraryPosition, pendingLibraryPosition;
+  private String savedLibraryKey = "", builtLibraryKey = "";
   private TextView handoffView;
   private int insightsPeriod=7,insightsRequest;
   private Repository.Stats insightsSource;
   private ScrollView insightsScroll;
+  private InsightsPanel insightsPanel;
+  private final android.util.SparseArray<Repository.Stats> insightsCache = new android.util.SparseArray<>();
   private int page = 0;
   private float scale;
   private boolean resumed;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Runnable dataListener = this::onData;
   private final List<InstrumentView> plays = new ArrayList<>(), progressViews = new ArrayList<>();
+  private final List<View> playButtons = new ArrayList<>();
   private InstrumentView dial, clock, pulse, discovery, repeatView, heartView;
   private TextView message;
-  private ImageView playerArt,miniArt,homeArt;
+  private ImageView playerArt,homeArt;
   private ListView libraryList;
   private LibraryAdapter adapter;
   private String libraryTitle = "";
@@ -242,18 +251,13 @@ public final class MainActivity extends Activity {
 
   private boolean isDarkTheme(){String t=app.prefs.getString("theme","sakura");return t.equals("dark")||t.equals("night")||t.equals("sakura");}
 
-  private int paper() {
-    String t = app.prefs.getString("theme", "sakura");
-    return t.equals("sakura") ? 0xff0c0911 : t.equals("night") ? 0xff0d0d0d : t.equals("dark") ? 0xff292928 : t.equals("mist") ? 0xffeeeeF0 : 0xffefede6;
-  }
+  private int paper() { return new MobilePalette(app).paper; }
 
-  private int ink() {
-    return app.prefs.getString("theme","sakura").equals("sakura") ? 0xfff4edf8 : app.prefs.getString("theme","sakura").equals("night") ? 0xffe5e1e8 : isDarkTheme() ? 0xffdeded5 : 0xff11110f;
-  }
+  private int ink() { return new MobilePalette(app).ink; }
 
   private void onData() {
     if(isFinishing())return;
-    if(page==3){bindMini();if(insightsSource!=app.stats)buildInsights();return;}
+    if(page==3){bindMini();updatePlayback();if(insightsSource!=app.stats)buildInsights();return;}
     if(scene==null)return;
     if(lastCompanionGeneration!=app.companion.generation){lastCompanionGeneration=app.companion.generation;lyricTrack="";}
     bind();
@@ -306,18 +310,35 @@ public final class MainActivity extends Activity {
 
   private void show(int next, boolean animate) {
     if (scale <= 0) return;
+    if (pageScroll != null) scrollPositions.put(page, pageScroll.getScrollY());
+    if (libraryList != null) {
+      libraryPosition = libraryList.onSaveInstanceState();
+      savedLibraryKey = builtLibraryKey;
+    }
     page = next;
+    String key = app.prefs.getString("theme", "sakura") + ":" + app.prefs.getString("lang", "ru")
+        + ":" + app.prefs.getFloat("textScale", 1) + ":" + scale;
+    if (!key.equals(appearanceKey)) {
+      appearanceKey = key;
+      if (mobileDock != null) root.removeView(mobileDock);
+      mobileDock = null;
+      insightsScroll = null;
+      insightsPanel = null;
+      insightsSource = null;
+      insightsRequest++;
+    }
     detailBars.clear();
     summary = null;
     plays.clear();
+    playButtons.clear();
     progressViews.clear();
     dial = clock = pulse = discovery = repeatView = heartView = null;
-    scene = dock = null;
+    scene = null;
     handoffView=null;
-    playerArt=miniArt=homeArt=null;
+    playerArt=homeArt=null;
     libraryList = null;
     message = null;
-    root.removeAllViews();
+    pageScroll = null;
     root.setBackgroundColor(paper());
     if((app.prefs.getString("theme","sakura").equals("sakura")||(page==0&&new java.io.File(getFilesDir(),"home-wallpaper.bin").exists()))&&(page!=0||app.prefs.getBoolean("homeWallpaperEnabled",true)))root.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{new ColorDrawable(paper()),new SakuraArt(page==0)}));
     getWindow().setStatusBarColor(paper());
@@ -332,27 +353,39 @@ public final class MainActivity extends Activity {
                     ? 0
                     : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                         | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
-    body = new LinearLayout(this);
-    body.setOrientation(LinearLayout.VERTICAL);
-    root.addView(body, new LinearLayout.LayoutParams(sx(390), 0, 1));
+    if (body == null) {
+      body = new LinearLayout(this);
+      body.setOrientation(LinearLayout.VERTICAL);
+      body.setClipChildren(true);
+      root.addView(body, new LinearLayout.LayoutParams(sx(390), 0, 1));
+    } else {
+      body.animate().cancel();
+      body.setAlpha(1); body.setTranslationY(0);
+      body.removeAllViews();
+      body.setLayoutParams(new LinearLayout.LayoutParams(sx(390), 0, 1));
+    }
+    if (mobileDock == null) {
+      mobileDock = new MobileDock(this, app, target -> { if (page != target) show(target, true); },
+          () -> { if (current() == null) openLibrary(); else show(1, true); }, this::toggle, this::next);
+      root.addView(mobileDock, new LinearLayout.LayoutParams(sx(390), -2));
+    }
+    mobileDock.select(page);
+    mobileDock.setVisibility(page == 0 || page == 2 || page == 3 || page == 4 || page == 5
+        ? View.VISIBLE : View.GONE);
     if (page == 2) {
       buildLibrary();
     } else if(page==3){scene=null;buildInsights();
     } else {
       float end = (page == 0 || page == 3) ? 710 : (page == 4 || page == 5) ? 774 : 854;
       ScrollView scroll = new ScrollView(this);
+      pageScroll = scroll;
       scroll.setFillViewport(false);
-      scroll.setClipToPadding(false);
+      scroll.setClipToPadding(true);
       scroll.setVerticalScrollBarEnabled(false);
       scene = new DesignScene(this, page, scale, 40, end, hidden(page));
       scroll.addView(scene, new ScrollView.LayoutParams(-1, sx(end - 40)));
       body.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
-    }
-    if (page == 0 || page == 2 || page == 3 || page == 4 || page == 5) {
-      float start = (page == 4 || page == 5) ? 774 : 706;
-      dock = new DesignScene(this, page, scale, start, 844, hidden(page));
-      root.addView(dock, new LinearLayout.LayoutParams(sx(390), sx(844 - start)));
-      setupDock(start);
+      restoreScroll(scroll, scrollPositions.get(page, 0));
     }
     setupActions();
     bind();
@@ -364,9 +397,9 @@ public final class MainActivity extends Activity {
     if (page == 7) loadLyrics();
     if (page == 5) loadDetail();
     if (animate && MicroMotion.enabled(body)) {
-      body.setAlpha(.94f);
-      body.setTranslationY(dp(2));
-      body.animate().alpha(1).translationY(0).setDuration(220).setInterpolator(MicroMotion.EASE).start();
+      // A short opacity transition leaves text, controls and the dock in fixed positions.
+      body.setAlpha(.8f);
+      body.animate().alpha(1).setDuration(140).setInterpolator(MicroMotion.EASE).start();
     }
   }
 
@@ -376,40 +409,14 @@ public final class MainActivity extends Activity {
     image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     target.put(image,x,y,w,h);return image;
   }
-  private void setupDock(float start) {
-    // The original relief capsule stays; icon and caption share one measured column.
-    for(String id:new String[]{"3:37","3:38","3:39","3:40","3:41","3:42","3:43","3:44",
-        "3:130","3:131","3:132","3:133","3:134","3:135","3:136","3:137",
-        "3:203","3:204","3:205","3:206","3:207","3:208","3:209","3:210",
-        "3:240","3:241","3:242","3:243","3:244","3:245","3:246","3:247",
-        "9:125","9:126","9:127","9:128","9:129","9:130","9:131","9:132"})dock.removeText(id);
-    String[] names=isRu()?new String[]{"Главная","Библиотека","Инсайты","Устройства"}:new String[]{"Home","Library","Insights","Devices"};
-    String[] icons={"home","library","stats","device"};int[] targets={0,2,3,4};
-    LinearLayout nav=new LinearLayout(this);nav.setGravity(Gravity.CENTER_VERTICAL);
-    dock.put(nav,18,780,354,54);
-    for(int i=0;i<4;i++){
-      final int target=targets[i];boolean selected=page==target||(page==5&&target==3);
-      LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);
-      item.setPadding(0,sx(4),0,sx(3));
-      IconView icon=new IconView(this,icons[i],ink());icon.setAlpha(selected?1f:.62f);
-      icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-      item.addView(icon,new LinearLayout.LayoutParams(sx(23),sx(23)));
-      TextView caption=label(names[i],10);caption.setGravity(Gravity.CENTER);caption.setSingleLine(true);
-      caption.setTypeface(DesignScene.font(this,selected?"SemiBold":"Medium"));
-      caption.setTextSize(TypedValue.COMPLEX_UNIT_PX,10*scale*app.prefs.getFloat("textScale",1));
-      caption.setAlpha(selected?1f:.7f);caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-      caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
-      LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-1,sx(17));textParams.topMargin=sx(2);item.addView(caption,textParams);
-      item.setContentDescription(names[i]);item.setSelected(selected);item.setFocusable(true);
-      item.setOnClickListener(v->{if(page!=target)show(target,true);});
-      MicroMotion.press(item,icon,.965f);
-      nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));
-    }
-    if (start < 712) {
-      miniArt=cover(dock,26,720,40,40,9);
-      dock.action("Открыть плеер", 18, 712, 288, 56, () -> show(1, true));
-      addPlay(dock, 326, 724, 28, 30, !app.prefs.getString("theme","sakura").equals("sakura"));
-    }
+  private void restoreScroll(ScrollView scroll, int position) {
+    scroll.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+      public boolean onPreDraw() {
+        scroll.getViewTreeObserver().removeOnPreDrawListener(this);
+        scroll.scrollTo(0, position);
+        return true;
+      }
+    });
   }
 
   private InstrumentView addPlay(
@@ -420,7 +427,10 @@ public final class MainActivity extends Activity {
     s.put(v, x, y, w, h);
     View touch = s.action("Воспроизвести / пауза", x - 10, y - 10, w + 20, h + 20, this::toggle);
     MicroMotion.press(touch, v, .965f);
+    v.setFocusable(false);
+    v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     plays.add(v);
+    playButtons.add(touch);
     return v;
   }
 
@@ -429,7 +439,7 @@ public final class MainActivity extends Activity {
     switch (page) {
       case 0:
         handoffView=label(app.prefs.contains("playbackHandoff")?(isRu()?"Продолжить с компьютера  ›":"Continue from computer  ›"):(isRu()?"Инструменты и настройки  ›":"Tools & settings  ›"),14);
-        handoffView.setTextColor(isDarkTheme()?0xffd5b5f3:ink());scene.put(handoffView,24,169,342,38);handoffView.setOnClickListener(v->{if(app.prefs.contains("playbackHandoff"))resumeFromPC();else quickTools();});
+        handoffView.setTextColor(new MobilePalette(app).accent);scene.put(handoffView,24,169,342,38);handoffView.setOnClickListener(v->{if(app.prefs.contains("playbackHandoff"))resumeFromPC();else quickTools();});
         homeArt=cover(scene,246,248,96,96,16);
         GradientDrawable coverBG=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff493469,0xff100d16});coverBG.setCornerRadius(sx(16));homeArt.setBackground(coverBG);
         scene.put(new QuietSheen(this),24,214,342,194);
@@ -466,7 +476,7 @@ public final class MainActivity extends Activity {
         message = label("", 12);
         message.setVisibility(View.GONE);
         LinearLayout tools=new LinearLayout(this);String[] names=isRu()?new String[]{"Smart DJ","Звук","Отчёт","Ещё"}:new String[]{"Smart DJ","Sound","Report","More"};Runnable[] actions={this::smartDjMenu,this::equalizer,this::weeklyReport,this::quickTools};
-        for(int i=0;i<names.length;i++){final Runnable action=actions[i];TextView button=label(names[i],12);button.setGravity(Gravity.CENTER);button.setMinHeight(dp(44));GradientDrawable bg=new GradientDrawable();bg.setColor(isDarkTheme()?0xff100c16:0xffe2ded4);bg.setCornerRadius(sx(10));button.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(sx(3),0,sx(3),0);tools.addView(button,lp);button.setOnClickListener(v->action.run());}
+        for(int i=0;i<names.length;i++){final Runnable action=actions[i];TextView button=label(names[i],12);button.setGravity(Gravity.CENTER);button.setMinHeight(dp(44));GradientDrawable bg=new GradientDrawable();bg.setColor(new MobilePalette(app).surface);bg.setCornerRadius(sx(10));button.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(sx(3),0,sx(3),0);tools.addView(button,lp);button.setOnClickListener(v->action.run());}
         scene.put(tools,21,624,348,46);
         break;
       case 1:
@@ -605,20 +615,49 @@ public final class MainActivity extends Activity {
     }
   }
 
-  private void bindMini(){
-    Track track=current();if(miniArt!=null)Art.load(this,miniArt,track,true);
-    if(dock!=null){String title=track==null?(isRu()?"Выберите музыку":"Choose music"):track.title,artist=track==null?(isRu()?"Открыть библиотеку":"Open library"):track.artist;
-      for(String id:new String[]{"3:33","3:126","3:199"}){dock.text(id,title);if(app.prefs.getString("theme","sakura").equals("sakura")&&dock.texts.get(id)!=null)dock.texts.get(id).setTextColor(ink());}
-      for(String id:new String[]{"3:34","3:127","3:200"}){dock.text(id,artist);if(app.prefs.getString("theme","sakura").equals("sakura")&&dock.texts.get(id)!=null)dock.texts.get(id).setTextColor(0xffb3a1c3);}
-    }
+  private void bindMini() {
+    if (mobileDock != null) mobileDock.bind(current());
   }
-  private void buildInsights(){
-    insightsSource=app.stats;int request=++insightsRequest,period=insightsPeriod;
-    int scroll=insightsScroll==null?0:insightsScroll.getScrollY();
-    app.io.execute(()->{long from=period==0?0:LocalDate.now().minusDays(period-1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Repository.Stats stats=period==0?app.stats:app.repo.stats(from);
-      app.main.post(()->{if(page!=3||request!=insightsRequest||isFinishing())return;body.removeAllViews();insightsScroll=new ScrollView(this);insightsScroll.setVerticalScrollBarEnabled(false);
-        InsightsPanel panel=new InsightsPanel(this,app,stats,period,paper(),ink(),isDarkTheme(),days->{insightsPeriod=days;insightsScroll=null;buildInsights();},this::weeklyReport,this::quickTools,id->{Track track=app.track(id);if(track!=null)play(List.of(track),0);},()->show(5,true));
-        insightsScroll.addView(panel);body.addView(insightsScroll,new LinearLayout.LayoutParams(-1,-1));insightsScroll.post(()->insightsScroll.scrollTo(0,scroll));
+
+  private void buildInsights() {
+    if (insightsScroll == null) {
+      insightsScroll = new ScrollView(this);
+      insightsScroll.setVerticalScrollBarEnabled(false);
+      insightsScroll.setFillViewport(true);
+      insightsPanel = new InsightsPanel(this, app, days -> {
+        if (insightsPeriod == days) return;
+        insightsPeriod = days;
+        insightsSource = null;
+        buildInsights();
+      }, this::weeklyReport, this::quickTools, id -> {
+        Track track = app.track(id); if (track != null) play(List.of(track), 0);
+      }, () -> show(5, true));
+      insightsScroll.addView(insightsPanel);
+    }
+    if (insightsScroll.getParent() == null) {
+      body.addView(insightsScroll, new LinearLayout.LayoutParams(-1, -1));
+      restoreScroll(insightsScroll, scrollPositions.get(3, 0));
+    }
+    pageScroll = insightsScroll;
+    Repository.Stats source = app.stats;
+    if (insightsSource == source) return;
+    insightsSource = source;
+    int request = ++insightsRequest, period = insightsPeriod;
+    Repository.Stats cached = insightsCache.get(period);
+    insightsPanel.select(period, cached == null);
+    if (cached != null) insightsPanel.bind(cached, source);
+    app.io.execute(() -> {
+      long from = period == 0 ? 0 : LocalDate.now().minusDays(period - 1)
+          .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+      Repository.Stats stats = period == 0 ? source : app.repo.stats(from);
+      app.main.post(() -> {
+        if (request != insightsRequest || isFinishing() || isDestroyed()) return;
+        insightsCache.put(period, stats);
+        // Update existing controls. The scroll container and dock are never detached.
+        int scroll = insightsScroll.getScrollY();
+        insightsPanel.select(period, false);
+        insightsPanel.bind(stats, source);
+        if (page == 3) restoreScroll(insightsScroll, scroll);
       });
     });
   }
@@ -634,90 +673,9 @@ public final class MainActivity extends Activity {
     }
     Track t = current();
     if(playerArt!=null)Art.load(this,playerArt,t,false);
-    if(miniArt!=null)Art.load(this,miniArt,t,true);
     if(homeArt!=null)Art.load(this,homeArt,t,true);
     String title = t == null ? (isRu() ? "Выберите музыку" : "Choose music") : t.title,
         artist = t == null ? (isRu() ? "Локальная библиотека" : "Local library") : t.artist;
-    if(dock != null) for(String id:new String[]{"3:33","3:34","3:126","3:127","3:199","3:200"}) {
-      TextView tv=dock.texts.get(id);if(tv!=null){tv.setSingleLine(true);tv.setEllipsize(TextUtils.TruncateAt.END);}
-    }
-    if (dock != null) {
-      String idHome = page == 0 ? "3:38" : page == 2 ? "3:131" : page == 3 ? "3:204" : page == 4 ? "3:241" : page == 5 ? "9:126" : null;
-      String idLib = page == 0 ? "3:40" : page == 2 ? "3:133" : page == 3 ? "3:206" : page == 4 ? "3:243" : page == 5 ? "9:128" : null;
-      String idIns = page == 0 ? "3:42" : page == 2 ? "3:135" : page == 3 ? "3:208" : page == 4 ? "3:245" : page == 5 ? "9:130" : null;
-      String idDev = page == 0 ? "3:44" : page == 2 ? "3:137" : page == 3 ? "3:210" : page == 4 ? "3:247" : page == 5 ? "9:132" : null;
-      if (isRu()) {
-        if (idHome != null) {
-          dock.text(idHome, "Главная");
-          dock.bounds(idHome, 8, 811, 76, 16);
-          TextView tv = dock.texts.get(idHome);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idLib != null) {
-          dock.text(idLib, "Библиотека");
-          dock.bounds(idLib, 96, 811, 76, 16);
-          TextView tv = dock.texts.get(idLib);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idIns != null) {
-          dock.text(idIns, "Инсайты");
-          dock.bounds(idIns, 184, 811, 76, 16);
-          TextView tv = dock.texts.get(idIns);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idDev != null) {
-          dock.text(idDev, "Устройства");
-          dock.bounds(idDev, 272, 811, 76, 16);
-          TextView tv = dock.texts.get(idDev);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-      } else {
-        if (idHome != null) {
-          dock.text(idHome, "Home");
-          dock.bounds(idHome, 8, 811, 76, 16);
-          TextView tv = dock.texts.get(idHome);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idLib != null) {
-          dock.text(idLib, "Library");
-          dock.bounds(idLib, 96, 811, 76, 16);
-          TextView tv = dock.texts.get(idLib);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idIns != null) {
-          dock.text(idIns, "Insights");
-          dock.bounds(idIns, 184, 811, 76, 16);
-          TextView tv = dock.texts.get(idIns);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-        if (idDev != null) {
-          dock.text(idDev, "Devices");
-          dock.bounds(idDev, 272, 811, 76, 16);
-          TextView tv = dock.texts.get(idDev);
-          if (tv != null) tv.setGravity(Gravity.CENTER_HORIZONTAL);
-        }
-      }
-      switch (page) {
-        case 0:
-          dock.text("3:33", title);
-          dock.bounds("3:33", 78, 722, 235, 20);
-          dock.text("3:34", artist);
-          dock.bounds("3:34", 78, 743, 235, 18);
-          break;
-        case 2:
-          dock.text("3:126", title);
-          dock.bounds("3:126", 78, 722, 235, 20);
-          dock.text("3:127", artist);
-          dock.bounds("3:127", 78, 743, 235, 18);
-          break;
-        case 3:
-          dock.text("3:199", title);
-          dock.bounds("3:199", 78, 722, 235, 20);
-          dock.text("3:200", artist);
-          dock.bounds("3:200", 78, 743, 235, 18);
-          break;
-      }
-    }
     switch (page) {
       case 0:
         scene.text("3:6", "PAIN / LOCAL");
@@ -1094,7 +1052,7 @@ public final class MainActivity extends Activity {
       else openLibrary();
       return;
     }
-    if (player.isPlaying()) player.pause();
+    if (PlaybackUiState.showsPause(player)) player.pause();
     else {
       if (player.getPlaybackState() == Player.STATE_ENDED) player.seekTo(0);
       player.prepare();
@@ -1103,7 +1061,7 @@ public final class MainActivity extends Activity {
   }
 
   private void toggleIfPaused() {
-    if (player != null && !player.isPlaying()) toggle();
+    if (player != null && !PlaybackUiState.showsPause(player)) toggle();
   }
 
   private void previous() {
@@ -1154,14 +1112,14 @@ public final class MainActivity extends Activity {
   }
 
   private void updatePlayback() {
-    if (scene == null) return;
+    boolean pause = PlaybackUiState.showsPause(player);
+    if (mobileDock != null) mobileDock.playback(pause);
     boolean active = player != null && player.isPlaying();
     for (InstrumentView p : plays) {
-      if (p.playing != active) {
-        p.setPlaying(active);
-      }
-      p.setContentDescription(active ? "Пауза" : "Воспроизвести");
+      p.setPlaying(pause);
     }
+    for (View button : playButtons)
+      button.setContentDescription(pause ? (isRu() ? "Пауза" : "Pause") : (isRu() ? "Воспроизвести" : "Play"));
     long pos = player == null ? 0 : player.getCurrentPosition(),
         duration = player == null ? 0 : player.getDuration();
     float progress = duration > 0 ? (float) pos / duration : 0;
@@ -1181,6 +1139,7 @@ public final class MainActivity extends Activity {
               && app.prefs.getBoolean("motion", true)
               && resumed,
           player == null ? 1 : player.getPlaybackParameters().speed);
+    if (scene == null) return;
     if (page == 1) {
       scene.text("3:70", time(pos));
       scene.text("3:71", time(duration));
@@ -1239,7 +1198,11 @@ public final class MainActivity extends Activity {
     }
   }
 
+  private String libraryViewKey() { return libraryMode + ":" + group + ":" + search + ":" + sort; }
+
   private void buildLibrary() {
+    builtLibraryKey = libraryViewKey();
+    pendingLibraryPosition = builtLibraryKey.equals(savedLibraryKey) ? libraryPosition : null;
     scene = new DesignScene(this, 2, scale, 40, 140, Set.of("12:13","12:14"));
     body.addView(scene, new LinearLayout.LayoutParams(-1, sx(100)));
     scene.action("Сортировка", 269, 70, 104, 50, this::sortDialog);
@@ -1496,6 +1459,10 @@ public final class MainActivity extends Activity {
                 entries = result;
                 visibleTracks = selected;
                 adapter.notifyDataSetChanged();
+                if (pendingLibraryPosition != null) {
+                  libraryList.onRestoreInstanceState(pendingLibraryPosition);
+                  pendingLibraryPosition = null;
+                }
                 libraryStatus.setText(
                     app.scanning
                         ? (isRu() ? "Сканирование…" : "Сканирование…")

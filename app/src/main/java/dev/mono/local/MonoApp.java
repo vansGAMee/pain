@@ -24,6 +24,7 @@ public final class MonoApp extends Application {
   public LyricsLookup lyricsLookup;
   public MusicEngine music;
   private ContentObserver observer;
+  private boolean statsRefreshing, statsRefreshAgain;
   private final Runnable autoScan =
       () -> {
         if (prefs.getBoolean("autoScan", true) && hasPermission()) scan();
@@ -85,13 +86,27 @@ public final class MonoApp extends Application {
   }
 
   public void refreshStats() {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      main.post(this::refreshStats);
+      return;
+    }
+    if (statsRefreshing) {
+      statsRefreshAgain = true;
+      return;
+    }
+    statsRefreshing = true;
     io.execute(
         () -> {
           Repository.Stats s = repo.stats(0);
           main.post(
               () -> {
+                statsRefreshing = false;
                 stats = s;
                 changed();
+                if (statsRefreshAgain) {
+                  statsRefreshAgain = false;
+                  refreshStats();
+                }
               });
         });
   }
