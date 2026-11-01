@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://painaudio.vercel.app/sitemap.xml

@@ -2,11 +2,11 @@
 document.documentElement.classList.add('js-ready');
 // Static first: every page and download works before JavaScript or the network.
 const repo='https://github.com/vansGAMee/pain';
-const base=repo+'/releases/download/v1.7.3/';
+const base=repo+'/releases/download/v1.9.0/';
 const releases={
- windows:{name:'Windows',file:'Pain-v1.7.3.exe',size:39070339,info:'Windows 10 и новее · без установки',label:'Скачать .exe',sha:'7ac2bd8cb3ab0e6767c576313143a5c5cc1353c41d9faada9783b21c0b1bab42'},
- android:{name:'Android',file:'Pain-v1.7.3-Android.apk',size:7158841,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'b4a11295aa221fc4bcbdad0deff84fed0905337f510e416141dd09850c85024c'},
- linux:{name:'Linux',file:'Pain-v1.7.3-Linux.tar.gz',size:486709,info:'Node.js 18+ · архив с плеером',label:'Скачать .tar.gz',sha:'2556d7e70e967d81638a1905116531c7eaba2fa1c44355595fa58e0a93e24a15'}
+ windows:{name:'Windows',file:'Pain-v1.9.0-Setup.exe',size:124818079,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'ccaa19136a3cd24e1e37c181ddf05150e442b5b05f4fb6e113a6a2d105c6e349'},
+ android:{name:'Android',file:'Pain-v1.9.0-Android.apk',size:9805890,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'058b7ce51160d9680c12fbd9ed44a5c0bd9727ded8d58b247fd5af033f183d4c'},
+ linux:{name:'Linux',file:'Pain-v1.9.0-Linux.AppImage',size:129811885,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'30ba089c1e847d3fc76f26ca92bc8a4c50c444c880a320948d08ef678f54d8c3'}
 };
 for(const data of Object.values(releases))data.url=base+data.file;
 let platform=/Android/i.test(navigator.userAgent)?'android':/Linux|X11/i.test(navigator.userAgent)?'linux':'windows';
@@ -23,14 +23,22 @@ for(const link of nav.querySelectorAll('a'))if(currentPage&&new URL(link.href).p
 function revealAnchor(){const id=decodeURIComponent(location.hash.slice(1));const target=document.getElementById(id);if(target?.tagName==='DETAILS')target.open=true;}
 window.addEventListener('hashchange',revealAnchor);try{revealAnchor();}catch(_){}
 
-const screenNames={player:'Плеер',library:'Фонотека',insights:'Статистика',karaoke:'Тексты'};
+const screenNames={player:'Плеер',library:'Фонотека',together:'На одной волне',insights:'Статистика',karaoke:'Авто-караоке',sound:'Звук'};
 const tabs=[...document.querySelectorAll('[data-screen]')];let screen='player',screenRequest=0;
 function selectTab(name){for(const tab of tabs){const active=tab.dataset.screen===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;}}
 async function showScreen(name){
  if(!screenNames[name])return;const request=++screenRequest,previous=screen;
  selectTab(name);const panel=document.querySelector('#screen-panel');panel.setAttribute('aria-busy','true');
  try{
-  const sources=['desktop','android'].map(device=>device==='desktop'?`assets/screenshots/tour-${name}.png`:`assets/screenshots/android_${name}.png`);
+  const sources=['desktop','android'].map(device=>{
+    if(device==='desktop'){
+      if(name==='together')return 'assets/screenshots/desktop_together.png?v=190';
+      return `assets/screenshots/tour-${name}.png?v=190`;
+    }
+    if(name==='sound')return 'assets/screenshots/android_sound.png?v=190';
+    if(name==='together')return 'assets/screenshots/android_sync.png?v=190';
+    return `assets/screenshots/android_${name}.png?v=190`;
+  });
   await Promise.all(sources.map(src=>new Promise((resolve,reject)=>{const image=new Image();image.onload=resolve;image.onerror=reject;image.src=src;})));
   if(request!==screenRequest)return;
   screen=name;
@@ -38,9 +46,16 @@ async function showScreen(name){
     const image=document.getElementById(id);
     if(window.PainMotion) PainMotion.swapImage(image,sources[index]); else image.src=sources[index];
   }
-  document.querySelector('#desktop-preview').alt=`${screenNames[name]} PAIN на ПК, демонстрационная коллекция`;document.querySelector('#phone-preview').alt=`${screenNames[name]} PAIN на Android`;
+  document.querySelector('#desktop-preview').alt=`${screenNames[name]} PAIN на ПК, тема «Сакура · Ночь»`;document.querySelector('#phone-preview').alt=`${screenNames[name]} PAIN на Android`;
   document.querySelector('#screen-caption').textContent=screenNames[name];
-  const descriptions={player:'Тактильный винил, мягкий свет и музыка на первом плане. На большом экране и в ладони.',library:'Свои альбомы, любимые треки и порядок, который вы выбираете сами. Вся коллекция в одном месте.',insights:'Календарь прослушиваний, привычки и возвращения. История, которая постепенно становится вашей.',karaoke:'Крупный синхронный текст. Добавляйте свои слова и отмечайте строки в момент звучания.'};
+  const descriptions={
+    player:'Тактильный винил, аура альбома и музыка на первом плане в новой теме «Сакура · Ночь».',
+    library:'Свои альбомы, любимые треки, дискография артистов и живая индикация воспроизведения.',
+    together:'Слушайте синхронно с друзьями. Общая очередь и передача аудио через свой TLS-сервер. На ПК можно сохранить трек с разрешения ведущего; на телефоне — продолжить музыку с компьютера.',
+    insights:'20 детальных графиков, серия дней, циркадные циклы, лидерборд топ-50 и радар жанров.',
+    karaoke:'Автоматический поиск LRC онлайн и встроенный редактор для синхронизации строк на слух.',
+    sound:'8-полосный эквалайзер, автоэквалайзер Smart EQ и умная нормализация громкости.'
+  };
   const description=document.querySelector('#tour-description');if(description)description.textContent=descriptions[name];
   panel.setAttribute('aria-labelledby','screen-'+name);
  }catch(_){if(request===screenRequest){selectTab(previous);announce('Скриншот не загрузился. Попробуйте ещё раз.');}}
@@ -78,7 +93,7 @@ async function refreshRelease(){
   if(!response.ok)return;const release=await response.json();
   if(release.draft||release.prerelease||!/^v\d+\.\d+\.\d+$/.test(release.tag_name)||!Array.isArray(release.assets))return;
   const assets=release.assets.filter(a=>a.state==='uploaded'&&typeof a.browser_download_url==='string'&&a.browser_download_url.startsWith(repo+'/releases/download/'+release.tag_name+'/'));
-  const patterns={windows:/^Pain-v[\d.]+\.exe$/i,android:/^Pain-v[\d.]+-Android\.apk$/i,linux:/^Pain-v[\d.]+-Linux\.tar\.gz$/i};
+  const patterns={windows:/^Pain-v[\d.]+(?:-Setup)?\.exe$/i,android:/^Pain-v[\d.]+-Android\.apk$/i,linux:/^Pain-v[\d.]+-Linux\.AppImage$/i};
   const matches=Object.fromEntries(Object.entries(patterns).map(([key,pattern])=>[key,assets.find(a=>pattern.test(a.name))]));
   if(Object.values(matches).some(a=>!a||!Number.isFinite(a.size)||a.size<=0))return;
   for(const [key,a] of Object.entries(matches))Object.assign(releases[key],{file:a.name,size:a.size,url:a.browser_download_url,sha:/^sha256:[a-f0-9]{64}$/i.test(a.digest||'')?a.digest.slice(7):null});

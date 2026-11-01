@@ -67,3 +67,74 @@ html{scroll-padding-top:100px}.wrap{max-width:1380px;width:calc(100% - 112px)}
  html:not(.js-ready) .header nav{display:flex;position:static;flex-basis:100%;order:3;padding:0;border:0;gap:18px;flex-direction:row;flex-wrap:wrap}
  html:not(.js-ready) .header nav a{font-size:12px}
 }
+
+/* Секции: На одной волне, карточки артистов, 20 графиков */
+.together-chapter{padding-block:110px 80px;background:#151c16;color:#edf3e9;overflow:hidden}
+.together-chapter .product-label{color:#a8c4a4}
+.together-chapter h2{color:#f5f8f2}
+.together-chapter .chapter-heading>p:last-child{color:#b6c6b2}
+.together-showcase{display:grid;grid-template-columns:1.2fr 1fr;gap:6%;align-items:center;margin-top:20px}
+.together-card{min-width:0}
+.together-card button{padding:0;width:100%;border-radius:14px;overflow:hidden;border:1px solid #ffffff1a;box-shadow:0 30px 60px -20px #000000a0;display:block;background:#050505}
+.together-card img{width:100%;height:auto;display:block}
+.together-card .demo-note{display:block;font-size:11px;color:#8f9e8a;margin-top:14px}
+.together-features{display:grid;grid-template-columns:1fr;gap:24px}
+.together-features .feature-item{border-top:1px solid #ffffff18;padding-top:18px}
+.together-features .mono{font-size:11px;color:#9eb59a;display:block;margin-bottom:8px}
+.together-features h3{font-size:20px;font-weight:500;letter-spacing:-.03em;color:#f3f7ef;margin-bottom:8px}
+.together-features p{font-size:14px;line-height:1.7;color:#a8bba4}
+
+.cards-chapter{padding-block:110px 80px}
+.cards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:32px;margin-top:15px}
+.cards-card{background:#e7ebe0;border-radius:20px;padding:40px;border:1px solid #d4ded0;display:flex;flex-direction:column}
+.cards-card h3{font-size:28px;font-weight:520;letter-spacing:-.04em;margin-bottom:14px;line-height:1.15}
+.cards-card p{font-size:15px;line-height:1.7;color:#55604e}
+.cards-card ul{margin-top:20px;padding-left:20px;display:grid;gap:10px;font-size:14px;color:#495443;line-height:1.6}
+
+.stats-20-banner{background:#232d24;color:#f3f6ee;border-radius:20px;padding:42px 48px;margin-top:45px;display:grid;grid-template-columns:auto 1fr;gap:40px;align-items:center}
+.stats-20-banner strong{font-size:clamp(60px,7.5vw,96px);line-height:1;font-weight:650;letter-spacing:-.06em;color:#c6b6d9}
+.stats-20-banner h3{font-size:26px;letter-spacing:-.03em;margin-bottom:10px;color:#f5f8f1}
+.stats-20-banner p{font-size:15px;color:#bdcbb5;line-height:1.7}
+.stats-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.stats-pills span{display:inline-block;padding:6px 14px;border-radius:20px;background:#ffffff15;font-size:12px;color:#e3ecdc}
+
+@media(max-width:1150px){
+ .together-showcase{grid-template-columns:1fr;gap:35px}
+ .cards-grid{grid-template-columns:1fr}
+ .stats-20-banner{grid-template-columns:1fr;gap:20px;padding:32px}
+}
+@media(max-width:760px){
+ .together-chapter{padding-block:65px 45px}
+ .cards-chapter{padding-block:65px 45px}
+ .cards-card{padding:26px}
+ .stats-20-banner{padding:24px}
+}
+
+
+/* 1.9: contain the actual overflow sources, including the tablet navigation. */
+:root{--paper:#f5f2f7;--stone:#e7e1ec;--ink:#100c16;--muted:#675d70;--line:#d8cfe0;--accent:#76568e}
+html,body{max-width:100%;overflow-x:clip}
+main,section,article,.wrap,.hero-intro>*,.exhibit-toolbar,.screen-tabs,.document-body,.stats-20-banner>*{min-width:0}
+img,video,canvas{max-width:100%}
+.product-tour .exhibit{background:linear-gradient(145deg,#19121f,#352443 58%,#9d769d)}
+.tour-watermark{color:#cfaee9;opacity:.12}
+.product-tour .window-top{background:#17101f;color:#d7c6e1}
+.product-tour .desktop-screen{background:linear-gradient(150deg,#716078,#18101f 50%,#4c385a)}
+.together-chapter{background:#0c0911}.together-features h3{color:#f3eafa}.together-features p{color:#c1afcf}
+.feature-priority-section{padding-block:30px 75px}
+.feature-priority-section h2{max-width:850px;margin-bottom:32px}
+.feature-priority{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 30px;list-style:none;counter-reset:priority;padding:0;margin:0}
+.feature-priority li{border-top:1px solid var(--line);padding:25px 0;min-width:0}
+.feature-priority a{display:block;text-decoration:none}.feature-priority strong{font-size:19px;font-weight:550;display:block;margin-bottom:10px}.feature-priority p{font-size:14px;line-height:1.65;color:var(--muted);max-width:38ch}.feature-priority small{display:block;color:var(--accent);margin-top:12px;font-size:12px}
+@media(max-width:1100px){
+ .header{gap:22px}.header nav{display:none}.menu-toggle{display:flex;margin-left:auto;gap:10px}.header nav.open{display:flex;position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:stretch;padding:20px;background:var(--paper);border:1px solid var(--line);box-shadow:0 15px 30px #100c1620;gap:16px}.header nav.open a{padding:6px 0}
+ .product-tour .exhibit-toolbar{flex-wrap:wrap}.screen-tabs{flex-wrap:wrap;gap:4px;flex:1 1 100%;box-sizing:border-box}.screen-tabs button{flex:1 1 auto;min-width:0;white-space:normal}.product-tour .motion-toggle{margin-left:auto}
+ .feature-priority{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){
+ .feature-priority-section{padding-block:25px 45px}.feature-priority{grid-template-columns:1fr}.feature-priority li{padding:20px 0}.feature-priority-section h2{font-size:35px}
+ .screen-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:4px}.screen-tabs button{padding:10px 6px;font-size:11px;line-height:1.35;min-height:42px}.product-tour .motion-toggle{align-self:flex-end}
+ .stats-20-banner{grid-template-columns:minmax(0,1fr);padding:24px;gap:16px}.stats-20-banner>*{overflow-wrap:anywhere}
+ .header{gap:14px}.header-download{white-space:nowrap}.document-body :is(p,dd,dt,li,a){overflow-wrap:anywhere}
+}
+@media(max-width:600px){.process{display:flex!important;flex-direction:column;gap:16px}.process>div{width:100%;max-width:100%;min-width:0}.process>span{transform:rotate(90deg);align-self:flex-start}.process strong{overflow-wrap:anywhere}}
