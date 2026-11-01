@@ -67,7 +67,8 @@
   }
   if(c.type==='links'){
    if(!rows.length)return empty();const max=Math.max(...rows.map(r=>r.value),1),space=180/rows.length;
-   return rows.map((r,i)=>{const y=30+i*space;return `<path d="M165 ${y}C220 ${y-18},265 ${y+18},320 ${y}" stroke="${palette[i%6]}" style="stroke-width:${1+5*r.value/max}" fill="none" class="ic-line" pathLength="1" ${tip(`${r.label} → ${r.target} · ${r.value}`)}/><circle cx="165" cy="${y}" r="3" fill="${palette[i%6]}"/><circle cx="320" cy="${y}" r="3" fill="${palette[i%6]}"/>`+text(154,y+4,r.label.slice(0,24),'text-anchor="end" class="ic-axis"')+text(331,y+4,r.target.slice(0,22),'class="ic-axis"');}).join('');
+   const short=s=>Array.from(s).length>18?Array.from(s).slice(0,17).join('')+'…':s;
+   return rows.map((r,i)=>{const y=30+i*space;return `<path d="M165 ${y}C220 ${y-18},265 ${y+18},320 ${y}" stroke="${palette[i%6]}" style="stroke-width:${1+5*r.value/max}" fill="none" class="ic-line" pathLength="1" ${tip(`${r.label} → ${r.target} · ${r.value}`)}/><circle cx="165" cy="${y}" r="3" fill="${palette[i%6]}"/><circle cx="320" cy="${y}" r="3" fill="${palette[i%6]}"/>`+`<g ${tip(r.label)}>`+text(154,y+4,short(r.label),'text-anchor="end" class="ic-axis"')+'</g>'+`<g ${tip(r.target)}>`+text(331,y+4,short(r.target),'class="ic-axis"')+'</g>';}).join('');
   }
   if(c.type==='radial'){
    if(!c.values.some(Boolean))return empty();const max=Math.max(...c.values,1),point=(angle,r)=>[240+Math.sin(angle)*r,118-Math.cos(angle)*r];
@@ -97,6 +98,10 @@
  function mount(card){
   if(card.dataset.mounted)return;const c=cards.get(card.dataset.chart);if(!c)return;
   card.querySelector('.insight-plot').innerHTML=`<svg viewBox="0 0 480 240" role="img" aria-label="${esc(pick(c.title)+'. '+pick(c.description))}">${drawing(c)}</svg><div class="ic-tooltip" role="status" hidden></div>`;
+  if(c.type==='links')for(const node of card.querySelectorAll('svg g[data-ic-tip] text')){
+   const letters=Array.from(node.textContent.replace(/…$/,''));
+   while(node.getComputedTextLength()>140&&letters.length>1){letters.pop();node.textContent=letters.join('')+'…';}
+  }
   card.querySelector('.insight-legend').innerHTML=legend(c);card.dataset.mounted='true';card.classList.toggle('ic-animate',motion());
  }
  function table(c){

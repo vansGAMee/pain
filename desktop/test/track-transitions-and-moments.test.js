@@ -116,34 +116,23 @@ test('Audio graph transition gain: smooth fade without switching delay', () => {
   assert.ok(scheduled.some(s => s.action === 'ramp' && s.val === 1.0 && s.time === 11.0));
 });
 
-test('Persistence: favorite moments and excluded tracks serialization and merging', () => {
+test('Persistence: favorite moments and exclusions survive restart without user data', t => {
   const fs = require('fs');
   const path = require('path');
-  const dataDir = path.join(__dirname, '..', 'data');
-  const favFile = path.join(dataDir, 'favorite-moments.json');
-  const exclFile = path.join(dataDir, 'excluded-tracks.json');
-
-  assert.ok(fs.existsSync(favFile), 'favorite-moments.json must exist');
-  assert.ok(fs.existsSync(exclFile), 'excluded-tracks.json must exist');
-
-  const favData = JSON.parse(fs.readFileSync(favFile, 'utf8'));
-  const exclData = JSON.parse(fs.readFileSync(exclFile, 'utf8'));
-
-  assert.equal(typeof favData, 'object');
-  assert.ok(Array.isArray(exclData));
-  assert.ok(Object.keys(favData).length >= 10, 'must retain at least 10 favorite moments');
-  assert.ok(exclData.length >= 50, 'must retain at least 50 excluded tracks');
-
-  // Verify key moments exist
-  assert.equal(favData['media:29169'], 159.1);
-  assert.equal(favData['media:28832'], 191.1);
-  assert.equal(favData['media:5690'], 96.8);
-
-  // Verify excluded tracks list contains strings and unique
-  assert.ok(exclData.includes('media:20'));
-  assert.ok(exclData.includes('media:17'));
-  const set = new Set(exclData);
-  assert.equal(set.size, exclData.length, 'excluded tracks must be unique');
+  const Sync = require('../src/phone-sync');
+  const dataDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pain-persistence-'));
+  t.after(() => fs.rmSync(dataDir, {recursive:true, force:true}));
+  const moments = {}, excluded = ['fixture:20', 'fixture:17'];
+  FavoriteMoments.setMoment(moments, 'fixture:one', 159.1, 200);
+  FavoriteMoments.setMoment(moments, 'fixture:two', 96.8, 180);
+  const sync = new Sync(dataDir);
+  sync.write('favorite-moments.json', JSON.parse(FavoriteMoments.serialize(moments)));
+  sync.write('excluded-tracks.json', excluded);
+  const restarted = new Sync(dataDir);
+  assert.deepEqual(FavoriteMoments.deserialize(JSON.stringify(restarted.read('favorite-moments.json', {}))), moments);
+  assert.deepEqual(restarted.read('excluded-tracks.json', []), excluded);
+  restarted.write('excluded-tracks.json', []);
+  assert.deepEqual(new Sync(dataDir).read('excluded-tracks.json', null), [], 'an empty exclusion list is valid too');
 });
 
 test('Dual-Deck Equal-Power Crossfade: energy conservation and acoustic power stability', () => {

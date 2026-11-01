@@ -22,6 +22,13 @@ test('range filters retain the true first discovery and transitions only use exp
  assert.equal(chart(r,'discoveries').series[1].values.reduce((s,v)=>s+v,0),2);
  assert.deepEqual(chart(r,'transitions').rows,[]);assert.equal(chart(r,'exploration').points.at(-1).y,100);
 });
+test('song links count changes between distinct tracks, not repeats or duplicate checkpoints',()=>{
+ const events=['a','a','b','b','a'].map((id,i)=>play(id,NOW-DAY+i*180000));
+ const r=build(tracks,{plays:[...events,{...events[2]}]},'28',NOW);
+ assert.deepEqual(chart(r,'transitions').rows,[{label:'A',target:'B',value:1},{label:'B',target:'A',value:1}]);
+ assert.equal(r.plays,5,'repeat listens remain part of the listening statistics');
+ assert.deepEqual(chart(build(tracks,{plays:events.slice(0,2)},'28',NOW),'transitions').rows,[]);
+});
 test('heatmap and day totals conserve an audible interval that crosses the range boundary',()=>{
  const from=new Date(2026,8,30).getTime(),start=from-60000;
  const r=build(tracks,{plays:[play('a',start)]},'28',NOW);

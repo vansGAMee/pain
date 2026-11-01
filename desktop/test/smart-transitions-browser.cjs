@@ -44,7 +44,8 @@ function tone(frequency){
    try{return route.fulfill({contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html',body:await fs.readFile(file)});}
    catch(_){return route.fulfill({status:404,body:''});}
   });
-  page.setDefaultTimeout(10000);await page.goto('http://localhost');
+  page.setDefaultTimeout(10000);await page.goto('http://localhost/#library');
+  await page.locator('.nav-item[data-view="library"]').click();
   const play=async id=>{await page.locator(`tr[data-track-id="${id}"]`).click();await page.waitForFunction(id=>PainPlayer.getTrack()?.id===id&&!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.1,id);};
   const prepared=async id=>page.waitForFunction(id=>[...document.querySelectorAll('audio')].some(a=>a!==PainPlayer.getAudio()&&a.src.includes('/'+id+'?')&&a.readyState>=3),id);
   const audible=async()=>page.waitForFunction(()=>{const meter=window.outputMeter;if(!meter)return false;const data=new Float32Array(meter.fftSize);meter.getFloatTimeDomainData(data);return Math.sqrt(data.reduce((n,x)=>n+x*x,0)/data.length)>.01;});

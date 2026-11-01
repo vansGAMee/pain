@@ -47,7 +47,8 @@ function tone(frequency){
    try{return route.fulfill({contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html',body:await fs.readFile(file)});}
    catch(_){return route.fulfill({status:404,body:''});}
   });
-  page.setDefaultTimeout(15000);await page.goto('http://localhost');
+  page.setDefaultTimeout(15000);await page.goto('http://localhost/#library');
+  await page.locator('.nav-item[data-view="library"]').click();
   await page.locator('tr[data-track-id="a"]').click();await page.waitForFunction(()=>!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>.1);
   await page.locator('tr[data-track-id="b"]').click();await page.waitForTimeout(40);await page.locator('tr[data-track-id="c"]').click();
   await page.waitForTimeout(200);

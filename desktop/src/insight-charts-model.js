@@ -17,7 +17,7 @@
   ['returns','cdf','habits','Через сколько песня возвращается','How soon songs return','Время между соседними учтёнными прослушиваниями одной песни.','Time between consecutive counted listens of the same song.'],
   ['repeat','line','habits','Дни, когда хочется на повтор','Days made for repeat','Доля прослушиваний, которые повторяли уже звучавшую в тот день песню.','Share of counted listens repeating a song already heard that day.'],
   ['exploration','area','discovery','Как открывалась твоя фонотека','Exploring your library','Накопленная доля нынешней фонотеки, услышанная хотя бы раз. Учитывается вся сохранённая история до каждой даты.','Cumulative share of your current library heard at least once, using history up to each date.'],
-  ['transitions','links','habits','Песни, которые встречаются','Songs that meet','Самые частые соседние учтённые треки в одной сохранённой сессии. Сессии не угадываются по паузам.','Most frequent adjacent counted songs in a recorded session. Sessions are never inferred from gaps.'],
+  ['transitions','links','habits','Песни, которые встречаются','Songs that meet','Частые переходы между разными треками в одной сохранённой сессии. Повторы одной песни не учитываются.','Frequent transitions between different songs in a recorded session. Repeats of the same song are excluded.'],
   ['albums','lollipop','habits','Издания, в которых остаёшься','Releases you spend time with','По общему времени и названиям из тегов. Записи без альбома не объединяются в выдуманное издание.','Ranked by actual time and tagged release names. Untagged recordings are not treated as an album.'],
   ['discoveryClock','radial','discovery','В какое время открываешь новое','Your hours of discovery','В какой час впервые услышал каждую песню в сохранённой истории.','The hour of each song’s first counted listen in saved history.'],
   ['weekQuality','dumbbell','listening','В какие дни слушаешь внимательнее','Which days hold your attention?','Доли дослушиваний и ранних пропусков по дням недели, среди записей с известной длительностью.','Completion and early-skip shares by weekday, for recordings with known duration.'],
@@ -55,7 +55,7 @@
     d.plays++;if(seen.has(p.track))d.repeat++;seen.add(p.track);d.unique.add(p.track);
     if(first.get(p.track)===p.started){d.new++;discoveryHours[new Date(p.started).getHours()]++;}else d.returning++;
     if(last.has(p.track))gaps.push((p.started-last.get(p.track))/3600000);last.set(p.track,p.started);
-    if(previous&&p.session!=null&&p.session!==''&&String(previous.session)===String(p.session)){
+    if(previous&&previous.track!==p.track&&p.session!=null&&p.session!==''&&String(previous.session)===String(p.session)){
      const k=JSON.stringify([previous.track,p.track]);pairs.set(k,(pairs.get(k)||0)+1);
     }
     previous=p;

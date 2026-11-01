@@ -55,7 +55,9 @@ const wallpaperRoute=require('./appearance-wallpaper')(DATA_DIR);
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
   resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
   getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
-const playbackStream=require('./playback-stream')({cacheDir:CACHE_DIR,resolveFile:id=>getResolvedAudioFilePath(id),streamFile:streamFileWithRange,mimeFor:getTrackMimeType,openRemote:ensureAudio.openRemote});
+// Play imports directly: a failed hard link must not synchronously copy a large
+// file to the cache before the first audio byte can be served.
+const playbackStream=require('./playback-stream')({cacheDir:CACHE_DIR,resolveFile:id=>getResolvedAudioFilePath(id,true),streamFile:streamFileWithRange,mimeFor:getTrackMimeType,openRemote:ensureAudio.openRemote});
 const runtimeInstaller=require('./runtime-installer')(DATA_DIR,{onReady(){
   personalRecommender.reload();
   pulseflow.reloadRuntime();

@@ -2519,12 +2519,13 @@
       {automatic, position:audio.currentTime || 0, rate:audio.playbackRate, duration:getCurrentTrackDuration()});
   }
   function preloadDeck(track) {
-    if (!track || !standbyDeck || !standbyDeck.paused || isCrossfading || activeDeck === standbyDeck) return;
+    if (!track || !standbyDeck || !standbyDeck.paused || isCrossfading || activeDeck === standbyDeck) return false;
     const src = sourceFor(track), deck = standbyDeck;
-    if (preparedDecks.get(deck) === src) return;
+    if (preparedDecks.get(deck) === src && !deck.error) return true;
     rampDeck(deck, 0); deck.preload = 'auto';
     deckTrackSnapshots.set(deck, {...track}); preparedDecks.set(deck, src);
     deck.src = src; deck.load();
+    return true;
   }
   function crossfadeDecks(outgoingDeck, incomingDeck, durationSec = 1.5) {
     const curTimer = ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
@@ -2588,6 +2589,7 @@
     if (options.automatic && startPosition === 0) startPosition = plan.start;
     ++crossfadeTimerId; clearTimeout(transitionFinishTimer);
     transitionAbort?.abort(); transitionAbort = new AbortController();
+    bpmAnalysisController?.abort();
     clearTimeout(transitionPrepareTimer);
     initAudioNodes();
     if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
@@ -2700,7 +2702,9 @@
       }
       activeDeck = selectedDeck;
       standbyDeck = otherDeck;
-      if (otherDeck) otherDeck.pause();
+      if (otherDeck) {
+        otherDeck.pause(); otherDeck.removeAttribute('src'); otherDeck.load(); preparedDecks.delete(otherDeck);
+      }
       isCrossfading = false; applySmartVolume();
       deckTrackSnapshots.set(selectedDeck, playingTrackSnapshot);
       const src = sourceFor(track);
@@ -2754,15 +2758,29 @@
       });
     }
     if (state.currentView === 'player') renderVinylPlayerView();
-    const preparationSignal = transitionAbort.signal;
+  }
+
+  function schedulePlaybackPreparation() {
+    clearTimeout(transitionPrepareTimer);
+    const track = playingTrackSnapshot, request = playbackRequest, preparationSignal = transitionAbort?.signal;
+    if (!track || !preparationSignal) return;
+    // Selection can run in its worker during the outgoing fade; only loading
+    // the standby decoder must wait until that deck is free.
+    if (!window.PainTogether?.active && queue?.shuffleMode === 'smart') queue.peekNextAsync().catch(() => {});
     const prepareWhenPlaying = async () => {
       if (preparationSignal.aborted || request !== playbackRequest) return;
       if (audio.error) return;
       if (isCrossfading || audio.readyState < 3) { transitionPrepareTimer = setTimeout(prepareWhenPlaying,500);return; }
       if (audio.paused) return;
+      // Warm the next decoder immediately. Acoustic analysis must not hold up
+      // its network request, especially on a slow phone or an uncached profile.
+      const next = prefetchNextTrack();
       analyzeTrackBpmInBackground(track);
       await prepareTransitionProfile(track, preparationSignal);
-      if (!preparationSignal.aborted && request === playbackRequest) prefetchNextTrack();
+      const nextTrack = await next;
+      if (!preparationSignal.aborted && request === playbackRequest && nextTrack?.id === getNextTrack()?.id) {
+        await prepareTransitionProfile(nextTrack, preparationSignal);
+      }
     };
     transitionPrepareTimer = setTimeout(prepareWhenPlaying,500);
   }
@@ -2770,8 +2788,7 @@
   function playTrackObject(track, startPosition = 0, options = {}) {
     if (!track) return;
     if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(track);return;}
-    pendingNextSkips = 0;
-    isNavigatingNext = false;
+    nextNavigation = null;
     if (queue) queue.cancelPendingSelection();
     initAudioNodes();
     clearTimeout(trackTransitionTimer);
@@ -3927,9 +3944,16 @@
   }
 
   // --- SLEEP-RESISTANT PREFETCHING ---
-  async function prefetchNextTrack() {
+  let nextPrefetchPromise = null;
+  function prefetchNextTrack() {
+    if (state.hasPrefetchedNext) return nextPrefetchPromise;
+    nextPrefetchPromise = prepareNextDecoder();
+    return nextPrefetchPromise;
+  }
+  async function prepareNextDecoder() {
     if(window.PainTogether?.active)return;
-    if (state.hasPrefetchedNext) return;
+    // Do not compete with an incoming decoder or reuse the audible outgoing deck.
+    if (audio.paused || audio.readyState < 3 || isCrossfading) return;
     state.hasPrefetchedNext = true;
     const request = playbackRequest, signal = transitionAbort?.signal;
     let nextTrack;
@@ -3937,7 +3961,7 @@
       try {
         nextTrack = await queue.peekNextAsync();
       } catch (_) {
-        state.hasPrefetchedNext = false;
+        if(request === playbackRequest) state.hasPrefetchedNext = false;
         return;
       }
     } else {
@@ -3950,13 +3974,12 @@
     }
 
     try {
-      await fetch(`/api/preload-track/${encodeURIComponent(nextTrack.id)}?phoneUrl=${encodeURIComponent(state.phoneUrl)}`, {method:'POST',signal});
-      if (request !== playbackRequest || signal?.aborted) return;
       const currentNext = getNextTrack();
       if (currentNext?.id !== nextTrack.id) {state.hasPrefetchedNext=false;return;}
-      preloadDeck(nextTrack);
-      if (state.trackTransition > 0 && preparedDecks.get(standbyDeck) !== sourceFor(nextTrack)) state.hasPrefetchedNext = false;
-      await prepareTransitionProfile(nextTrack,signal);
+      // /cached-track streams and caches in one pass. A separate full-file POST
+      // delayed decoding and could download the same song again on an early Next.
+      state.hasPrefetchedNext = preloadDeck(nextTrack);
+      return nextTrack;
     } catch (_) {if(request===playbackRequest)state.hasPrefetchedNext=false;}
   }
 
@@ -3976,15 +3999,16 @@
     return state.tracks[nextIdx];
   }
 
-  let isNavigatingNext = false;
-  let pendingNextSkips = 0;
+  let nextNavigation = null;
 
   async function playNextTrack(isAutoAdvance = false) {
     if(window.PainTogether?.active){window.PainTogether.next(isAutoAdvance===true);return;}
     isAutoAdvance = isAutoAdvance === true;
+    // Repeated clicks while a selection or decoder is pending mean "hurry up",
+    // not a backlog of unseen songs to skip after the pending work completes.
+    if (nextNavigation || (!isAutoAdvance && state.playbackLoading)) return;
     sampleListening();
     // DOM click handlers pass an Event; only an explicit true means natural end.
-    const explicitSkip = isAutoAdvance === true ? false : !audio.ended;
     // Commit the outgoing event only when navigation actually starts; waiting for a worker is not another play.
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.next();
@@ -4004,16 +4028,8 @@
       return;
     }
 
-    if (isNavigatingNext) {
-      if (!isAutoAdvance) {
-        pendingNextSkips++;
-      }
-      return;
-    }
-
-    isNavigatingNext = true;
+    const navigation = nextNavigation = {};
     try {
-      while (true) {
         let nextTrack;
         if (queue.shuffleMode === 'smart' && typeof queue.nextAsync === 'function') {
           nextTrack = await queue.nextAsync();
@@ -4021,19 +4037,13 @@
           nextTrack = queue.next();
         }
 
-        if (nextTrack === undefined) {
+        if (nextNavigation !== navigation || nextTrack === undefined) {
           // Manual track selection or cancel superseded this calculation
           return;
         }
 
-        if (pendingNextSkips > 0) {
-          pendingNextSkips--;
-          if (nextTrack) {
-            continue;
-          }
-        }
-
         if (nextTrack) {
+          state.playbackLoading = true;
           playTrackObject(nextTrack,0,{automatic:isAutoAdvance});
         } else {
           isCrossfading = false;
@@ -4042,18 +4052,14 @@
           DOM.vinylBigDisc.classList.remove('spinning');
           updatePlayingRowUI();
         }
-        break;
-      }
     } finally {
-      isNavigatingNext = false;
-      pendingNextSkips = 0;
+      if (nextNavigation === navigation) nextNavigation = null;
     }
   }
 
   function playPrevTrack() {
     if(window.PainTogether?.active){window.PainTogether.previous();return;}
-    pendingNextSkips = 0;
-    isNavigatingNext = false;
+    nextNavigation = null;
     if (queue) queue.cancelPendingSelection();
     if (typeof momentsReel !== 'undefined' && momentsReel && momentsReel.getState().active) {
       momentsReel.prev();
@@ -5106,6 +5112,9 @@
     audio.addEventListener('playing',()=>{
       listening?.anchor(performance.now(),audio.currentTime,!audio.muted&&audio.volume>0);
       syncPlaybackState();
+      // Resume and recovery from buffering need a fresh preparation attempt too.
+      state.hasPrefetchedNext = false;
+      schedulePlaybackPreparation();
     });
     audio.addEventListener('pause',()=>{
       isTrackFadingOut = false;
