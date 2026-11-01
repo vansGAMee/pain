@@ -208,32 +208,11 @@
       if (res.ok) {
         const remote = await res.json();
         if (Array.isArray(remote)) {
-          let added = 0;
-          try{const removals=await(await fetch('/api/library-removals')).json();for(const id of removals.ids||[])if(state.excludedRecommendations.delete(String(id))){queue?.unexcludeTrack(String(id));added++;}}catch(_){}
-          for (const id of remote) {
-            const sid = String(id);
-            if (!state.excludedRecommendations.has(sid)) {
-              state.excludedRecommendations.add(sid);
-              if (queue && typeof queue.excludeTrack === 'function') {
-                queue.excludeTrack(sid);
-              }
-              added++;
-            }
-          }
-          if (added > 0) {
-            try {
-              localStorage.setItem('pain_excluded_recommendations', JSON.stringify(Array.from(state.excludedRecommendations)));
-            } catch (_) {}
-            if (typeof updateExcludedButtonsUI === 'function') updateExcludedButtonsUI();
-            if (typeof updateSettingsExcludedSection === 'function') updateSettingsExcludedSection();
-          }
-          if (state.excludedRecommendations.size > remote.length) {
-            fetch('/api/excluded-tracks', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(Array.from(state.excludedRecommendations))
-            }).catch(() => {});
-          }
+          const next=new Set(remote.map(String));
+          state.excludedRecommendations=next;queue?.setExcludedTracks([...next]);
+          try{localStorage.setItem('pain_excluded_recommendations',JSON.stringify([...next]));}catch(_){}
+          updateExcludedButtonsUI();updateSettingsExcludedSection();
+
         }
       }
     } catch (_) {}
@@ -3262,7 +3241,7 @@
         queue.excludeTrack(idStr);
       }
       showToast(state.lang === 'ru' 
-        ? `Трек «${title}» исключён из рекомендаций навсегда` 
+        ? `Трек «${title}» исключён из рекомендаций`
         : `Track "${title}" excluded from recommendations`);
     }
 
