@@ -1302,6 +1302,11 @@
   // --- NAVIGATION & VIEW SWITCHING ---
   function switchView(viewName, playlistId = null) {
     if(viewName==='home'&&!isFormTheme(state.theme))viewName='library';
+    if (state.currentView === viewName && state.activePlaylistId === playlistId
+        && document.getElementById(`view-${viewName}`)?.classList.contains('active')) {
+      renderCurrentView();
+      return;
+    }
     state.currentView = viewName;
     state.activePlaylistId = playlistId;
 
@@ -1627,8 +1632,7 @@
 
   // Each list owns its pending work: switching views must not cancel another list.
   function cancelTrackRender(container) {
-    if (container._renderFrame != null) cancelAnimationFrame(container._renderFrame);
-    container._renderFrame = null;
+    PainListView.cancel(container);
   }
 
   function appendTrackBatches(container, trackList, createItem, firstBatchSize) {
@@ -1704,25 +1708,37 @@
   }
 
   function renderTracksTable(container, trackList, enableDragAndDrop = true, contextInfo = null) {
-    cancelTrackRender(container);
-    container.innerHTML = '';
     container._currentTrackList = trackList;
     container._currentContextInfo = contextInfo;
     ensureTableDelegation(container);
 
-    if (trackList.length === 0) {
-      container.innerHTML = `
-        <tr>
+    PainListView.render(container, trackList, {
+      key: track => String(track.id),
+      signature: track => trackPresentationKey(track, enableDragAndDrop, contextInfo),
+      create: (track, index) => createTrackRow(track, index, enableDragAndDrop, contextInfo),
+      update: (row, index) => {
+        if (!row.dataset.trackId || row.dataset.index === String(index)) return;
+        row.dataset.index = index;
+        if (row.dataset.trackId !== state.currentTrackId) row.querySelector('.index-num').textContent = index + 1;
+      },
+      complete: updatePlayingRowUI,
+      empty: () => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
           <td colspan="7" style="text-align:center; padding: 40px; color: var(--ink-secondary); font-size: 13px;">
             ${state.lang === 'ru' ? 'Нет треков для отображения' : 'No tracks to display'}
           </td>
-        </tr>
       `;
-      return;
-    }
+        return row;
+      }
+    });
+  }
 
-    appendTrackBatches(container, trackList,
-      (track, index) => createTrackRow(track, index, enableDragAndDrop,contextInfo), 24);
+  function trackPresentationKey(track, enableDragAndDrop = false, contextInfo = null) {
+    return JSON.stringify([displayTrackTitle(track), track.artist, track.album, track.duration,
+      !!track.favorite, getTrackPlayCount(track.id), state.excludedRecommendations.has(String(track.id)),
+      state.favoriteMoments?.[track.id], state.lang, contextInfo?.type,
+      enableDragAndDrop && state.sortOption === 'default' && !state.searchQuery]);
   }
 
   function ensureGridDelegation(container) {
@@ -1837,22 +1853,20 @@
 
   // --- RENDERING: GRID CARDS ---
   function renderTracksGrid(container, trackList, contextInfo = null) {
-    cancelTrackRender(container);
-    container.innerHTML = '';
     container._currentTrackList = trackList;
     container._currentContextInfo = contextInfo;
     ensureGridDelegation(container);
 
-    if (trackList.length === 0) {
-      container.innerHTML = `
-        <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: var(--ink-secondary); font-size: 13px;">
-          ${state.lang === 'ru' ? 'Нет треков для отображения' : 'No tracks to display'}
-        </div>
-      `;
-      return;
-    }
-
-    appendTrackBatches(container, trackList, createTrackCard, 12);
+    PainListView.render(container, trackList, {
+      key: track => String(track.id), signature: track => trackPresentationKey(track),
+      create: createTrackCard, complete: updatePlayingRowUI,
+      empty: () => {
+        const message = document.createElement('div');
+        message.style.cssText = 'grid-column:1/-1;text-align:center;padding:48px;color:var(--ink-secondary);font-size:13px';
+        message.textContent = state.lang === 'ru' ? 'Нет треков для отображения' : 'No tracks to display';
+        return message;
+      }
+    });
   }
 
   // --- DRAG AND DROP REORDERING HANDLERS ---
@@ -2116,12 +2130,13 @@
   }
   document.getElementById('addPlaylistTracksBtn').onclick=()=>openPlaylistTrackPicker(state.activePlaylistId);
   document.getElementById('playlistPickerClose').onclick=document.getElementById('playlistPickerCancel').onclick=()=>picker.close();
-  picker.addEventListener('close',()=>{clearTimeout(pickerTimer);cancelTrackRender(pickerList);document.getElementById('addPlaylistTracksBtn')?.focus();});
+  picker.addEventListener('close',()=>{clearTimeout(pickerTimer);cancelTrackRender(pickerList);document.getElementById('addPlaylistTracksBtn')?.focus({preventScroll:true});});
   pickerSearch.addEventListener('input',()=>{clearTimeout(pickerTimer);pickerTimer=setTimeout(renderPlaylistPicker,120);});
   pickerList.addEventListener('change',event=>{const input=event.target.closest('input[type="checkbox"]');if(!input)return;if(input.checked)pickerSelected.add(input.value);else pickerSelected.delete(input.value);updatePickerCount();});
   document.getElementById('playlistPickerSelect').onclick=()=>{
     const pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
-    for(const track of pickerRows)if(!already.has(String(track.id)))pickerSelected.add(String(track.id));renderPlaylistPicker();
+    for(const track of pickerRows)if(!already.has(String(track.id)))pickerSelected.add(String(track.id));
+    pickerList.querySelectorAll('input[type="checkbox"]').forEach(input=>{input.checked=true;});updatePickerCount();
   };
   pickerConfirm.onclick=async()=>{pickerConfirm.disabled=true;if(await changePlaylistTracks(pickerPlaylistId,[...pickerSelected]))picker.close();updatePickerCount();};
 
