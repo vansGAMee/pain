@@ -3,40 +3,40 @@
         xmlns:xhtml="http://www.w3.org/1999/xhtml"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
-    <loc>https://painaudio.vercel.app/</loc>
-    <lastmod>2026-11-01</lastmod>
+    <loc>https://pain-player.vercel.app/</loc>
+    <lastmod>2026-11-03</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://painaudio.vercel.app/assets/screenshots/desktop_player.png</image:loc>
+      <image:loc>https://pain-player.vercel.app/assets/screenshots/desktop_player.png</image:loc>
       <image:title>Плеер PAIN в теме «Форма · Ночь»</image:title>
       <image:caption>Интерфейс плеера PAIN с винилом и темным оформлением</image:caption>
     </image:image>
     <image:image>
-      <image:loc>https://painaudio.vercel.app/assets/screenshots/desktop_together.png</image:loc>
+      <image:loc>https://pain-player.vercel.app/assets/screenshots/desktop_together.png</image:loc>
       <image:title>Совместная музыка «На одной волне»</image:title>
       <image:caption>Прямой P2P аудиостриминг без сервера, общая очередь и чат</image:caption>
     </image:image>
     <image:image>
-      <image:loc>https://painaudio.vercel.app/assets/screenshots/desktop_insights.png</image:loc>
+      <image:loc>https://pain-player.vercel.app/assets/screenshots/desktop_insights.png</image:loc>
       <image:title>20 графиков аналитики и привычек в PAIN</image:title>
       <image:caption>Глубокая статистика: стрики, циркадный цикл, Genre Orbit и топ-50</image:caption>
     </image:image>
     <image:image>
-      <image:loc>https://painaudio.vercel.app/assets/screenshots/desktop_karaoke.png</image:loc>
+      <image:loc>https://pain-player.vercel.app/assets/screenshots/desktop_karaoke.png</image:loc>
       <image:title>Авто-караоке и редактор синхронного текста</image:title>
       <image:caption>Онлайн поиск LRC, локальный кэш и синхронизация строк на слух</image:caption>
     </image:image>
   </url>
   <url>
-    <loc>https://painaudio.vercel.app/inside</loc>
-    <lastmod>2026-11-01</lastmod>
+    <loc>https://pain-player.vercel.app/inside</loc>
+    <lastmod>2026-11-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://painaudio.vercel.app/guide</loc>
-    <lastmod>2026-11-01</lastmod>
+    <loc>https://pain-player.vercel.app/guide</loc>
+    <lastmod>2026-11-03</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

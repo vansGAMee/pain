@@ -9,7 +9,7 @@
 
 Слушайте локальные файлы, находите забытые песни, продолжайте на телефоне и собирайте общую очередь с друзьями. Без обязательного аккаунта и подписки.
 
-[**Скачать PAIN**](https://github.com/vansGAMee/pain/releases/latest) · [Сайт](https://painaudio.vercel.app/) · [Руководство](https://painaudio.vercel.app/guide) · [Сообщить о проблеме](https://github.com/vansGAMee/pain/issues)
+[**Скачать PAIN**](https://github.com/vansGAMee/pain/releases/latest) · [Сайт](https://pain-player.vercel.app/) · [Руководство](https://pain-player.vercel.app/guide) · [Сообщить о проблеме](https://github.com/vansGAMee/pain/issues)
 
 ![Фонотека PAIN на компьютере в теме «Сакура · Ночь»](website/assets/screenshots/desktop_library.png)
 

@@ -138,3 +138,13 @@ img,video,canvas{max-width:100%}
  .header{gap:14px}.header-download{white-space:nowrap}.document-body :is(p,dd,dt,li,a){overflow-wrap:anywhere}
 }
 @media(max-width:600px){.process{display:flex!important;flex-direction:column;gap:16px}.process>div{width:100%;max-width:100%;min-width:0}.process>span{transform:rotate(90deg);align-self:flex-start}.process strong{overflow-wrap:anywhere}}
+
+/* A compact search example, using the existing product palette and type. */
+.search-note{display:grid;grid-template-columns:1fr 1fr;gap:7%;padding:34px 38px;margin-bottom:72px;border:1px solid var(--line);border-radius:18px;align-items:center}
+.search-note .product-label{margin-bottom:12px;font-size:13px}
+.product-page .search-note h2{font-size:clamp(27px,2.6vw,38px);line-height:1.12;letter-spacing:-.045em;max-width:22ch;margin-bottom:16px}
+.search-note-copy>p:last-child{font-size:14px;line-height:1.65;color:var(--muted);max-width:46ch}
+.search-examples{margin:0}.search-examples>div{display:grid;grid-template-columns:1.05fr 1fr;gap:16px;padding:13px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.search-examples dt,.search-examples dd{margin:0;min-width:0;font-size:13px;overflow-wrap:anywhere}.search-examples code{font-family:inherit;color:var(--ink);background:var(--stone);border-radius:5px;padding:4px 7px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.search-examples dd{color:var(--muted)}.search-note-foot{font-size:12px;line-height:1.6;color:var(--muted);margin:17px 0 0;max-width:56ch}
+@media(max-width:760px){.search-note{grid-template-columns:1fr;gap:20px;padding:25px 20px;margin-bottom:45px}.search-examples>div{grid-template-columns:1fr;gap:10px}.product-page .search-note h2{max-width:22ch}.search-examples dd{padding-left:7px}}
