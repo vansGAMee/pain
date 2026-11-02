@@ -547,6 +547,20 @@ body,
   border-color: var(--border-strong);
 }
 
+.music-search-hint {
+  position: absolute;
+  inset-inline: 12px;
+  top: calc(100% + 3px);
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.search-lyric-match { display:block; color:var(--ink-muted); font-size:11px; max-width:44ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 .search-clear-btn {
   position: absolute;
   right: 10px;

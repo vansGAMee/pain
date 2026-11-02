@@ -371,7 +371,7 @@
     sessionSeek: seconds => seekToTime(seconds),
     sessionReset: () => {for(const deck of [deckA,deckB])if(deck){deck.pause();deck.removeAttribute('src');deck.load();}state.currentTrackId=null;queue?.setContext('library',state.tracks,0);syncPlaybackState();},
     sessionReload: (track,tracks,position) => {preparedDecks.delete(deckA);preparedDecks.delete(deckB);playTrackInContext(track,tracks,{type:'listening',title:state.lang==='ru'?'Слушаем вместе':'Listening together',allowNew:false},position);},
-    flushListening: () => {savePlaybackPosition(true);sampleListening();return state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve();},
+    flushListening: () => {const checkpoint=savePlaybackPosition(true);sampleListening();return Promise.all([checkpoint,state.currentTrackId?recordTrackFinished(state.currentTrackId,false,true):Promise.resolve()]);},
     playTrackInContext: (track, trackList, contextInfo, startPosition = 0) => playTrackInContext(track, trackList, contextInfo, startPosition)
   };
   let audioCtx = null;
@@ -1222,15 +1222,13 @@
   }
 
   function savePlaybackPosition(force = false) {
-    if (!state.currentTrackId) return;
+    if (!state.currentTrackId || window.PainTogether?.active) return;
     const now = performance.now();
     if (!force && now - lastPlaybackSave < 5000) return;
     const position = pendingSeekTime ?? audio.currentTime;
     if (!Number.isFinite(position) || position < 0) return;
-    try {
-      localStorage.setItem('pain_last_playback', JSON.stringify({id: state.currentTrackId, position}));
-      lastPlaybackSave = now;
-    } catch (_) {}
+    lastPlaybackSave = now;
+    return PlaybackMemory.save(state.currentTrackId,position);
   }
 
   // --- DATA LOADING & PERSISTENCE ---
@@ -1273,9 +1271,16 @@
 
       // If library is populated, prepare first track in player bar
       if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
-        let saved = null;
-        try { saved = JSON.parse(localStorage.getItem('pain_last_playback')); } catch (_) {}
-        const savedIndex = state.tracks.findIndex(t => t.id === saved?.id);
+        const saved=await PlaybackMemory.read();
+        // A focus/library refresh can populate the queue before this await
+        // completes. Restore the same song in both the bar and queue, while a
+        // real selection made during startup always wins over the checkpoint.
+        if(state.currentTrackIndex!==-1)return;
+        let savedIndex = saved?.id===undefined?-1:state.tracks.findIndex(t => String(t.id) === String(saved.id));
+        if(savedIndex<0&&saved?.title&&saved.artist){
+          const matches=state.tracks.map((t,i)=>({t,i})).filter(({t})=>MusicSearch.same(t.title,saved.title)&&MusicSearch.same(t.artist,saved.artist)&&Number(t.duration)===Number(saved.duration));
+          if(matches.length===1)savedIndex=matches[0].i;
+        }
         state.currentTrackIndex = Math.max(0, savedIndex);
         const track = state.tracks[state.currentTrackIndex];
         state.currentTrackId = track.id;
@@ -1283,7 +1288,7 @@
         const position = savedIndex >= 0 && Number.isFinite(saved?.position) && saved.position >= 0
           && (!duration || saved.position < duration) ? saved.position : 0;
         pendingSeekTime = position;
-        if (queue && queue.getTracks().length === 0) {
+        if (queue) {
           queue.setContext('library', state.tracks, state.currentTrackIndex, state.lang === 'ru' ? 'Фонотека' : 'Library', true);
         }
         updatePlayerBarUI(track, false);
@@ -1421,6 +1426,41 @@
   }
 
   // --- FILTERING & SORTING LOGIC ---
+  let librarySearch=null,searchGeneration=0;
+  const searchHint=document.getElementById('musicSearchHint');
+  function setSearchHint(result){
+    if(!searchHint)return;const ru=state.lang==='ru',query=state.searchQuery.trim(),hit=result?.hits?.[0];
+    if(!query){searchHint.textContent=document.activeElement===DOM.searchInput?(ru?'Можно даже так: «vjknfn ljvf» или жанр:шугейз':'Try a typo, transliteration, genre or a lyric line'):'';return;}
+    if(!result){searchHint.textContent=ru?'Ищу в фонотеке…':'Searching your library…';return;}
+    if(hit?.phonetic)searchHint.textContent=(ru?'По созвучию: «':'Sounds like: “')+hit.title+(ru?'»':'”')+(hit.artist?' — '+hit.artist:'');
+    else if(hit?.reason==='lyrics')searchHint.textContent=ru?`По словам песни · текстов в поиске: ${result.lyrics}`:`Matching lyrics · ${result.lyrics} saved texts`;
+    else if(hit?.fields?.length===1&&hit.fields[0]==='genre')searchHint.textContent=ru?`Понял как: жанр «${query.replace(/^(?:genre|жанр):\s*/i,'')}»`:`Genre: “${query.replace(/^(?:genre|жанр):\s*/i,'')}”`;
+    else if(hit&&(hit.rank?.[1]>0||hit.rank?.[2]>0||['spacing','initials'].includes(hit.reason)))searchHint.textContent=(ru?'Ближайшее: «':'Closest: “')+hit.title+(ru?'»':'”')+(hit.artist?' — '+hit.artist:'');
+    else searchHint.textContent=ru?`Название, жанр или слова · текстов в поиске: ${result.lyrics}`:`Title, genre or lyrics · ${result.lyrics} saved texts`;
+    searchHint.title=searchHint.textContent;
+  }
+  function prepareLibrarySearch(force=false){
+    const query=state.searchQuery.trim(),tracks=state.tracks;
+    if(!query){librarySearch=null;searchGeneration++;DOM.playAllBtn.disabled=false;DOM.searchInput.removeAttribute('aria-busy');setSearchHint();return true;}
+    if(!force&&librarySearch?.tracks===tracks&&librarySearch.query===query)return !librarySearch.pending;
+    const keepHint=force&&librarySearch?.query===query&&!librarySearch.pending;
+    const token=++searchGeneration;
+    librarySearch={tracks,query,pending:true,hits:[]};if(!keepHint)setSearchHint();DOM.playAllBtn.disabled=true;DOM.searchInput.setAttribute('aria-busy','true');
+    MusicSearchClient.search(tracks,query).then(result=>{
+      if(token!==searchGeneration||state.tracks!==tracks||state.searchQuery.trim()!==query)return;
+      librarySearch={tracks,query,pending:false,...result};setSearchHint(result);DOM.playAllBtn.disabled=false;DOM.searchInput.removeAttribute('aria-busy');
+      state.libraryDirty=true;if(state.currentView==='library')renderLibrary();
+    }).catch(()=>{if(token!==searchGeneration)return;librarySearch=null;DOM.searchInput.removeAttribute('aria-busy');searchHint.textContent=state.lang==='ru'?'Поиск не завершился. Измени запрос и попробуй снова.':'Search did not finish. Edit your query to retry.';});
+    return false;
+  }
+  window.addEventListener('pain:search-index',()=>{if(state.searchQuery.trim())prepareLibrarySearch(true);});
+  DOM.searchInput.addEventListener('focus',()=>setSearchHint(librarySearch?.pending?null:librarySearch));
+  DOM.searchInput.addEventListener('blur',()=>{if(!state.searchQuery.trim())setSearchHint();});
+  function lyricSearchSnippet(track,contextInfo){
+    if(contextInfo?.type!=='library'||!state.searchQuery||librarySearch?.pending)return '';
+    const hit=librarySearch?.hits?.find(h=>h.id===String(track.id));
+    return hit?.reason==='lyrics'&&hit.snippet?`<span class="search-lyric-match" title="${escapeHtml(hit.snippet)}">${escapeHtml((state.lang==='ru'?'Из текста: ':'Lyrics: ')+hit.snippet)}</span>`:'';
+  }
   function getProcessedTracks(trackList) {
     if (!Array.isArray(trackList)) return [];
     let list = [...trackList];
@@ -1428,11 +1468,9 @@
     // 1. Search Query
     const q = state.searchQuery.toLowerCase().trim();
     if (q) {
-      list = list.filter(t => {
-        return (t.title && t.title.toLowerCase().includes(q)) ||
-               (t.artist && t.artist.toLowerCase().includes(q)) ||
-               (t.album && t.album.toLowerCase().includes(q));
-      });
+      const byId=new Map(list.map(t=>[String(t.id),t]));
+      list=librarySearch?.tracks===trackList&&librarySearch.query===state.searchQuery.trim()&&!librarySearch.pending
+        ?librarySearch.hits.map(h=>byId.get(h.id)).filter(Boolean):[];
     }
 
     // 2. Category Filter
@@ -1500,6 +1538,7 @@
 
   // --- LIBRARY RENDERING ---
   function renderLibrary(force = false) {
+    if(!prepareLibrarySearch())return;
     const hasRendered = state.viewMode === 'grid'
       ? (DOM.tracksGrid && DOM.tracksGrid.children.length > 0)
       : (DOM.tracksTableBody && DOM.tracksTableBody.children.length > 0);
@@ -1682,6 +1721,7 @@
       <td class="col-title">
         <div class="track-row-title ${isCurrent ? 'active-text' : ''}">${escapeHtml(displayTrackTitle(track))}</div>
         <div class="track-row-sub clickable-artist" title="${state.lang === 'ru' ? 'Карточка артиста' : 'Artist card'}">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+        ${lyricSearchSnippet(track,contextInfo)}
       </td>
       <td class="col-album">${escapeHtml(track.album || '—')}</td>
       <td class="col-plays">${plays}</td>
@@ -1738,7 +1778,8 @@
     return JSON.stringify([displayTrackTitle(track), track.artist, track.album, track.duration,
       !!track.favorite, getTrackPlayCount(track.id), state.excludedRecommendations.has(String(track.id)),
       state.favoriteMoments?.[track.id], state.lang, contextInfo?.type,
-      enableDragAndDrop && state.sortOption === 'default' && !state.searchQuery]);
+      enableDragAndDrop && state.sortOption === 'default' && !state.searchQuery,
+      contextInfo?.type==='library'?lyricSearchSnippet(track,contextInfo):'']);
   }
 
   function ensureGridDelegation(container) {
@@ -1858,8 +1899,8 @@
     ensureGridDelegation(container);
 
     PainListView.render(container, trackList, {
-      key: track => String(track.id), signature: track => trackPresentationKey(track),
-      create: createTrackCard, complete: updatePlayingRowUI,
+      key: track => String(track.id), signature: track => trackPresentationKey(track,false,contextInfo),
+      create: track => {const card=createTrackCard(track),snippet=lyricSearchSnippet(track,contextInfo);if(snippet)card.querySelector('.track-card-artist').insertAdjacentHTML('afterend',snippet);return card;}, complete: updatePlayingRowUI,
       empty: () => {
         const message = document.createElement('div');
         message.style.cssText = 'grid-column:1/-1;text-align:center;padding:48px;color:var(--ink-secondary);font-size:13px';
@@ -2086,7 +2127,7 @@
     openPlaylistTrackPicker(newPl.id);return true;
   }
 
-  let playlistMutation=false,pickerPlaylistId=null,pickerSelected=new Set(),pickerRows=[],pickerTimer;
+  let playlistMutation=false,pickerPlaylistId=null,pickerSelected=new Set(),pickerRows=[],pickerTimer,pickerSearchGeneration=0,pickerLoading=false;
   const picker=document.getElementById('playlistTrackPicker'),pickerList=document.getElementById('playlistPickerList'),pickerSearch=document.getElementById('playlistPickerSearch'),pickerConfirm=document.getElementById('playlistPickerConfirm');
   const playlistTrackKey=t=>JSON.stringify([t.artist,t.title].map(s=>String(s||'').trim().normalize('NFKC').toLowerCase().replace(/\s+/g,' ')));
   async function changePlaylistTracks(id,ids,remove=false){
@@ -2112,11 +2153,19 @@
   }
   function updatePickerCount(){
     const ru=state.lang==='ru';document.getElementById('playlistPickerCount').textContent=ru?`Выбрано: ${pickerSelected.size}`:`Selected: ${pickerSelected.size}`;
-    pickerConfirm.textContent=(ru?'Добавить':'Add')+(pickerSelected.size?' · '+pickerSelected.size:'');pickerConfirm.disabled=!pickerSelected.size||playlistMutation;
+    pickerConfirm.textContent=(ru?'Добавить':'Add')+(pickerSelected.size?' · '+pickerSelected.size:'');pickerConfirm.disabled=pickerLoading||!pickerSelected.size||playlistMutation;
   }
-  function renderPlaylistPicker(){
-    cancelTrackRender(pickerList);pickerList.replaceChildren();const query=pickerSearch.value.trim().toLocaleLowerCase(),pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
-    pickerRows=state.tracks.filter(t=>!query||[t.title,t.artist,t.album].some(s=>String(s||'').toLocaleLowerCase().includes(query)));
+  function setPickerLoading(value){pickerLoading=value;pickerList.inert=value;pickerList.setAttribute('aria-busy',String(value));document.getElementById('playlistPickerSelect').disabled=value;updatePickerCount();}
+  async function renderPlaylistPicker(){
+    setPickerLoading(true);
+    const token=++pickerSearchGeneration,tracks=state.tracks,query=pickerSearch.value.trim(),pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
+    try{
+      const result=await MusicSearchClient.search(tracks,query,'playlist');
+      if(token!==pickerSearchGeneration||pickerSearch.value.trim()!==query)return;
+      const byId=new Map(tracks.map(t=>[String(t.id),t]));pickerRows=result.hits.map(h=>byId.get(h.id)).filter(Boolean);
+    }catch(_){if(token===pickerSearchGeneration)setPickerLoading(false);return;}
+    setPickerLoading(false);
+    cancelTrackRender(pickerList);pickerList.replaceChildren();
     if(!pickerRows.length){pickerList.textContent=state.lang==='ru'?'Ничего не найдено. Попробуйте другой запрос.':'No matches. Try another search.';return;}
     appendTrackBatches(pickerList,pickerRows,track=>{
       const row=document.createElement('label');row.className='playlist-pick-row';const added=already.has(String(track.id));
@@ -2126,14 +2175,16 @@
   function openPlaylistTrackPicker(id){
     const pl=state.playlists.find(p=>p.id===id);if(!pl)return;pickerPlaylistId=id;pickerSelected=new Set();pickerSearch.value='';
     document.getElementById('playlistPickerTitle').textContent=(state.lang==='ru'?'Добавить в «':'Add to “')+pl.name+(state.lang==='ru'?'»':'”');
-    pickerSearch.placeholder=state.lang==='ru'?'Песня, исполнитель или альбом':'Song, artist or album';renderPlaylistPicker();picker.showModal();pickerSearch.focus();
+    pickerSearch.placeholder=state.lang==='ru'?'Название, жанр или слова песни':'Title, genre or lyrics';renderPlaylistPicker();picker.showModal();pickerSearch.focus();
   }
   document.getElementById('addPlaylistTracksBtn').onclick=()=>openPlaylistTrackPicker(state.activePlaylistId);
   document.getElementById('playlistPickerClose').onclick=document.getElementById('playlistPickerCancel').onclick=()=>picker.close();
-  picker.addEventListener('close',()=>{clearTimeout(pickerTimer);cancelTrackRender(pickerList);document.getElementById('addPlaylistTracksBtn')?.focus({preventScroll:true});});
-  pickerSearch.addEventListener('input',()=>{clearTimeout(pickerTimer);pickerTimer=setTimeout(renderPlaylistPicker,120);});
+  picker.addEventListener('close',()=>{pickerSearchGeneration++;setPickerLoading(false);clearTimeout(pickerTimer);cancelTrackRender(pickerList);document.getElementById('addPlaylistTracksBtn')?.focus({preventScroll:true});});
+  window.addEventListener('pain:search-index',()=>{if(picker.open&&pickerSearch.value.trim())renderPlaylistPicker();});
+  pickerSearch.addEventListener('input',()=>{setPickerLoading(true);clearTimeout(pickerTimer);pickerTimer=setTimeout(renderPlaylistPicker,120);});
   pickerList.addEventListener('change',event=>{const input=event.target.closest('input[type="checkbox"]');if(!input)return;if(input.checked)pickerSelected.add(input.value);else pickerSelected.delete(input.value);updatePickerCount();});
   document.getElementById('playlistPickerSelect').onclick=()=>{
+    if(pickerLoading)return;
     const pl=state.playlists.find(p=>p.id===pickerPlaylistId),already=new Set((pl?.trackIds||[]).map(String));
     for(const track of pickerRows)if(!already.has(String(track.id)))pickerSelected.add(String(track.id));
     pickerList.querySelectorAll('input[type="checkbox"]').forEach(input=>{input.checked=true;});updatePickerCount();
@@ -4855,6 +4906,7 @@
     DOM.searchInput.addEventListener('input', (e) => {
       state.searchQuery = e.target.value;
       DOM.searchClearBtn.style.display = state.searchQuery ? 'block' : 'none';
+      DOM.searchInput.setAttribute('aria-busy','true');DOM.playAllBtn.disabled=true;
       state.libraryDirty = true;
       clearTimeout(searchTimer);
       cancelTrackRender(DOM.tracksGrid);
@@ -5166,6 +5218,7 @@
     });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId,false,true);});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)savePlaybackPosition(true);});
     audio.addEventListener('error',()=>{state.isPlaying=false;state.playbackLoading=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     audio.addEventListener('ratechange',()=>{

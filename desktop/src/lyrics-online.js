@@ -2,8 +2,9 @@
 const fs = require('node:fs/promises'), path = require('node:path'), crypto = require('node:crypto');
 const { norm, unknown, artists } = require('./cover-matching');
 const { version } = require('../package.json');
+const text = require('./music-search');
 const modes = new Set(['auto', 'regional', 'primary']);
-const providerRevision = 4;
+const providerRevision = 5;
 // ISO 639 language names/codes are metadata, never translations of song titles.
 const languageCodes = {en:'eng',de:'deu',ru:'rus',fr:'fra',es:'spa',pt:'por',it:'ita',ja:'jpn',ko:'kor',zh:'cmn',uk:'ukr',pl:'pol',tr:'tur',nl:'nld',sv:'swe',ar:'arb',hi:'hin',id:'ind',vi:'vie',th:'tha'};
 const languageNames = new Map();
@@ -22,7 +23,7 @@ function edition(value, omitLanguage = false) {
     .replace(/\s+[-–—]\s+(.+)$/, (whole,suffix)=>{if(languageOf(suffix)){qualifier(suffix);return '';}return whole;});
   return {key:norm(base)+'|'+qualifiers.sort().join('|'),language,base:base.trim()};
 }
-const recordingTitle = value => String(value || '').replace(/[([]\s*explicit\s*[)\]]/ig, '').trim();
+const recordingTitle = value => text.clean(value).replace(/[([]\s*explicit\s*[)\]]/ig, '').trim();
 const speedQualifier = /^(?:(?:ultra|super|slightly)\s+)?(?:slow(?:ed)?(?:\s*(?:&|and|\+)\s*reverb(?:ed)?)?|sped\s*up|speed\s*up|nightcore)$/i;
 function speedTitle(value) {
   return recordingTitle(value).replace(/[([]([^()[\]]+)[)\]]/g, (_,content) => {
@@ -34,7 +35,7 @@ function editionKey(value) {
   return edition(value).key;
 }
 const creditsOf = value => artists(String(value || '').replace(/[、/]/g, ',')).map(norm);
-function sameArtist(a,b) { return norm(a) === norm(b) || creditsOf(a).some(x => creditsOf(b).includes(x)); }
+function sameArtist(a,b) { return text.same(a,b) || artists(String(a||'').replace(/[、/]/g,',')).some(x => artists(String(b||'').replace(/[、/]/g,',')).some(y=>text.same(x,y))); }
 const sameEdition = (a,b) => editionKey(a) === editionKey(b);
 const sameSong = (a,b) => sameEdition(a,b) || editionKey(speedTitle(a)) === editionKey(speedTitle(b));
 function matchesTitle(candidate,requested,allowSpeed=true) {
@@ -63,25 +64,42 @@ function parseLrc(text, { allowEmpty = false } = {}) {
   return lines.length <= 2000 && (allowEmpty || lines.some(l => l.text)) ? lines.sort((a,b) => a.time-b.time) : [];
 }
 function metadata(track) {
-  let title = String(track.title || track.filename || '').replace(/\.(mp3|flac|m4a|wav|ogg|opus)$/i, '').trim();
+  let title = text.clean(track.title || track.filename || '');
   let artist = String(track.artist || '').trim();
   if (unknown(artist)) {
     const parts = title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-    if (!parts) return null;
-    [,artist,title] = parts;
+    if (parts) [,artist,title] = parts;
+    else artist='';
   } else {
     const parts=title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-    if(parts&&norm(parts[1])===norm(artist))title=parts[2];
+    if(parts&&sameArtist(parts[1],artist))title=parts[2];
   }
   // Preserve slowed, live and remix editions: their clocks differ.
   title = title.replace(/[([](?:official\s+)?(?:audio|music video|video|lyrics?)[)\]]/ig, '').trim();
-  if (!title || unknown(artist)) return null;
+  if (!title) return null;
   return { title, artist, album: unknown(track.album) ? '' : String(track.album), duration: Number(track.duration) / 1000 || 0 };
 }
+function matchingRecords(records, meta) {
+  const valid=records.filter(r=>r&&Number.isSafeInteger(r.id));
+  let matches = valid.filter(r => matchesTitle(r.trackName,meta.title) && sameArtist(r.artistName,meta.artist));
+  if(!matches.length){
+    // Repair text only with corroborating duration and an unambiguous recording.
+    // Version/language qualifiers must still agree; fuzzy search never authorizes
+    // a different live/remix edition or another artist's namesake.
+    const target=edition(meta.title),candidates=valid.filter(r=>meta.duration>0&&Math.abs(Number(r.duration)-meta.duration)<=2)
+      .filter(r=>unknown(meta.artist)?matchesTitle(r.trackName,meta.title,false):sameArtist(r.artistName,meta.artist))
+      .map(r=>({r,other:edition(r.trackName)}))
+      .filter(({other})=>other.key.split('|').slice(1).join('|')===target.key.split('|').slice(1).join('|'))
+      .map(({r,other})=>({r,distance:text.titleDistance(target.base,other.base)})).filter(x=>Number.isFinite(x.distance))
+      .sort((a,b)=>a.distance-b.distance);
+    const best=candidates.filter(x=>x.distance===candidates[0]?.distance);
+    if(new Set(best.map(({r})=>JSON.stringify([text.romanize(r.trackName),text.romanize(r.artistName)]))).size===1)matches=best.map(x=>({...x.r,identityCorrected:true}));
+  }
+  return matches;
+}
 function select(records, meta) {
-  const language=edition(meta.title).language;
-  const matches = records.filter(r => r && Number.isSafeInteger(r.id) && matchesTitle(r.trackName,meta.title) && sameArtist(r.artistName,meta.artist));
-  const timed = matches.filter(r => matchesTitle(r.trackName,meta.title,false) && meta.duration > 0 && Math.abs(Number(r.duration) - meta.duration) <= 2);
+  const language=edition(meta.title).language,matches=matchingRecords(records,meta);
+  const timed = matches.filter(r => (r.identityCorrected||matchesTitle(r.trackName,meta.title,false)) && meta.duration > 0 && Math.abs(Number(r.duration) - meta.duration) <= 2);
   const ordered = [...timed, ...matches.filter(r => !timed.includes(r))];
   ordered.sort((a,b) => Number(timed.includes(b))-Number(timed.includes(a)) ||
     Number(Boolean(b.syncedLyrics))-Number(Boolean(a.syncedLyrics)) ||
@@ -101,7 +119,7 @@ function select(records, meta) {
     const lines = sync.length ? sync : plain;
     if (lines.length > 2000 || lines.some(l => l.text.length > 2000)) continue;
     if (lines.length || (record.instrumental && timed.includes(record))) return {
-      lines, synced: sync.length > 0, instrumental: Boolean(record.instrumental), editionFallback: !matchesTitle(record.trackName,meta.title,false),
+      lines, synced: sync.length > 0, instrumental: Boolean(record.instrumental), editionFallback: !record.identityCorrected&&!matchesTitle(record.trackName,meta.title,false),
       recording: {title:record.trackName,artist:record.artistName,language},
       source: { name: 'LRCLIB', url: 'https://lrclib.net/api/get/' + Number(record.id), id: record.id }
     };
@@ -111,22 +129,26 @@ function select(records, meta) {
 
 module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fetchImpl = fetch, delay = 350 } = {}) {
   const pending = new Map(), prefsFile = path.join(dataDir, 'lyrics-preferences.json');
-  let enabled = true, mode = 'auto', initialized, tail = Promise.resolve(), generation = 0, selectedId, selection = 0, lookupSelection = 0;
-  const nextRequest = { primary: 0, regional: 0 };
+  let enabled = true, mode = 'auto', initialized, tail = Promise.resolve(), generation = 0, selectedId, selection = 0;
+  const nextRequest = { primary: 0, regional: 0, netease: 0, plain: 0 };
+  const requestSource=require('./source-fetch')({fetcher:fetchImpl});
+  let lookupAbort;
   const controllers = new Set();
   initialized = fs.readFile(prefsFile, 'utf8').then(s => { const p = JSON.parse(s); enabled = p.enabled !== false; if (modes.has(p.mode)) mode = p.mode; }).catch(() => {});
-  async function request(endpoint, params, provider = 'primary', catalog = false) {
-    if (!enabled || lookupSelection !== selection) throw new Error('Lyrics selection changed');
+  async function request(endpoint, params, provider = 'primary', catalog = false, context) {
+    context.signal.throwIfAborted();
+    if (!enabled || context.selection !== selection || context.generation !== generation) throw new Error('Lyrics selection changed');
     const wait = nextRequest[provider] - Date.now();
     if (wait > 1000) throw new Error('Lyrics provider is rate limited; retry later');
     if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
-    if (!enabled || lookupSelection !== selection) throw new Error('Lyrics selection changed');
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
+    context.signal.throwIfAborted();
+    if (!enabled || context.selection !== selection || context.generation !== generation) throw new Error('Lyrics selection changed');
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(new DOMException('Lyrics source timed out','TimeoutError')), 8000);
     controllers.add(controller);
     try {
-      const origin = catalog ? 'https://mobileservice.kugou.com/api/v3/' : provider === 'primary' ? 'https://lrclib.net/api/' : 'https://lyrics.kugou.com/';
-      const response = await fetchImpl(origin + endpoint + '?' + new URLSearchParams(params), {
-        signal: controller.signal, headers: { 'User-Agent': `PAIN/${version} (https://github.com/vansGAMee/pain)`, Accept: 'application/json' }
+      const origin = catalog ? 'https://mobileservice.kugou.com/api/v3/' : {primary:'https://lrclib.net/api/',regional:'https://lyrics.kugou.com/',netease:'https://music.163.com/api/',plain:'https://api.lyrics.ovh/v1/'}[provider];
+      const response = await requestSource(origin + endpoint + '?' + new URLSearchParams(params), {
+        signal: AbortSignal.any([controller.signal,context.signal]), headers: { 'User-Agent': `PAIN/${version} (https://github.com/vansGAMee/pain)`, Accept: 'application/json',...(provider==='netease'?{Referer:'https://music.163.com/'}:{}) }
       });
       nextRequest[provider] = Date.now() + delay;
       if (response.status === 429 || response.status === 503) {
@@ -144,23 +166,24 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
       return JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } finally { clearTimeout(timer); controllers.delete(controller); }
   }
-  async function primary(meta) {
+  async function primary(meta,request) {
     const params = { track_name: meta.title, artist_name: meta.artist };
     if (meta.album) params.album_name = meta.album;
     if (meta.duration >= 1 && meta.duration <= 3600) params.duration = Math.round(meta.duration);
     let exact;
-    try { exact = await request('get', params); }
+    try { if(meta.artist)exact = await request('get', params); }
     catch (error) { if (!error.providerHttp) throw error; }
     let found = select(exact ? [exact] : [], meta);
     if (found?.synced || found?.instrumental) return found;
     // Search ignores unreliable album tags and can locate a synced edition.
     let records;
-    try { records = await request('search', { track_name: recordingTitle(meta.title).replace(/[([][^()[\]]+[)\]]/g,'').trim(), artist_name: artists(meta.artist.replace(/[、/]/g,','))[0] }); }
+    try { records = await request('search', meta.artist?{ track_name: recordingTitle(meta.title).replace(/[([][^()[\]]+[)\]]/g,'').trim(), artist_name: artists(meta.artist.replace(/[、/]/g,','))[0] }:{q:recordingTitle(meta.title)}); }
     catch (error) { if (found) return found; throw error; }
     if (records !== null && !Array.isArray(records)) throw new Error('Invalid lyrics search response');
     return select(records || [], meta) || found || { lines: [], state: 'not-found' };
   }
-  async function regional(meta) {
+  async function regional(meta,request) {
+    if(!meta.artist)return {lines:[],state:'not-found'};
     const data = await request('search', { ver: 1, man: 'yes', client: 'pc', keyword: meta.artist + ' ' + meta.title, duration: Math.round(meta.duration * 1000) }, 'regional');
     if (data && (!Array.isArray(data.candidates) || (data.status !== undefined && data.status !== 200))) throw new Error('Invalid backup lyrics response');
     let candidates = (Array.isArray(data?.candidates) ? data.candidates : []).filter(r =>
@@ -171,7 +194,7 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     }
     candidates.sort((a,b) => Number(sameEdition(b.song,meta.title))-Number(sameEdition(a.song,meta.title)) || Math.abs(a.duration / 1000 - meta.duration) - Math.abs(b.duration / 1000 - meta.duration));
     for (const candidate of candidates.slice(0,2)) {
-      const found = await downloadCandidate(candidate, meta);
+      const found = await downloadCandidate(candidate, meta, undefined, request);
       if (found?.lines?.length) return found;
     }
     // Lyric keyword search misses recordings that the song catalogue knows.
@@ -193,39 +216,80 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
       const lyrics = (Array.isArray(response?.candidates) ? response.candidates : []).filter(r => validCandidate(r) && sameArtist(r.singer,meta.artist) && (matchesTitle(r.song,meta.title) || norm(recordingTitle(r.song)) === base));
       lyrics.sort((a,b) => Math.abs(a.duration / 1000-meta.duration)-Math.abs(b.duration / 1000-meta.duration));
       if (lyrics[0]) {
-        const found = await downloadCandidate(lyrics[0], meta, song);
+        const found = await downloadCandidate(lyrics[0], meta, song, request);
         if (found?.lines?.length) return found;
       }
     }
     return { lines: [], state: 'not-found' };
   }
   function validCandidate(r) { return r && /^\d+$/.test(String(r.id)) && /^[a-z0-9]+$/i.test(r.accesskey || ''); }
-  async function downloadCandidate(candidate, meta, song) {
+  async function downloadCandidate(candidate, meta, song, request) {
     const body = await request('download', { ver: 1, client: 'pc', id: candidate.id, accesskey: candidate.accesskey, fmt: 'lrc', charset: 'utf8' }, 'regional');
     if (typeof body?.content !== 'string' || body.content.length > 300000) return { lines: [], state: 'not-found' };
     const found = select([{ id: Number(candidate.id), trackName: song?.songname || candidate.song, artistName: song?.singername || candidate.singer,
       duration: song && Math.abs(song.duration-meta.duration)>2 ? 0 : candidate.duration / 1000, syncedLyrics: Buffer.from(body.content, 'base64').toString('utf8') }], meta);
     return found ? { ...found, source: { name: 'KuGou', url: 'https://www.kugou.com/' } } : { lines: [], state: 'not-found' };
   }
-  async function lookup(meta, run, chosen) {
-    const providers = mode === 'primary' ? [primary] : mode === 'regional' ? [regional, primary] : [primary, regional];
-    let plain; const checks = [];
-    for (const provider of providers) {
-      if (!enabled || run !== generation || chosen !== selection) throw new Error('Lyrics selection changed');
-      const source = provider === primary ? 'LRCLIB' : 'KuGou';
-      try {
-        const found = await provider(meta); checks.push({source,state:found.lines?.length || found.instrumental ? 'found' : 'not-found'});
-        if (found.synced || found.instrumental) return {...found,checks};
-        if (found.lines?.length && !plain) plain = found;
-      } catch (_) { checks.push({source,state:'unavailable'}); }
+  async function netease(meta,request) {
+    const query=[meta.artist,recordingTitle(meta.title)].filter(Boolean).join(' ');
+    const data=await request('search/get',{s:query,type:1,limit:20,offset:0},'netease');
+    if(data?.code!==200||!data.result||data.result.songs&&!Array.isArray(data.result.songs))throw Error('NetEase search unavailable');
+    const records=(data.result.songs||[]).map(song=>({id:song.id,trackName:song.name,artistName:(song.artists||song.ar||[]).map(a=>a.name).join(', '),albumName:(song.album||song.al)?.name,duration:(song.duration||song.dt)/1000}));
+    const matches=matchingRecords(records,meta).sort((a,b)=>Math.abs(a.duration-meta.duration)-Math.abs(b.duration-meta.duration));
+    let words;
+    for(const record of matches.slice(0,2)){
+      const body=await request('song/lyric',{id:record.id,lv:1},'netease');
+      if(body?.code!==200)throw Error('NetEase lyrics unavailable');
+      const found=select([{...record,syncedLyrics:body.lrc?.lyric}],meta);
+      if(found){const result={...found,source:{name:'NetEase',url:'https://music.163.com/#/song?id='+record.id,id:record.id}};if(found.synced)return result;if(!words)words=result;}
     }
-    if (plain) return {...plain,checks};
-    return { lines: [], state: checks.some(c=>c.state==='unavailable') ? 'error' : 'not-found', checks };
+    return words||{lines:[],state:'not-found'};
+  }
+  async function plain(meta,request) {
+    if(!meta.artist||edition(speedTitle(meta.title)).key.split('|').slice(1).some(Boolean))return {lines:[],state:'not-found'};
+    const title=speedTitle(meta.title),artist=artists(meta.artist.replace(/[、/]/g,','))[0];
+    const body=await request(encodeURIComponent(artist)+'/'+encodeURIComponent(title),{},'plain');
+    if(body===null)return {lines:[],state:'not-found'};
+    if(typeof body?.lyrics!=='string')throw Error('Invalid Lyrics.ovh response');
+    const found=select([{id:0,trackName:title,artistName:artist,plainLyrics:body.lyrics}],meta);
+    return found?{...found,source:{name:'Lyrics.ovh',url:'https://api.lyrics.ovh/v1/'+encodeURIComponent(artist)+'/'+encodeURIComponent(title)}}:{lines:[],state:'not-found'};
+  }
+  async function lookup(meta, run, chosen) {
+    const providers = mode === 'primary' ? [primary] : mode === 'regional' ? [regional, netease, primary, plain] : [primary, regional, netease, plain];
+    let words; const checks = [];
+    lookupAbort=new AbortController();const timeout=setTimeout(()=>lookupAbort.abort(new DOMException('Lyrics lookup timed out','TimeoutError')),30000);
+    const check=async provider=>{
+      if (!enabled || run !== generation || chosen !== selection) throw new Error('Lyrics selection changed');
+      const source = new Map([[primary,'LRCLIB'],[regional,'KuGou'],[netease,'NetEase'],[plain,'Lyrics.ovh']]).get(provider);
+      try {
+        const context={signal:lookupAbort.signal,selection:chosen,generation:run};
+        const scopedRequest=(endpoint,params,provider='primary',catalog=false)=>request(endpoint,params,provider,catalog,context);
+        const found = await provider(meta,scopedRequest); checks.push({source,state:found.lines?.length || found.instrumental ? 'found' : 'not-found'});
+        if(found.lines?.length&&!words)words=found;
+        return found;
+      } catch (_) { checks.push({source,state:'unavailable'}); }
+      return null;
+    };
+    try{
+      const first=await check(providers.shift());
+      if(first?.synced||first?.instrumental)return {...first,checks:[...checks]};
+      // Independent hosts overlap only after the preferred provider misses or
+      // fails. A dead source cannot hold a successful backup behind its timeout.
+      try{
+        const found=await Promise.any(providers.map(async provider=>{const value=await check(provider);if(value?.synced||value?.instrumental)return value;throw Error('No synced text');}));
+        return {...found,checks:[...checks]};
+      }catch(_){}
+      if (words) return {...words,checks:[...checks]};
+      return { lines: [], state: checks.some(c=>c.state==='unavailable') ? 'error' : 'not-found', checks:[...checks] };
+    }finally{
+      clearTimeout(timeout);lookupAbort.abort();
+    }
   }
   async function get(id, { refresh = false } = {}) {
     await initialized;
     const track = getTrack?.(id);
     if (!track) return { lines: [], state: 'not-found' };
+    if (selectedId !== id) { selectedId = id; selection++; for (const controller of controllers) controller.abort(); }
     const signature = JSON.stringify([track.title, track.artist, track.album, track.duration]);
     const key = crypto.createHash('sha256').update(id + signature).digest('hex');
     const file = path.join(dataDir, 'lyrics-online', key + '.json');
@@ -234,7 +298,6 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     if(enabled && saved?.providerRevision !== providerRevision && edition(track.title).language) saved=undefined;
     if (saved && (!refresh || !enabled) && (!enabled || saved.providerRevision === providerRevision) && (saved.lines?.length || saved.instrumental || (saved.state === 'not-found' && saved.lookupMode === mode && Date.now()-saved.updatedAt < 86400000))) return saved;
     if (!enabled) return saved || { lines: [], state: 'disabled' };
-    if (selectedId !== id) { selectedId = id; selection++; for (const controller of controllers) controller.abort(); }
     const chosen = selection;
     const run = generation;
     const pendingKey = key + ':' + run + ':' + chosen;
@@ -245,7 +308,6 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
       const meta = metadata(resolved);
       if (!meta) return { lines: [], state: 'missing-metadata' };
       try {
-        lookupSelection = chosen;
         const result = { ...await lookup(meta, run, chosen), updatedAt: Date.now(), lookupMode: mode, providerRevision };
         if (run !== generation || chosen !== selection) return { lines: [], state: 'superseded' };
         await fs.mkdir(path.dirname(file), { recursive: true });
@@ -271,7 +333,13 @@ module.exports = function createOnlineLyrics(dataDir, { getTrack, localMedia, fe
     } else if (req.method !== 'GET') { res.writeHead(405); res.end('{}'); return; }
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ enabled, mode }));
   }
-  return { get, settings };
+  async function cached(id) {
+    const track=getTrack?.(id);if(!track)return null;
+    const signature=JSON.stringify([track.title,track.artist,track.album,track.duration]);
+    const value=await require('./lyrics-search').read(path.join(dataDir,'lyrics-online',require('./lyrics-search').key(id+signature)+'.json'));
+    return value&&value.providerRevision!==providerRevision&&edition(track.title).language?null:value;
+  }
+  return { get, settings, cached };
 };
 module.exports.parseLrc = parseLrc;
 module.exports.select = select;

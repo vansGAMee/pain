@@ -1,0 +1,21 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http');
+test('checkpoint persists on disk, serializes concurrent updates and rejects stale/invalid writes',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pain-checkpoint-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const tracks=[{id:123,title:'Song',artist:'Artist',duration:60000}];
+ let checkpoint=require('../src/playback-checkpoint')(dir,{getTracks:()=>tracks});
+ const server=http.createServer((req,res)=>checkpoint(req,res,new URL(req.url,'http://localhost')));
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const url='http://127.0.0.1:'+server.address().port+'/api/playback-checkpoint';
+ const post=value=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+ const at=Date.now(),value={id:'123',position:14.25,updatedAt:at};
+ assert.equal((await post(value)).status,200);
+ await Promise.all([post({...value,position:20,updatedAt:at+2}),post({...value,position:19,updatedAt:at+1})]);
+ checkpoint=require('../src/playback-checkpoint')(dir,{getTracks:()=>tracks});
+ const saved=(await(await fetch(url)).json()).value;assert.equal(saved.id,'123');assert.equal(saved.position,20);assert.equal(saved.title,'Song');
+ assert.equal((await post({...value,id:'deleted'})).status,404);
+ assert.equal((await post({...value,position:-1})).status,400);
+ assert.equal((await post({...value,position:null})).status,400);
+ assert.equal((await(await fetch(url)).json()).value.position,20);
+ const remote={method:'GET',socket:{remoteAddress:'192.168.0.99'}},response={writeHead(code){this.status=code;},end(){}};
+ assert.equal(checkpoint(remote,response,new URL(url)),true);assert.equal(response.status,403);
+});

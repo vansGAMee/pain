@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
 module.exports=function lyricsRoute(req,res,url,dataDir,online){
+ if(require('./lyrics-search')(req,res,url,dataDir,online))return true;
  if(url.pathname==='/api/lyrics/settings'&&online){online.settings(req,res).catch(()=>{if(!res.headersSent){res.writeHead(400);res.end('{}');}});return true;}
  if(url.pathname!=='/api/lyrics')return false;
  const id=url.searchParams.get('track');

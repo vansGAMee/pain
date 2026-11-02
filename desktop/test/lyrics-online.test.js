@@ -3,6 +3,30 @@ const create=require('../src/lyrics-online'),route=require('../src/lyrics-store'
 const track={id:'any-library-track',title:'Песня',artist:'Исполнитель',album:'Download',duration:180000};
 const record={id:42,trackName:'Песня',artistName:'Исполнитель',duration:180,plainLyrics:'Первая\nВторая',syncedLyrics:'[00:01.20]Первая\n[00:02.50]Вторая\n[00:04.00]'};
 const fixture=t=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pain-online-lyrics-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;};
+test('NetEase wins while an independent source is stalled, validates recording duration and cancels losers',async t=>{
+ let cancelled=false;const calls=[];
+ const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async(url,{signal}={})=>{
+  calls.push(url);
+  if(url.includes('lrclib.net'))throw new TypeError('Unavailable');
+  if(url.includes('lyrics.kugou.com'))return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>{cancelled=true;reject(signal.reason);},{once:true}));
+  if(url.includes('music.163.com/api/search/get'))return Response.json({code:200,result:{songs:[{id:77,name:track.title,artists:[{name:track.artist}],album:{name:'Album'},duration:track.duration}]}});
+  if(url.includes('music.163.com/api/song/lyric'))return Response.json({code:200,lrc:{lyric:record.syncedLyrics}});
+  return new Response('{}',{status:404});
+ }});
+ const result=await service.get(track.id);assert.equal(result.source.name,'NetEase');assert.equal(result.synced,true);assert.equal(result.lines[0].time,1.2);assert.equal(cancelled,true);
+ assert.ok(calls.some(url=>url.includes('/search/get?')));
+});
+test('plain-text fallback provides words without inventing timing and NetEase rejects another artist before downloading',async t=>{
+ const calls=[];const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{
+  calls.push(url);
+  if(url.includes('lrclib.net'))return url.includes('/get?')?new Response('{}',{status:404}):Response.json([]);
+  if(url.includes('music.163.com'))return Response.json({code:200,result:{songs:[{id:77,name:track.title,artists:[{name:'Different artist'}],duration:track.duration}]}});
+  if(url.includes('api.lyrics.ovh'))return Response.json({lyrics:'First words\nSecond line'});
+  return backupResponse(url,[]);
+ }});
+ const result=await service.get(track.id);assert.equal(result.source.name,'Lyrics.ovh');assert.equal(result.synced,false);assert.ok(result.lines.every(l=>l.time===null));
+ assert.ok(!calls.some(url=>url.includes('music.163.com/api/song/lyric')));
+});
 test('LRC parses repeated lines, Cyrillic, fractional times, breaks and global offset',()=>{
  assert.deepEqual(create.parseLrc('[offset:+200]\n[00:01.50][01:02.200]Строка\n[01:04.00]'),[{text:'Строка',time:1.3},{text:'Строка',time:62},{text:'',time:63.8}]);
  assert.deepEqual(create.parseLrc('[00:90.00]Invalid'),[]);
@@ -30,7 +54,7 @@ test('search finds synced release when exact album lookup fails; honors Retry-Af
  const limited=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async()=>{calls++;return new Response('limit',{status:429,headers:{'retry-after':'90'}});}});
  assert.equal((await limited.get(track.id)).state,'error');const before=calls;
  assert.equal((await limited.get(track.id,{refresh:true})).state,'error');assert.equal(calls,before);
- const empty=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls++;return url.includes('kugou.com')?backupResponse(url,[]):Response.json([]);}});
+ const empty=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls++;return url.includes('lrclib.net')?Response.json([]):backupResponse(url,[]);}});
  assert.equal((await empty.get(track.id)).state,'not-found');const n=calls;await empty.get(track.id);assert.equal(calls,n);
 });
 test('an overloaded signature endpoint falls back to search without losing timing',async t=>{
@@ -52,19 +76,39 @@ test('manual text wins, disabling is durable, and saved automatic lyrics remain 
 });
 const candidate={id:'9182',accesskey:'ABC123',song:track.title,singer:track.artist,duration:180500};
 function backupResponse(url,items=[candidate]) {
+ if(url.includes('music.163.com'))return Response.json({code:200,result:{songs:[]}});
+ if(url.includes('api.lyrics.ovh'))return new Response('{}',{status:404});
  if(url.includes('mobileservice.kugou.com'))return Response.json({status:1,data:{info:[]}});
  return url.includes('/download?')?Response.json({content:Buffer.from(record.syncedLyrics).toString('base64')}):Response.json({candidates:items});
 }
+test('a losing provider waiting for its rate limit cannot attach itself to the next song lookup',async t=>{
+ const other={...track,id:'another-track',title:'Other song'},calls=[],pause=ms=>new Promise(r=>setTimeout(r,ms));
+ const service=create(fixture(t),{getTrack:id=>id===track.id?track:other,delay:50,fetchImpl:async url=>{
+  calls.push(url);const u=new URL(url);
+  if(u.hostname==='lrclib.net'){
+   if(u.pathname.endsWith('/get')&&u.searchParams.get('track_name')===other.title){await pause(80);return Response.json({...record,trackName:other.title});}
+   return u.pathname.endsWith('/get')?Response.json({...record,syncedLyrics:null}):Response.json([]);
+  }
+  if(u.hostname==='music.163.com'){
+   if(u.pathname.endsWith('/search/get')){await pause(20);return Response.json({code:200,result:{songs:[{id:77,name:track.title,artists:[{name:track.artist}],duration:track.duration}]}});}
+   return Response.json({code:200,lrc:{lyric:record.syncedLyrics}});
+  }
+  return backupResponse(url);
+ }});
+ assert.equal((await service.get(track.id)).source.name,'KuGou');
+ assert.equal((await service.get(other.id)).source.name,'LRCLIB');await pause(60);
+ assert.ok(!calls.some(url=>url.includes('music.163.com/api/song/lyric')),'the old delayed download remains cancelled while the new request is active');
+});
 test('unreachable primary switches hosts immediately and saves genuine backup timings offline',async t=>{
  const dir=fixture(t),calls=[];
  const service=create(dir,{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);if(url.startsWith('https://lrclib.net/'))throw Error('connection timeout');return backupResponse(url);}});
  const found=await service.get(track.id);assert.equal(found.source.name,'KuGou');assert.equal(found.synced,true);assert.equal(found.lines[0].time,1.2);
- assert.equal(calls.length,3);assert.equal(calls.filter(u=>u.includes('lrclib')).length,1);
+ assert.equal(calls.filter(u=>u.includes('kugou.com')).length,2);assert.equal(calls.filter(u=>u.includes('lrclib')).length,1);
  const offline=create(dir,{getTrack:()=>track,fetchImpl:()=>{throw Error('offline');}});assert.deepEqual((await offline.get(track.id)).lines,found.lines);
 });
 test('primary rate limit does not block an independent fallback',async t=>{
  const calls=[];const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls.push(url);return url.includes('lrclib.net')?new Response('busy',{status:429,headers:{'retry-after':'90'}}):backupResponse(url);}});
- assert.equal((await service.get(track.id)).source.name,'KuGou');assert.equal(calls.length,3);
+ assert.equal((await service.get(track.id)).source.name,'KuGou');assert.equal(calls.filter(u=>u.includes('kugou.com')).length,2);
 });
 test('backup rejects other artists and live editions, and strips timing from a different recording',async t=>{
  for(const change of [{singer:'Another artist'},{song:track.title+' (Live)'},{duration:220000}]) {
@@ -97,9 +141,10 @@ test('another speed edition can supply words but never timing, while other remix
  assert.equal(create.select([{...record,trackName:'Песня (Different Remix)'}],meta),null);
 });
 test('a source timeout plus an empty backup is an availability error, not a day-long cached miss',async t=>{
+ t.mock.timers.enable({apis:['Date']});
  let connected=false,calls=0;const service=create(fixture(t),{getTrack:()=>track,delay:0,fetchImpl:async url=>{calls++;if(url.includes('lrclib.net')){if(!connected)throw Error('TLS timeout');return Response.json(record);}return backupResponse(url,[]);}});
- const first=await service.get(track.id);assert.equal(first.state,'error');assert.deepEqual(first.checks,[{source:'LRCLIB',state:'unavailable'},{source:'KuGou',state:'not-found'}]);
- const before=calls;connected=true;assert.equal((await service.get(track.id)).synced,true);assert.ok(calls>before);
+ const first=await service.get(track.id);assert.equal(first.state,'error');assert.deepEqual(Object.fromEntries(first.checks.map(c=>[c.source,c.state])),{'LRCLIB':'unavailable','KuGou':'not-found','NetEase':'not-found','Lyrics.ovh':'not-found'});
+ const before=calls;connected=true;t.mock.timers.tick(3000);assert.equal((await service.get(track.id)).synced,true);assert.ok(calls>before);
 });
 test('switching tracks cancels an old stalled lookup instead of queueing the current song behind it',async t=>{
  let started,aborted=false;const begun=new Promise(r=>{started=r;});

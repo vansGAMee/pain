@@ -68,6 +68,7 @@ const pulseflow = require('./pulseflow-service')({dataDir: DATA_DIR, getTracks: 
 const desktopPreferences = globalThis.painShell?.preferences || require('./desktop-preferences')(DATA_DIR);
 const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFilePath(id, true), getLibraryTracks);
 const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id)});
+const playbackCheckpoint=require('./playback-checkpoint')(DATA_DIR,{getTracks:getLibraryTracks});
 const discordPresence=require('./discord-presence')(DATA_DIR);
 const transitionAudio=require('./transition-audio')(DATA_DIR);
 const personalRecommender=require('./personal-service')(DATA_DIR);
@@ -657,6 +658,7 @@ function streamFileWithRange(filePath, req, res, mime = 'audio/mpeg') {
 const server = http.createServer((req, res) => {
   const url=httpSafety.guard(req,res);if(!url)return;
   const pathname = url.pathname;
+  if(playbackCheckpoint(req,res,url))return;
 
   if(pathname==='/api/discord-presence'){
     const local=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
@@ -689,10 +691,11 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname.startsWith('/api/pulseflow/')) { pulseflow.route(req, res, pathname); return; }
-  if(pathname==='/api/genres'||pathname.startsWith('/api/genres/track/')||pathname==='/api/taste-profile'){
+  if(pathname==='/api/genres'||pathname==='/api/genres/snapshot'||pathname.startsWith('/api/genres/track/')||pathname==='/api/taste-profile'){
     const send=data=>{if(!res.destroyed){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}};
     (async()=>{
       await genres.ready;
+      if(pathname==='/api/genres/snapshot')return send({entries:Object.fromEntries(Object.entries(await genres.snapshot()).map(([id,row])=>[id,row.names||[]]))});
       if(pathname==='/api/genres'){
         if(req.method==='POST')return send(await genres.setEnabled(url.searchParams.get('enabled')==='1'));
         return send(genres.status());

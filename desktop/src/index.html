@@ -144,8 +144,9 @@
         <div class="top-bar-left">
           <div class="search-box">
             <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="search-input" id="searchInput" placeholder="Search tracks, artists, albums…" data-en-placeholder="Search tracks, artists, albums…" data-ru-placeholder="Поиск по названию, артисту, альбому…">
+            <input type="text" class="search-input" id="searchInput" maxlength="512" placeholder="Track, artist, genre or lyrics…" data-en-placeholder="Track, artist, genre or lyrics…" data-ru-placeholder="Трек, исполнитель, жанр или слова песни…" aria-describedby="musicSearchHint">
             <button class="search-clear-btn" id="searchClearBtn" style="display:none;">✕</button>
+            <span id="musicSearchHint" class="music-search-hint" role="status" aria-live="polite"></span>
           </div>
 
           <!-- Category Chips with Icons -->
@@ -974,13 +975,13 @@
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
               <label for="onlineLyricsSwitch" data-en="Find karaoke lyrics automatically" data-ru="Автоматически искать текст и караоке">Автоматически искать текст и караоке</label>
-              <span class="fluid-row-hint" data-en="LRCLIB with an independent KuGou fallback. Real timing when available; saved locally. Your edits take priority." data-ru="LRCLIB и независимый запасной источник KuGou. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.">LRCLIB и независимый запасной источник KuGou. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.</span>
+              <span class="fluid-row-hint" data-en="LRCLIB, KuGou, NetEase and a plain-text fallback. Source timing when available; saved locally. Your edits take priority." data-ru="LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.">LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineLyricsSwitch" checked disabled><span class="switch-slider round"></span></label></div>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label"><label for="lyricsSourceMode" data-en="Lyrics sources" data-ru="Источники текста">Источники текста</label><span class="fluid-row-hint" data-en="If the main source is unreachable without a VPN, try the backup first. Availability depends on your network." data-ru="Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.">Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.</span></div>
-            <select id="lyricsSourceMode" class="sort-select" disabled><option value="auto" data-ru="Автоматически" data-en="Automatic">Автоматически</option><option value="regional" data-ru="Сначала запасной (без VPN)" data-en="Backup first (without VPN)">Сначала запасной (без VPN)</option><option value="primary" data-ru="Только LRCLIB" data-en="LRCLIB only">Только LRCLIB</option></select>
+            <select id="lyricsSourceMode" class="sort-select" disabled><option value="auto" data-ru="Автоматически" data-en="Automatic">Автоматически</option><option value="regional" data-ru="Сначала запасные источники" data-en="Backup sources first">Сначала запасные источники</option><option value="primary" data-ru="Только LRCLIB" data-en="LRCLIB only">Только LRCLIB</option></select>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
@@ -1377,6 +1378,12 @@
   <script src="presence-engine.js"></script>
   <script src="performance-mode.js"></script>
   <script src="list-view.js"></script>
+  <script src="music-search.js"></script>
+  <script src="vendor/minisearch/index.js"></script>
+  <script src="vendor/double-metaphone/index.js"></script>
+  <script src="music-search-index.js"></script>
+  <script src="music-search-client.js"></script>
+  <script src="playback-memory.js"></script>
   <script src="app.js"></script>
   <script src="artist-card.js"></script>
   <script src="track-info.js"></script>

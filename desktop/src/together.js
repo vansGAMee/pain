@@ -73,11 +73,16 @@
   if(active()){if(snapshot.connected){if(!wasConnected&&player.getAudio().error)retryAudio();align();}else player.sessionPause();}
   render();
  }
- function search(){
-  const query=el('togetherSearch').value.trim().toLocaleLowerCase();
-  const songs=[];for(const track of player.getTracks()){if(player.isExcluded?.(track.id))continue;if(!query||[track.title,track.artist,track.album].some(v=>String(v||'').toLocaleLowerCase().includes(query)))songs.push(track);if(songs.length===30)break;}
+ let searchGeneration=0;
+ async function search(){
+  const token=++searchGeneration,query=el('togetherSearch').value.trim(),tracks=player.getTracks();
+  let result;try{result=await MusicSearchClient.search(tracks,query,'together');}catch(_){return;}
+  if(token!==searchGeneration||el('togetherSearch').value.trim()!==query)return;
+  const byId=new Map(tracks.map(t=>[String(t.id),t]));
+  const songs=result.hits.map(h=>byId.get(h.id)).filter(track=>track&&!player.isExcluded?.(track.id)).slice(0,30);
   el('togetherSongs').innerHTML=songs.map(track=>`<button type="button" data-together-add="${esc(track.id)}"><span><strong>${esc(track.title)}</strong><small>${esc(track.artist)}</small></span><span>＋</span></button>`).join('');
  }
+ window.addEventListener('pain:search-index',()=>{if(dialog.open&&el('togetherSearch').value.trim())search();});
  async function open(){
   dialog.showModal();try{const next=await(await fetch('/api/listen/status')).json();update(next);
    el('togetherServer').value=next.settings.server;el('togetherPin').value=next.settings.pin;el('togetherName').value=next.settings.name;search();
