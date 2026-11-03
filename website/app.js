@@ -4,9 +4,9 @@ document.documentElement.classList.add('js-ready');
 const repo='https://github.com/vansGAMee/pain';
 const base=repo+'/releases/download/v1.9.3/';
 const releases={
- windows:{name:'Windows',file:'Pain-v1.9.3-Setup.exe',size:124853353,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'450a8cdd00e0dead360163e68d322db46b774694e7176c9fa8e983022cfcaced'},
- android:{name:'Android',file:'Pain-v1.9.3-Android.apk',size:9807730,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'af52e458cf748708a51db938e8cc50b2755d35f6d1c966df0153f25c8646a5cd'},
- linux:{name:'Linux',file:'Pain-v1.9.3-Linux.AppImage',size:129852748,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'f94078ad5cee3af96b2a711f3d0ba146e999c1ef297be39a77f3148126e6ebb3'}
+ windows:{name:'Windows',file:'Pain-v1.9.3-Setup.exe',size:124867400,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'09317216081a48714a5a9c89ec755da417bd539d982df4827247fa997dd0f813'},
+ android:{name:'Android',file:'Pain-v1.9.3-Android.apk',size:9807806,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'47beef7fe828d5d88cbec6a5690395a5ea94a1a9d601807eecebde63aff354a4'},
+ linux:{name:'Linux',file:'Pain-v1.9.3-Linux.AppImage',size:129869102,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'3888d65ff809a3a8ecda4f6a081917783a4dad668f71ddfe0f819ffd00b031b1'}
 };
 for(const data of Object.values(releases))data.url=base+data.file;
 let platform=/Android/i.test(navigator.userAgent)?'android':/Linux|X11/i.test(navigator.userAgent)?'linux':'windows';
