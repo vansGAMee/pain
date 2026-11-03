@@ -30,6 +30,26 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
    assert.equal(await page.locator('#homeContent [onerror]').count(),0);
    assert.equal(await page.locator('.home-playlist b').count(),0,'playlist names are escaped');
    assert.doesNotMatch(await page.locator('#homeContent').innerHTML(),/NaN|Infinity/);
+   for(const theme of ['form','form-night']){
+    await page.evaluate(value=>document.documentElement.setAttribute('data-theme',value),theme);
+    for(const width of [390,905,1024,1440]){
+     await page.setViewportSize({width,height:900});
+     const line=await page.locator('.home-personal').evaluate(element=>{
+      const style=getComputedStyle(element);
+      return {length:element.textContent.length,height:element.getBoundingClientRect().height,lineHeight:parseFloat(style.lineHeight)};
+     });
+     assert.ok(line.length<=100,'personal copy remains one short sentence');
+     assert.ok(line.height<=line.lineHeight*2+1,`${theme} at ${width}px: personal copy uses at most two visible lines`);
+     // Even unusually wide metadata must not grow the hero into a paragraph.
+     assert.ok(await page.locator('.home-personal').evaluate(element=>{
+      const original=element.textContent;element.textContent='Ш'.repeat(100);
+      const fits=element.getBoundingClientRect().height<=parseFloat(getComputedStyle(element).lineHeight)*2+1;
+      element.textContent=original;return fits;
+     }),'wide glyphs keep the two-line visual limit');
+    }
+   }
+   await page.evaluate(()=>document.documentElement.setAttribute('data-theme','form'));
+   await page.setViewportSize({width:390,height:844});
    if(count===1){
     for(const view of ['insights','sync']){
      await page.evaluate(v=>location.hash=v,view);
@@ -56,6 +76,6 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
    assert.equal(await page.locator('#view-home').evaluate(e=>getComputedStyle(e).animationName),'none');
    assert.deepEqual(errors,[]);await context.close();
   }
-  console.log('PASS: empty/one/100 songs, long and hostile metadata, covers, search, drawer, language, history navigation, reduced motion, narrow statistics/devices/EQ.');
+  console.log('PASS: empty/one/100 songs, short personal copy limited to two lines at 390/905/1024/1440px in both form themes, hostile metadata, covers, navigation, language and narrow statistics/devices/EQ.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

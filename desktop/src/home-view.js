@@ -6,6 +6,9 @@
  const icon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z" fill="currentColor"/></svg>';
  let snapshot,actions,mix=[],mixKey='',mixPending=false,mixError=false,variation=0,mixVariation=-1,ticket=0;
  let mixScope='';
+ let personalMessage='',personalContext='',messageEngine;
+ // A visit gets one message. Mix completion and background redraws keep it.
+ window.addEventListener?.('pain:view',event=>{if(event.detail!=='home')personalMessage='';});
  const shown=new Set();
  function movePastMix(){for(const item of mix)shown.add(String(item.track.id));}
  function playSelectedMix(track,tracks){
@@ -78,8 +81,15 @@
    return `<svg viewBox="0 0 560 152" role="img" aria-label="${escape(label)}" class="home-chart"><text x="0" y="12">${Math.round(max/60000)} ${t('мин','min')}</text><text x="20" y="116">0</text><path d="M48 16H552M48 64H552M48 112H552" class="home-chart-grid"/>${values.map((value,i)=>`<g><title>${escape(labels[i]+': '+time(value))}</title><rect class="home-chart-bar${i===highlight?' is-highlight':''}" x="${48+i*width+4}" y="${112-96*value/max}" width="${Math.max(2,width-8)}" height="${96*value/max}" rx="1"/><text x="${48+(i+.5)*width}" y="144" text-anchor="middle">${escape(values.length>7&&i%4!==0?'':labels[i])}</text></g>`).join('')}</svg>`;
   }
   const hour=new Date(now).getHours(),greeting=hour<5?t('Тихой ночи.','Good night.'):hour<12?t('Доброе утро.','Good morning.'):hour<18?t('Добрый день.','Good afternoon.'):t('Добрый вечер.','Good evening.');
-  const ritual=d.ritual&&m.library.get(d.ritual.track);
-  const fact=ritual?t(`Вы слушали «${title(ritual)}» в ${d.ritual.days} из последних 28 дней.`,`“${title(ritual)}” played on ${d.ritual.days} different days in the last four weeks.`):d.plays.length?t(`В вашей истории уже ${d.heardLibrary} прослушанных треков из фонотеки. Можно продолжить знакомое или найти следующее открытие.`,`Your history includes ${d.heardLibrary} tracks from your library. Return to something familiar or find your next discovery.`):t('Ваша музыка, в вашем ритме. Первые прослушивания появятся здесь вместе с вашей историей.','Your music, at your pace. Your first listens will bring this page to life.');
+  const messageContext=`${data.lang}:${new Date(now).toDateString()}:${m.library.size}:${d.heardLibrary===0}`;
+  if(!personalMessage||personalContext!==messageContext){
+   personalContext=messageContext;
+   if(typeof HomeMessages!=='undefined'){
+    messageEngine||=HomeMessages.create();
+    personalMessage=messageEngine.next(m,{lang:data.lang,now});
+   }else personalMessage=t('Ваша музыка, в вашем ритме.','Your music, at your pace.');
+  }
+  const fact=personalMessage;
   const explored=percent(d.heardLibrary,d.librarySize),outside=percent(d.outsideFavorites,d.knownTime);
   const activeDays=d.calendar.filter(x=>x.ms>=60000).length;
   const hourMax=d.hours.some(Boolean)?d.hours.indexOf(Math.max(...d.hours)):-1;

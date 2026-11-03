@@ -23,7 +23,18 @@ function activity(state,now=Date.now(),type=2){
 module.exports=function createPresence(dir,{connect=net.createConnection,sockets=()=>paths(),now=Date.now}={}){
  const file=path.join(dir,'discord-presence.json');let enabled=false;try{enabled=JSON.parse(fs.readFileSync(file,'utf8')).enabled===true;}catch(_){}
  let socket,ready=false,closed=false,connecting=false,timer,updateTimer,handshake,buffer=Buffer.alloc(0),current,lastSent='',inflight,lastError=null,appName,generation=0,nextAttempt=0,published=false,lastPublished,sentAt=[];
- let transport='discord';
+ let transport='discord',lastPlaybackHeartbeat=0;
+ // Read-only local companion feed. Playback remains observable with Discord disabled.
+ function playback(){
+  const t=current?.track,observedAt=current?.observedAt||0,age=Math.max(0,now()-lastPlaybackHeartbeat);
+  const duration=Math.max(0,Number(current?.duration)||0),rate=Math.min(4,Math.max(.25,Number(current?.rate)||1));
+  const playing=!!t&&current?.playing===true&&age<20000;
+  let position=Math.max(0,Number(current?.position)||0);
+  if(playing)position+=Math.max(0,now()-observedAt)/1000*rate;
+  if(duration)position=Math.min(position,duration);
+  return {source:'pain',player:'pain',playing,track_id:t?.id==null?'':String(t.id),title:text(t?.title,512),artist:text(t?.artist,512),album:text(t?.album,512),position,duration,volume:Number.isFinite(current?.volume)?Math.max(0,Math.min(1,current.volume)):null,bpm:Number.isFinite(Number(t?.bpm))&&Number(t.bpm)>0?Number(t.bpm):null,observed_at:now()/1000,heartbeat_age:age/1000};
+ }
+
  const currentActivity=()=>activity(current,now(),transport==='arrpc'?0:2);
  const status=()=>{const pending=enabled&&!!current&&JSON.stringify(currentActivity())!==lastSent,window=sentAt.filter(stamp=>now()-stamp<20000);return {enabled,connected:ready,published,transport,visibility:'unknown',applicationId:CLIENT_ID,appName:appName||null,error:lastError,currentTrack:current?.track?.title||null,publishedTrack:published?lastPublished?.details||null:null,publishedState:published?lastPublished?.state||null:null,publishedTimestamps:published?lastPublished?.timestamps||null:null,pending,retryAfterMs:pending&&window.length>=5?Math.max(0,20000-(now()-window[0])):0};};
  function write(op,data){if(socket&&!socket.destroyed)socket.write(frame(op,data));}
@@ -66,7 +77,8 @@ module.exports=function createPresence(dir,{connect=net.createConnection,sockets
   if(stamp!==generation)return;connecting=false;retry();
  }
  function stop(){generation++;clearTimeout(timer);clearTimeout(updateTimer);updateTimer=null;clearTimeout(handshake);sentAt=sentAt.filter(stamp=>now()-stamp<20000);if(ready&&sentAt.length<5){sentAt.push(now());write(1,{cmd:'SET_ACTIVITY',args:{pid:process.pid,activity:null},nonce:crypto.randomUUID()});}const old=socket;socket=null;ready=false;published=false;connecting=false;inflight=null;old?.end();setTimeout(()=>old?.destroy(),250).unref?.();}
- const api={status,start,update(value){
+ const api={status,playback,start,update(value){
+  lastPlaybackHeartbeat=now();
   const next=value?{...value,observedAt:value.observedAt||now()}:{track:null};
   // Playback clocks advance in Discord itself. A periodic heartbeat confirms
   // liveness; only real track/play/seek/rate events re-anchor the clock.

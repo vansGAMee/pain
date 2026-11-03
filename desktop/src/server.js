@@ -70,6 +70,7 @@ const localMedia = require('./local-media')(DATA_DIR, id => getResolvedAudioFile
 const onlineLyrics = require('./lyrics-online')(DATA_DIR, {localMedia, getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id)});
 const playbackCheckpoint=require('./playback-checkpoint')(DATA_DIR,{getTracks:getLibraryTracks});
 const discordPresence=require('./discord-presence')(DATA_DIR);
+const companionControl=require('./companion-control')();
 const transitionAudio=require('./transition-audio')(DATA_DIR);
 const personalRecommender=require('./personal-service')(DATA_DIR);
 const together=require('./listen/service')(DATA_DIR,{getTracks:getLibraryTracks,getPort:()=>server.address().port,isExcluded:id=>phoneSync.read('excluded-tracks.json',[]).map(String).includes(String(id)),isRemoved:track=>phoneSync.removals.blocked(track),saveLibrary:track=>phoneSync.saveLibrary({tracks:[track]}),defaults:require('./listen/defaults.json')});
@@ -77,6 +78,7 @@ phoneSync.onRemovals=()=>{libraryFileMtime=-1;together.withdrawUnavailable();};
 const libraryEvents=require('./library-events')(DATA_DIR,()=>{if(phoneSync.removals.reload())phoneSync.mergeRemovals(phoneSync.removals.entries);libraryFileMtime=-1;together.withdrawUnavailable();});
 const discordCovers=new Map();let discordTrackId;
 process.once('exit',()=>discordPresence.close());
+process.once('exit',()=>companionControl.close());
 const catalog = require('./music-catalog')(DATA_DIR);
 const trackRatings=require('./track-ratings')(DATA_DIR,{catalog});
 const storeCatalog=require('./store-search');storeCatalog.configure(DATA_DIR);
@@ -660,6 +662,16 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname;
   if(playbackCheckpoint(req,res,url))return;
 
+  if(pathname.startsWith('/api/companion-control/')){companionControl.route(req,res,pathname);return;}
+
+  // Local read-only playback facts for desktop companions. Never permits controls.
+  if(pathname==='/api/companion-playback'){
+    if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)){res.writeHead(403);res.end();return;}
+    if(req.method!=='GET'){res.writeHead(405,{'Allow':'GET'});res.end();return;}
+    res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    res.end(JSON.stringify(discordPresence.playback()));return;
+  }
+
   if(pathname==='/api/discord-presence'){
     const local=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
     if(!local){res.writeHead(403);res.end();return;}
@@ -673,7 +685,7 @@ const server = http.createServer((req, res) => {
           const track=getLibraryTracks().find(t=>String(t.id)===String(data.trackId));
           const duration=track?Math.max(0,Number(track.duration)||0)/1000:0;
           discordTrackId=track?.id;
-          const playback={track,playing:data.playing===true,position:Number.isFinite(data.position)?Math.max(0,Math.min(data.position,duration)):0,duration,rate:Number.isFinite(data.rate)?data.rate:1,smart:data.smart===true,image:discordCovers.get(track?.id),observedAt:Date.now(),heartbeat:data.heartbeat===true};
+          const playback={track,playing:data.playing===true,position:Number.isFinite(data.position)?Math.max(0,Math.min(data.position,duration)):0,duration,rate:Number.isFinite(data.rate)?data.rate:1,volume:Number.isFinite(data.volume)?Math.max(0,Math.min(1,data.volume)):null,smart:data.smart===true,image:discordCovers.get(track?.id),observedAt:Date.now(),heartbeat:data.heartbeat===true};
           discordPresence.update(playback);
           if(track&&discordPresence.status().enabled&&!discordCovers.has(track.id)){
             discordCovers.set(track.id,null);if(discordCovers.size>256)discordCovers.delete(discordCovers.keys().next().value);
