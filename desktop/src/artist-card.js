@@ -124,7 +124,7 @@
           <img class="artist-avatar-img" id="artistAvatarImg" src="" alt="" style="display: none;">
         </div>
         <div class="artist-hero-info">
-          <div class="artist-hero-name">${escapeHtml(artistName)}</div>
+          <div class="artist-hero-name-row"><div class="artist-hero-name">${escapeHtml(artistName)}</div><button type="button" id="artistFavoriteBtn" class="ctrl-btn-subtle artist-favorite-btn" aria-pressed="${Boolean(window.FavoriteArtists?.has(artistName))}" aria-label="${ru?'Любимый артист':'Favourite artist'}" title="${ru?'Любимый артист':'Favourite artist'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div>
           <div class="artist-hero-meta">
             <span>${escapeHtml(tracksCountText)}</span>
           </div>
@@ -158,6 +158,9 @@
     `;
 
     document.getElementById('artistModalCloseBtn')?.addEventListener('click', close);
+    document.getElementById('artistFavoriteBtn')?.addEventListener('click',event=>{
+      const liked=window.FavoriteArtists?.toggle(artistName);event.currentTarget.setAttribute('aria-pressed',String(Boolean(liked)));
+    });
     bindTracksListEvents(artistTracks, artistName);
   }
 
@@ -176,7 +179,7 @@
         <div class="artist-track-item" data-track-id="${escapeHtml(track.id)}" data-index="${idx}">
           <img class="artist-track-cover" src="${coverUrl}" alt="" loading="lazy">
           <div class="artist-track-info">
-            <div class="artist-track-title">${escapeHtml(track.title || track.name || 'Untitled')}</div>
+            <div class="artist-track-title">${escapeHtml(window.PainPlayer?.displayTitle?.(track) || track.title || track.name || 'Untitled')}</div>
             <div class="artist-track-album">${escapeHtml(track.album || '—')}</div>
           </div>
           <div class="artist-track-meta">

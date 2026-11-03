@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="artist-card.css">
   <link rel="stylesheet" href="form-night-theme.css">
   <link rel="stylesheet" href="sakura-theme.css">
+  <link rel="stylesheet" href="library-personalization.css">
 </head>
 <body>
 
@@ -32,7 +33,7 @@
 
     <!-- 1. LEFT SIDEBAR -->
     <aside class="sidebar">
-      <div class="brand">
+      <div class="brand" id="homeBrand" role="button" tabindex="0" aria-label="На главную" title="На главную">
         <img src="/assets/app-icon.png" class="brand-avatar" alt="Pain">
         <span class="brand-night-mark" role="img" aria-label="Pain"></span>
         <div class="brand-text-col">
@@ -334,6 +335,7 @@
               <div class="playlist-actions-row">
                 <button class="btn-minimal primary" id="playPlaylistBtn" data-en="Play All" data-ru="Слушать всё">Play All</button>
                 <button class="btn-minimal" id="addPlaylistTracksBtn" data-en="Add songs" data-ru="Добавить треки">Добавить треки</button>
+                <button type="button" class="btn-minimal" id="playlistArtworkBtn" data-en="Cover" data-ru="Обложка">Обложка</button>
                 <button class="btn-minimal danger-outline" id="deletePlaylistBtn" data-en="Delete Playlist" data-ru="Удалить плейлист">Delete Playlist</button>
               </div>
             </div>
@@ -693,7 +695,7 @@
 
       <!-- Right: Utility Controls (EQ, Big View, Volume) -->
       <div class="bottom-player-right">
-      <button type="button" class="btn-minimal handoff-button" id="continueOnPhoneBtn" data-ru="На телефон" data-en="To phone" title="Продолжить этот трек с текущего места на телефоне">На телефон</button>
+        <button type="button" class="ctrl-btn-subtle" id="continueOnPhoneBtn" aria-label="Продолжить на телефоне" title="Продолжить на телефоне"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4M3 9l3 3-3 3m-2-3h10"/></svg></button>
 
         <button type="button" class="ctrl-btn-subtle" id="trackInfoToggle" aria-controls="trackInfoPanel" aria-expanded="false" title="О треке и исполнителе"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M17 8h1M17 12h1M17 16h1"/></svg></button>
         <button class="ctrl-btn-subtle" id="bottomEqToggleBtn" title="Equalizer">
@@ -1025,6 +1027,10 @@
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="homeMomentsSwitch" checked><span class="switch-slider round"></span></label></div>
           </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="homeArtistsSwitch" data-en="Favourite artists on Home" data-ru="Любимые артисты на Главной">Любимые артисты на Главной</label><span class="fluid-row-hint" data-en="Like an artist in their card to keep them close." data-ru="Отметьте артиста сердцем в его карточке.">Отметьте артиста сердцем в его карточке.</span></div>
+            <label class="switch-label"><input type="checkbox" id="homeArtistsSwitch" checked><span class="switch-slider round"></span></label>
+          </div>
         </div>
         <section class="settings-section">
           <div class="settings-section-title" data-en="Application" data-ru="Приложение">Приложение</div>
@@ -1050,7 +1056,7 @@
             </select>
           </div>
           <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label"><label for="cleanTitlesSwitch" data-en="Hide download sites in titles" data-ru="Убирать сайты из названий">Убирать сайты из названий</label><span class="fluid-row-hint" data-en="Hides source links at the end of track titles. Files and tags stay unchanged; audio ads are not removed." data-ru="Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.">Скрывает ссылки на сайты в конце названий. Файлы и теги сохраняются. Рекламу внутри звука не вырезает.</span></div>
+            <div class="fluid-row-label"><label for="cleanTitlesSwitch" data-en="Clean track titles" data-ru="Чистые названия треков">Чистые названия треков</label><span class="fluid-row-hint" data-en="Remove website names and underscores from display titles. Choose the rules below." data-ru="Убирает сайты и подчёркивания из отображаемых названий. Правила можно настроить ниже.">Убирает сайты и подчёркивания из отображаемых названий. Правила можно настроить ниже.</span></div>
             <label class="switch-label"><input type="checkbox" id="cleanTitlesSwitch"><span class="switch-slider round"></span></label>
           </div>
           <p class="fluid-row-hint" data-en="Space — play/pause. Left/right arrows — seek 5 seconds." data-ru="Пробел — пауза. Стрелки влево и вправо — перемотка на 5 секунд.">Пробел — пауза. Стрелки влево и вправо — перемотка на 5 секунд.</p>
@@ -1356,6 +1362,9 @@
   <script src="smart-transition.js"></script>
   <script src="smart-volume.js"></script>
   <script src="comfort-utils.js"></script>
+  <script src="title-cleanup-settings.js"></script>
+  <script src="favorite-artists.js"></script>
+  <script src="playlist-artwork.js"></script>
   <script src="recommendation-model.js"></script>
   <script src="taste-model.js"></script>
   <script src="dj-worker-client.js"></script>

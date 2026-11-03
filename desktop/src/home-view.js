@@ -7,6 +7,32 @@
  let snapshot,actions,mix=[],mixKey='',mixPending=false,mixError=false,variation=0,mixVariation=-1,ticket=0;
  let mixScope='';
  let personalMessage='',personalContext='',messageEngine;
+ let modelCache,modelKey=[],lastMarkup='';
+ let recordTime=null;
+ function suspend(){const animation=root.querySelector('.home-record')?.getAnimations?.().find(item=>item.animationName==='night-spin');recordTime=animation?.currentTime??null;}
+ function resume(){if(recordTime===null)return;const animation=root.querySelector('.home-record')?.getAnimations?.().find(item=>item.animationName==='night-spin');if(animation)animation.currentTime=recordTime;recordTime=null;}
+ function commit(markup){
+  if(markup===lastMarkup)return;
+  lastMarkup=markup;
+  if(!root.ownerDocument?.createElement){root.innerHTML=markup;return;}
+  const template=root.ownerDocument.createElement('template');template.innerHTML=markup;
+  function update(parent,next){
+   let index=0;
+   for(const fresh of [...next.childNodes]){
+    const old=parent.childNodes[index++];
+    if(!old){parent.appendChild(fresh.cloneNode(true));continue;}
+    if(old.nodeType!==fresh.nodeType||old.nodeName!==fresh.nodeName){old.replaceWith(fresh.cloneNode(true));continue;}
+    if(old.nodeType===3){if(old.nodeValue!==fresh.nodeValue)old.nodeValue=fresh.nodeValue;continue;}
+    if(old.nodeType!==1)continue;
+    for(const attr of [...old.attributes])if(!fresh.hasAttribute(attr.name))old.removeAttribute(attr.name);
+    for(const attr of fresh.attributes)if(old.getAttribute(attr.name)!==attr.value)old.setAttribute(attr.name,attr.value);
+    update(old,fresh);
+   }
+   while(parent.childNodes.length>index)parent.lastChild.remove();
+  }
+  // Keep connected nodes (especially the spinning record and text) alive.
+  update(root,template.content);
+ }
  // A visit gets one message. Mix completion and background redraws keep it.
  window.addEventListener?.('pain:view',event=>{if(event.detail!=='home')personalMessage='';});
  const shown=new Set();
@@ -20,10 +46,13 @@
  function render(data,handlers){
   snapshot=data;actions=handlers;
   const ru=data.lang==='ru',t=(a,b)=>ru?a:b,locale=ru?'ru-RU':'en-US',now=Date.now();
-  const m=HomeModel.build(data.tracks,data.stats,now),d=m.details;
+  const plays=data.stats?.plays||[],slices=data.stats?.slices||[],last=plays[plays.length-1],slice=slices[slices.length-1];
+  const key=[data.tracks,data.stats,data.revision,plays.length,last?.started,last?.heard,last?.media_heard,slices.length,slice?.at,slice?.ms,Math.floor(now/60000)];
+  if(!modelCache||key.some((value,i)=>value!==modelKey[i])){modelCache=HomeModel.build(data.tracks,data.stats,now);modelKey=key;}
+  const m=modelCache,d=m.details;
   const time=ms=>{const minutes=Math.floor(ms/60000);return ms>0&&minutes===0?t('< 1 мин','< 1 min'):minutes>=60?`${Math.floor(minutes/60)} ${t('ч','h')} ${minutes%60} ${t('мин','min')}`:`${minutes} ${t('мин','min')}`;};
   const duration=ms=>{const seconds=Math.floor(Math.max(0,Number(ms)||0)/1000);return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;};
-  const title=track=>track?.title||t('Без названия','Untitled');
+  const title=track=>handlers.title?.(track)||track?.title||t('Без названия','Untitled');
   const artist=track=>track?.artist||t('Неизвестный исполнитель','Unknown artist');
   const current=data.current||m.recent[0]||data.tracks[0];
   const vibes=window.PainDJVibes?.list()||{items:[],activeId:null};
@@ -81,19 +110,19 @@
    return `<svg viewBox="0 0 560 152" role="img" aria-label="${escape(label)}" class="home-chart"><text x="0" y="12">${Math.round(max/60000)} ${t('мин','min')}</text><text x="20" y="116">0</text><path d="M48 16H552M48 64H552M48 112H552" class="home-chart-grid"/>${values.map((value,i)=>`<g><title>${escape(labels[i]+': '+time(value))}</title><rect class="home-chart-bar${i===highlight?' is-highlight':''}" x="${48+i*width+4}" y="${112-96*value/max}" width="${Math.max(2,width-8)}" height="${96*value/max}" rx="1"/><text x="${48+(i+.5)*width}" y="144" text-anchor="middle">${escape(values.length>7&&i%4!==0?'':labels[i])}</text></g>`).join('')}</svg>`;
   }
   const hour=new Date(now).getHours(),greeting=hour<5?t('Тихой ночи.','Good night.'):hour<12?t('Доброе утро.','Good morning.'):hour<18?t('Добрый день.','Good afternoon.'):t('Добрый вечер.','Good evening.');
-  const messageContext=`${data.lang}:${new Date(now).toDateString()}:${m.library.size}:${d.heardLibrary===0}`;
+  const messageContext=`${data.lang}:${new Date(now).toDateString()}:${m.library.size}:${d.heardLibrary===0}:${data.titleRules||''}`;
   if(!personalMessage||personalContext!==messageContext){
    personalContext=messageContext;
    if(typeof HomeMessages!=='undefined'){
     messageEngine||=HomeMessages.create();
-    personalMessage=messageEngine.next(m,{lang:data.lang,now});
+    personalMessage=messageEngine.next(m,{lang:data.lang,now,displayTitle:handlers.title});
    }else personalMessage=t('Ваша музыка, в вашем ритме.','Your music, at your pace.');
   }
   const fact=personalMessage;
   const explored=percent(d.heardLibrary,d.librarySize),outside=percent(d.outsideFavorites,d.knownTime);
   const activeDays=d.calendar.filter(x=>x.ms>=60000).length;
   const hourMax=d.hours.some(Boolean)?d.hours.indexOf(Math.max(...d.hours)):-1;
-  root.innerHTML=`
+  commit(`
    <header class="home-hero">
     <div class="home-intro"><p class="home-date">${escape(new Date(now).toLocaleDateString(locale,{weekday:'long',day:'numeric',month:'long'}))}</p><h1>${escape(greeting)}</h1><p class="home-personal">${escape(fact)}</p>
      <div class="home-actions">${button(data.isPlaying?t('Открыть плеер','Open player'):t('Продолжить слушать','Continue listening'),data.isPlaying?'player':'resume','home-primary','',!current)}${button(t('Вся фонотека','Your library'),'library','home-text-button')}</div>
@@ -113,7 +142,8 @@
     ${section(t('Настроение на сегодня','A mood for today'),`<p class="home-section-note">${t('Сохранённое вами звучание — ориентир для следующего подбора.','Sounds you saved guide the next selection.')}</p><div class="home-vibes">${button(t('Свободный подбор','Free selection'),'vibe',!vibes.activeId?'is-selected':'','')}${vibes.items.map(v=>button(v.name,'vibe',v.id===vibes.activeId?'is-selected':'',v.id)).join('')}</div>${!vibes.items.length?empty(t('Сохраните вайб понравившегося трека, чтобы возвращаться к его звучанию.','Save a track’s vibe to return to its sound.')):''}${button(t('Сохранить текущий вайб','Save the current vibe'),'save-vibe','home-text-button','',!data.current)}<div class="home-fact"><h3>${t('Чуть больше о вас','A little more about you')}</h3><p>${outside===null?t('Факты появятся после первых прослушиваний.','Facts appear after your first listens.'):t(`${outside}% времени вы слушаете музыку за пределами избранного.`,`${outside}% of your listening time is spent outside your favourites.`)}</p><p>${t(`Музыка звучала в ${activeDays} из последних 28 дней.`,`Music played on ${activeDays} of the last 28 days.`)}</p></div>`)}</div>
    <div class="home-pair">${section(t('Недавно звучало','Recently played'),m.recent.length?rows(m.recent):empty(t('Здесь будет история полноценных прослушиваний.','Your meaningful listening history will appear here.')))}${section(t('Недавно открыты','Recently discovered'),`<p class="home-section-note">${t('Впервые в сохранённой истории за последние 30 дней.','First heard in your saved history within the last 30 days.')}</p>`+(m.fresh.length?rows(m.fresh):empty(t('Новые открытия ещё впереди.','Your next discoveries are ahead.'))))}</div>
    ${section(t('Всегда рядом','Always close'),m.favorites.length?`<div class="home-favorite-grid">${m.favorites.slice(0,6).map(track=>`<button type="button" class="home-favorite" data-home-action="track" data-id="${escape(track.id)}"><img src="${escape(handlers.cover(track))}" data-cover-id="${escape(track.id)}" loading="lazy" alt=""><strong>${escape(title(track))}</strong><span>${escape(artist(track))}</span></button>`).join('')}</div>`:empty(t('Отмечайте любимые треки сердцем — они появятся здесь.','Like your favourite tracks to keep them here.')),button(t('Всё избранное','All favourites'),'favorites','home-text-button'))}
-   <div class="home-pair">${section(t('Давно не встречались','Worth returning to'),m.past.length?rows(m.past):empty(t('Здесь появятся знакомые треки, которые не звучали неделю.','Familiar tracks unheard for a week will appear here.')))}${section(t('Ваши плейлисты','Your playlists'),data.playlists.length?`<div class="home-playlists">${data.playlists.map(pl=>`<button type="button" class="home-playlist" data-home-action="playlist" data-id="${escape(pl.id)}"><strong>${escape(pl.name)}</strong><span>${t('Треков','Tracks')}: ${new Set((pl.trackIds||[]).map(String).filter(id=>m.library.has(id))).size}</span></button>`).join('')}</div>`:empty(t('Соберите песни для дороги, работы или тихого вечера.','Collect songs for a journey, work or a quiet evening.')),button(t('Создать','Create'),'new-playlist','home-text-button'))}</div>
+   ${window.FavoriteArtists?.renderHome(data.tracks,handlers.cover,data.lang)||''}
+   <div class="home-pair">${section(t('Давно не встречались','Worth returning to'),m.past.length?rows(m.past):empty(t('Здесь появятся знакомые треки, которые не звучали неделю.','Familiar tracks unheard for a week will appear here.')))}${section(t('Ваши плейлисты','Your playlists'),data.playlists.length?`<div class="home-playlists">${data.playlists.map(pl=>`<button type="button" class="home-playlist" data-home-action="playlist" data-id="${escape(pl.id)}">${window.PlaylistArtwork?`<span class="home-playlist-art" aria-hidden="true">${window.PlaylistArtwork.render(pl,(pl.trackIds||[]).slice(0,4).map(id=>m.library.get(String(id))).filter(Boolean),handlers.cover)}</span>`:''}<strong>${escape(pl.name)}</strong><span>${t('Треков','Tracks')}: ${new Set((pl.trackIds||[]).map(String).filter(id=>m.library.has(id))).size}</span></button>`).join('')}</div>`:empty(t('Соберите песни для дороги, работы или тихого вечера.','Collect songs for a journey, work or a quiet evening.')),button(t('Создать','Create'),'new-playlist','home-text-button'))}</div>
    ${(() => {
      if (data.showMoments === false) return '';
      const momentsStore = data.favoriteMoments || {};
@@ -193,7 +223,7 @@
      );
    })()}
    ${section(t('Совместный плейлист','A playlist for two'),`<p class="home-section-note">${t('Передайте другу файл со своим списком. Загрузите его файл — сначала пойдут песни, выбранные вами обоими, затем ваши треки по очереди. Без дублей.','Send your list to a friend. Import theirs to start with songs you both selected, then alternate your individual picks. No duplicates.')}</p><div class="home-actions"><select id="duoScope" class="sort-select" aria-label="${t('Какие треки передать','Tracks to share')}"><option value="history">${t('По истории прослушиваний','From listening history')}</option><option value="favorites">${t('Избранное','Favourites')}</option><option value="all">${t('Вся фонотека','Entire library')}</option></select>${button(t('Скачать мой список','Export my list'),'duo-export')}${button(t('Открыть файл друга','Open friend’s file'),'duo-import','home-primary')}</div><p class="home-section-note">${t('Без аккаунтов и облака. Файл содержит только список песен, без аудио и истории прослушиваний. Чтобы слушать отсутствующие песни, передайте музыкальные файлы отдельно и добавьте их в фонотеку.','No accounts or cloud. The file contains track metadata, not audio. Transfer missing audio separately and add it to your library to play it.')}</p>${data.playlists.filter(pl=>pl.duo===1).map(pl=>`<div class="home-actions">${button(pl.name,'playlist','home-text-button',pl.id)}${button(t('Передать общий список','Share combined list'),'duo-share','home-text-button',pl.id)}</div>`).join('')}`)}
-   <footer class="home-footer"><span>${t('Только ваша музыка и ваша история.','Just your music and your history.')}</span>${button(t('Больше статистики','More listening insights'),'insights','home-text-button')}</footer>`;
+   <footer class="home-footer"><span>${t('Только ваша музыка и ваша история.','Just your music and your history.')}</span>${button(t('Больше статистики','More listening insights'),'insights','home-text-button')}</footer>`);
   root.querySelectorAll('[data-home-action="vibe"]').forEach(b=>b.setAttribute('aria-pressed',String(b.classList.contains('is-selected'))));
   if(focusKey){const candidate=[...root.querySelectorAll('[data-home-action]')].find(b=>b.dataset.homeAction===focusKey[0]&&(b.dataset.id||'')===focusKey[1]);candidate?.focus({preventScroll:true});}
  }
@@ -222,6 +252,7 @@
     }
    }
   }else if(action==='track')actions.playTrack(id);
+  else if(action==='artist')window.ArtistCard?.open(id);
   else if(action==='moment'){if(actions.playMoment)actions.playMoment(id);}
   else if(action==='start-reel'){if(actions.startReel)actions.startReel(null);}
   else if(action==='reel-stop'){if(actions.stopReel)actions.stopReel();}
@@ -257,5 +288,5 @@
      mixPlayBtn.textContent = playing ? (ru ? 'Пауза' : 'Pause') : (ru ? 'Слушать подборку' : 'Play the mix');
    }
   }
-  window.HomeView={render,setPlaying};
+  window.HomeView={render,setPlaying,suspend,resume,invalidate:()=>{modelCache=null;}};
 })();

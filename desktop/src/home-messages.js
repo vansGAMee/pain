@@ -29,7 +29,7 @@
     let short='';for(const char of clean){if(short.length+char.length>55)return short+'…';short+=char;}
     return short;
   }
-  function candidates(model,now=Date.now(),variation=0){
+  function candidates(model,now=Date.now(),variation=0,displayTitle){
     const m=model||{},d=m.details||{},library=m.library||new Map(),cards=[];
     const total=count(library.size),heard=Math.min(total,count(d.heardLibrary));
     function add(family,values={},anchor='',weight=1){
@@ -43,7 +43,7 @@
       if(copy&&cards.length<MAX_CARDS)cards.push({family,group:copy.group,values,anchor:String(anchor),weight});
     }
     function song(family,track,values={},weight=1){
-      const title=name(track?.title);if(!title||!library.has(String(track.id)))return;
+      const title=name(track&&(displayTitle?.(track)||track.title));if(!title||!library.has(String(track.id)))return;
       add(family,{...values,title},track.id,weight);
     }
     if(!total){add('empty',{},'',1);return cards;}
@@ -86,7 +86,7 @@
     }
     if(recent.length>1){
       const a=recent[0],b=recent.find(t=>t.id!==a.id&&name(t.artist)&&name(a.artist)&&t.artist!==a.artist);
-      if(b&&name(b.title))song('range',a,{otherTitle:name(b.title)},1.2);
+      if(b&&name(b.title))song('range',a,{otherTitle:name(displayTitle?.(b)||b.title)},1.2);
     }
     const unseen=total-heard;
     if(unseen)add('unexplored',{count:unseen,trackCount:tracks(unseen)},'',1.1);
@@ -196,9 +196,9 @@
       write('state',JSON.stringify({version:1,seed:seed>>>0,recent}));
       return result.text;
     }
-    function next(model,{lang='ru',now=Date.now()}={}){
+    function next(model,{lang='ru',now=Date.now(),displayTitle}={}){
       lang=lang==='ru'?'ru':'en';
-      const cards=candidates(model,now,seed);
+      const cards=candidates(model,now,seed,displayTitle);
       const weights=cards.map(card=>{
         let weight=card.weight;
         if(recent.slice(-3).some(r=>r.family===card.family))weight*=.08;

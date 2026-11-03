@@ -363,6 +363,7 @@
   window.PainPlayer = {
     getTrack: () => (queue ? queue.getCurrentTrack() : state.tracks[state.currentTrackIndex]) || null,
     getTracks: () => state.tracks || [],
+    displayTitle: track => displayTrackTitle(track),
     isExcluded: id => state.excludedRecommendations.has(String(id)),
     reloadLibrary: async () => {const library=await(await fetch('/api/saved-library')).json();const previous=window.PainPlayer.getTrack();state.tracks=library.tracks||[];state.libraryDirty=true;if(previous&&!window.PainTogether?.active&&!state.tracks.some(t=>String(t.id)===String(previous.id)))window.PainPlayer.sessionReset();if(!window.PainTogether?.active)queue?.refreshLibrary(state.tracks,queue?.getContext().type==='library');state.playlists=await(await fetch("/api/playlists")).json();state.stats=await(await fetch("/api/saved-stats")).json();invalidatePlayCountsCache();if(queue)setQueueTasteStats(state.stats);renderPlaylistsSidebar();updateSidebarLikedCount();renderCurrentView();},
     getAudio: () => activeDeck || deckA,
@@ -764,7 +765,8 @@
     initHomeWallpaper();
     const changes=new EventSource('/api/library/events');let refreshing=false,repeat=false,first=true;
     changes.onmessage=async()=>{if(first){first=false;return;}if(refreshing){repeat=true;return;}refreshing=true;try{do{repeat=false;await window.PainPlayer.reloadLibrary();await syncExcludedTracksFromServer();}while(repeat);}catch(_){}finally{refreshing=false;}};
-    window.addEventListener('focus',()=>window.PainPlayer.reloadLibrary().catch(()=>{}));
+    // EventSource reconnects and delivers library changes independently of focus.
+    // Switching windows must not reload the catalog or reset the Home animation.
     applyLang(state.lang);
     applyViewMode(state.viewMode);
 
@@ -1312,6 +1314,7 @@
       renderCurrentView();
       return;
     }
+    if(state.currentView==='home'&&viewName!=='home')window.HomeView?.suspend();
     state.currentView = viewName;
     state.activePlaylistId = playlistId;
 
@@ -1336,6 +1339,7 @@
     }
 
     renderCurrentView();
+    if(viewName==='home')window.HomeView?.resume();
     if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
     window.dispatchEvent(new CustomEvent('pain:view',{detail:viewName}));
@@ -1362,6 +1366,8 @@
     HomeView.render({
       tracks:state.tracks,
       stats:state.stats,
+      revision:localSyncRevision,
+      titleRules:state.cleanTitles?JSON.stringify(window.TitleCleanup?.getOptions()||{}):'',
       playlists:state.playlists,
       queue,
       lang:state.lang,
@@ -1372,6 +1378,7 @@
       momentsReel:momentsReel?momentsReel.getState():{active:false,snippetSec:25}
     }, {
       cover:getCoverUrl,
+      title:displayTrackTitle,
       fallbackCover:getProceduralCoverSvg,
       navigate:switchView,
       duo:handleDuoPlaylist,
@@ -2016,6 +2023,11 @@
   }
 
   // --- CUSTOM PLAYLISTS ---
+  let playlistLibrary,playlistLibrarySize=-1,playlistIndex=new Map();
+  function getPlaylistTracks(playlist,limit=Infinity){
+    if(playlistLibrary!==state.tracks||playlistLibrarySize!==state.tracks.length){playlistLibrary=state.tracks;playlistLibrarySize=state.tracks.length;playlistIndex=new Map(state.tracks.map(track=>[String(track.id),track]));}
+    const tracks=[];for(const id of playlist.trackIds||[]){const track=playlistIndex.get(String(id));if(track)tracks.push(track);if(tracks.length>=limit)break;}return tracks;
+  }
   function resolveDuoPlaylist(pl) {
     if(pl.duo!==1||!Array.isArray(pl.sharedTracks))return null;
     const resolved=DuoPlaylist.resolve(pl.sharedTracks,state.tracks);
@@ -2065,11 +2077,11 @@
       li.className = `custom-playlist-item playlist-list-item ${state.activePlaylistId === pl.id ? 'active' : ''}`;
       li.dataset.id = pl.id;
 
-      const first=state.tracks.find(track=>(pl.trackIds||[]).some(id=>String(id)===String(track.id)));
+      const artwork=window.PlaylistArtwork?.render(pl,getPlaylistTracks(pl,4),getCoverUrl)||'';
       const countText=state.lang==='ru'?`${count} ${count%10===1&&count%100!==11?'трек':count%10>=2&&count%10<=4&&(count%100<12||count%100>14)?'трека':'треков'}`:`${count} ${count===1?'track':'tracks'}`;
       li.setAttribute('role','button');li.tabIndex=0;li.title=pl.name;li.setAttribute('aria-label',`${pl.name}, ${countText}`);
       li.innerHTML = `
-        <span class="custom-pl-art" aria-hidden="true">${first?`<img src="${escapeHtml(getCoverUrl(first))}" alt="" loading="lazy" decoding="async">`:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 11h11M4 16h8m5-3v7l4-2v-7z"/></svg>'}</span>
+        <span class="custom-pl-art" aria-hidden="true">${artwork}</span>
         <span class="custom-pl-copy"><span class="custom-pl-title">${escapeHtml(pl.name)}</span><span class="custom-pl-count">${escapeHtml(countText)}</span></span>
       `;
       li.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();li.click();}});
@@ -2108,7 +2120,10 @@
       catch(_){list.focus();list.select();showToast(state.lang==='ru'?'Список выделен. Нажмите Ctrl+C, чтобы скопировать.':'List selected. Press Ctrl+C to copy.');}
     };
 
-    const plTracks = (pl.trackIds || []).map(id => state.tracks.find(t => t.id === id)).filter(Boolean);
+    const plTracks = getPlaylistTracks(pl);
+    const cover=document.querySelector('#view-playlist .playlist-hero-cover');
+    const artwork=window.PlaylistArtwork?.render(pl,plTracks,getCoverUrl);
+    if(cover&&artwork&&cover.innerHTML!==artwork){cover.classList.remove('custom-gradient');cover.innerHTML=artwork;}
     const contextInfo = { type: 'playlist', title: pl.name, id: pl.id };
     renderTracksTable(DOM.playlistTableBody, plTracks, !duo, contextInfo);
   }
@@ -2437,7 +2452,7 @@
     if(!report.rows.length){const p=document.createElement('p');p.className='chart-sub';p.textContent=ru?'За этот период прослушиваний пока нет.':'No listens in this period yet.';DOM.topTracksList.append(p);return;}
     const fragment=document.createDocumentFragment();
     report.rows.forEach(({track,count},index)=>{const item=document.createElement('button');item.type='button';item.className='leaderboard-item top-track-button';item.dataset.trackId=track.id;
-      item.innerHTML=`<span class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><img class="leaderboard-thumb" src="${escapeHtml(getCoverUrl(track))}" alt="" loading="lazy" decoding="async"><span class="leaderboard-text"><span class="leaderboard-title">${escapeHtml(track.title||'Untitled')}</span><span class="leaderboard-sub">${escapeHtml(track.artist||'—')}</span></span></span><span class="leaderboard-stat">${count.toLocaleString(ru?'ru-RU':'en-US')}</span>`;
+      item.innerHTML=`<span class="leaderboard-item-left"><span class="leaderboard-rank">${index+1}</span><img class="leaderboard-thumb" src="${escapeHtml(getCoverUrl(track))}" alt="" loading="lazy" decoding="async"><span class="leaderboard-text"><span class="leaderboard-title">${escapeHtml(displayTrackTitle(track))}</span><span class="leaderboard-sub">${escapeHtml(track.artist||'—')}</span></span></span><span class="leaderboard-stat">${count.toLocaleString(ru?'ru-RU':'en-US')}</span>`;
       item.title=(ru?'Включить · прослушиваний: ':'Play · listens: ')+count;item.onclick=()=>playTrackById(track.id);fragment.append(item);
     });DOM.topTracksList.append(fragment);
   }
@@ -3931,6 +3946,7 @@
 
     localSyncRevision++;
     // Persist and relay through the ordered server outbox
+    if(state.currentView==='home'){window.HomeView?.invalidate();renderHome();}
     try {
       await fetch('/api/sync-like', {
         method: 'POST',
@@ -4210,6 +4226,10 @@
   function applyLang(lang) {
     state.lang = lang;
     localStorage.setItem('pain_lang', lang);
+    const phoneLabel=lang==='ru'?'Продолжить на телефоне':'Continue on phone';
+    const phoneButton=document.getElementById('continueOnPhoneBtn');if(phoneButton){phoneButton.title=phoneLabel;phoneButton.setAttribute('aria-label',phoneLabel);}
+    const homeLabel=lang==='ru'?'На главную':'Go to Home';
+    const brand=document.getElementById('homeBrand');if(brand){brand.title=homeLabel;brand.setAttribute('aria-label',homeLabel);}
 
     document.querySelectorAll('[data-en]').forEach(el => {
       el.textContent = lang === 'ru' ? (el.dataset.ru || el.dataset.en) : el.dataset.en;
@@ -4237,6 +4257,7 @@
     if (DOM.shareProfileModalBackdrop && DOM.shareProfileModalBackdrop.classList.contains('open')) {
       openProfileModal();
     }
+    window.dispatchEvent(new CustomEvent('pain:language',{detail:lang}));
   }
 
   // --- SETTINGS MODAL & AMBIENT FLUID CONTROLLER ---
@@ -4563,8 +4584,13 @@
   }
 
   function displayTrackTitle(track) {
-    const title = track.title || 'Untitled';
-    return state.cleanTitles ? ComfortUtils.cleanTitle(title) : title;
+    const title = track?.title || 'Untitled';
+    return state.cleanTitles ? ComfortUtils.cleanTitle(title,window.TitleCleanup?.getOptions()) : title;
+  }
+  function refreshDisplayTitles(){
+    state.libraryDirty=true;renderCurrentView();
+    const track=window.PainPlayer.getTrack();if(track){DOM.bottomTrackTitle.textContent=displayTrackTitle(track);DOM.bigTrackTitle.textContent=displayTrackTitle(track);}
+    window.dispatchEvent(new CustomEvent('pain:titles'));
   }
 
   async function initDesktopPreferences() {
@@ -4622,6 +4648,9 @@
 
   function initSettingsUI() {
     document.getElementById('cleanTitlesSwitch').checked = state.cleanTitles;
+    window.TitleCleanup?.init({getLang:()=>state.lang,getTrack:()=>window.PainPlayer.getTrack()||state.tracks[0],onChange:refreshDisplayTitles});
+    window.FavoriteArtists?.initSettings();
+    window.PlaylistArtwork?.bind({getPlaylist:()=>state.playlists.find(pl=>pl.id===state.activePlaylistId),getTracks:pl=>getPlaylistTracks(pl,4),cover:getCoverUrl,getLang:()=>state.lang,onChange:()=>{renderPlaylistsSidebar();if(state.currentView==='playlist')renderCustomPlaylistView();else if(state.currentView==='home')renderHome();}});
     applyPerformanceMode(state.performanceMode);
     initDesktopPreferences();
     document.getElementById('volumeLimitSlider').value = state.volumeLimit;
@@ -4869,6 +4898,10 @@
   // --- EVENT LISTENERS SETUP ---
 
   function setupEventListeners() {
+    const brand=document.getElementById('homeBrand');
+    brand?.addEventListener('click',()=>switchView('home'));
+    brand?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();switchView('home');}});
+    window.addEventListener('pain:favorite-artists',()=>{if(state.currentView==='home')renderHome();});
     // Nav Items
     DOM.navItems.forEach(item => {
       item.setAttribute('role','button');item.tabIndex=0;
@@ -5597,10 +5630,7 @@
       cleanTitlesInput.addEventListener('change', e => {
         state.cleanTitles = e.target.checked;
         try { localStorage.setItem('pain_clean_titles', String(state.cleanTitles)); } catch (_) {}
-        state.libraryDirty = true;
-        renderCurrentView();
-        const track = state.tracks.find(t => t.id === state.currentTrackId);
-        if (track) updatePlayerBarUI(track, false);
+        refreshDisplayTitles();
       });
     }
     document.getElementById('reducedMotionSwitch').addEventListener('change', e => {

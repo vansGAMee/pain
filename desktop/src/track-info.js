@@ -67,7 +67,7 @@
    [t('Длительность','Duration'),seconds?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:null],
    [t('Год','Year'),track.year],[t('Жанр','Genre'),track.genre]
   ].filter(([,v])=>v);
-  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoGenres"></div><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
+  body.innerHTML=`<img class="track-info-cover" src="/api/cover/${encodeURIComponent(track.id)}?priority=1&online=${localStorage.getItem('pain_online_covers') === 'true' ? 1 : 0}" alt=""><h2>${escape(window.PainPlayer?.displayTitle?.(track)||track.title||t('Без названия','Untitled'))}</h2><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><div id="trackInfoGenres"></div><div id="trackInfoArticles" aria-live="polite"><p class="track-info-status">${t('Ищем историю этой музыки…','Finding the story behind the music…')}</p></div><div id="trackInfoContext"></div><div id="trackInfoHistory"></div>`;
   const rating=document.createElement('section');rating.id='trackInfoRating';rating.className='track-rating';rating.setAttribute('aria-live','polite');rating.innerHTML=`<small class="track-info-status">${t('Ищем оценку записи…','Finding the recording rating…')}</small>`;
   body.insertBefore(rating,body.querySelector('dl'));
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
@@ -107,5 +107,6 @@
  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){open(false);event.stopPropagation();}});
  window.addEventListener('pain:track',event=>{if(!panel.hidden&&event.detail?.id!==lastId){controller?.abort();++ticket;clearTimeout(timer);timer=setTimeout(render,250);}});
  window.addEventListener('pain:genres',event=>{if(!panel.hidden&&event.detail?.id===lastId)showGenres(event.detail);});
+ window.addEventListener('pain:titles',()=>{const track=window.PainPlayer?.getTrack(),heading=body.querySelector('h2');if(track&&heading)heading.textContent=window.PainPlayer.displayTitle(track);});
  open(true);
 })();
