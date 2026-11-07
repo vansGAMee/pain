@@ -920,6 +920,7 @@ body,
 
 /* MODE B: TABLE ROWS (в полоску) */
 .tracks-table-wrapper {
+  container-type: inline-size;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -942,6 +943,11 @@ body,
   box-shadow: none !important; pointer-events: none;
 }
 .tracks-grid > .list-window-spacer { grid-column: 1 / -1; padding: 0; margin: 0; pointer-events: none; }
+
+/* Keep the song and its controls usable beside a sidebar on small windows. */
+@container (max-width: 560px) {
+  .tracks-table :is(.col-album, .col-plays) { display: none; }
+}
 
 .tracks-table th,
 .tracks-table td {

@@ -12,7 +12,7 @@
     let columns = 1, gap = 0, width = 0, estimate = table ? 60 : 260;
     let rowKeys = [], offsets = [0], sizes = new Map(), bootstrap = true;
     let start = -1, end = -1, dragging = null, invalidated = true, layoutKey;
-    let painted = false, stableAnchor = null;
+    let painted = false, stableAnchor = null, tableColumns = 7;
     container.classList.add('windowed-list');
     if (!table) container.setAttribute('role', 'list');
 
@@ -55,8 +55,9 @@
       if (!node) {
         node = document.createElement(table ? 'tr' : 'div');
         node.className = 'list-window-spacer';node.setAttribute('aria-hidden', 'true');
-        if (table) {const cell = document.createElement('td');cell.colSpan = 7;node.appendChild(cell);}
+        if (table) node.appendChild(document.createElement('td'));
       }
+      if (table) node.firstElementChild.colSpan = tableColumns;
       const target = table ? node.firstElementChild : node;
       const height = Math.max(0, offsets[to] - offsets[from] - gap) + 'px';
       if (target.style.height !== height) target.style.height = height;
@@ -134,6 +135,7 @@
         // Remember the song from the preceding layout, not a shifted neighbour.
         saved ||= stableAnchor && indexByKey.has(stableAnchor.key) ? stableAnchor : anchor();
         columns = nextColumns;gap = nextGap;width = nextWidth;
+        if (table) tableColumns = [...container.closest('table').tHead.rows[0].cells].filter(cell => getComputedStyle(cell).display !== 'none').length;
         sizes.clear();bootstrap = true;invalidated = false;rebuild();force = true;
       }
       let top = viewport.scrollTop - listTop();
