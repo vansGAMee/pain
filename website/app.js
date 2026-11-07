@@ -2,11 +2,11 @@
 document.documentElement.classList.add('js-ready');
 // Static first: every page and download works before JavaScript or the network.
 const repo='https://github.com/vansGAMee/pain';
-const base=repo+'/releases/download/v1.9.6/';
+const base=repo+'/releases/download/v1.9.7/';
 const releases={
- windows:{name:'Windows',file:'Pain-v1.9.6-Setup.exe',size:124873673,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'5011003fa9a203d065d518032fc913d49f97b9cdcef2bfb0ffad1474d5c759b8'},
- android:{name:'Android',file:'Pain-v1.9.6-Android.apk',size:9807830,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'f90070f61030c23fe96d814859c9b549a874c379ca0b53fa4c4c69bcdeb77b24'},
- linux:{name:'Linux',file:'Pain-v1.9.6-Linux.AppImage',size:129877143,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'14314bf3b166cf156d518ce4ae0934fcf2681c73290df53757e6732b61008400'}
+ windows:{name:'Windows',file:'Pain-v1.9.7-Setup.exe',size:124882590,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'b54970b1ece0fec52d90fb4938a5a0b6ab7f4de284035ab304da8ea980ca7f25'},
+ android:{name:'Android',file:'Pain-v1.9.7-Android.apk',size:9807802,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'e950cfb20b9417858531ce11dc5e1cdd5e0b3212fcf54d30b2dd625f30016865'},
+ linux:{name:'Linux',file:'Pain-v1.9.7-Linux.AppImage',size:129889514,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'456322950521d8d105fdeff3eeea91498ded8ee118aec0a63597cf5938d8525d'}
 };
 for(const data of Object.values(releases))data.url=base+data.file;
 let platform=/Android/i.test(navigator.userAgent)?'android':/Linux|X11/i.test(navigator.userAgent)?'linux':'windows';
