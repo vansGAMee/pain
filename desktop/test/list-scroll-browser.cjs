@@ -41,7 +41,7 @@ const wav=require('./together-fixture.cjs').wave(60);
   await page.goto('http://pain.test/#favorites');
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
   const favorites=library.tracks.filter(t=>t.favorite).length;
-  await page.waitForFunction(n=>document.querySelectorAll('#favoritesTableBody tr[data-track-id]').length===n,favorites);
+  await page.waitForFunction(n=>document.querySelector('#favoritesTableBody')._currentTrackList?.length===n && document.querySelector('#favoritesTableBody')._renderFrame==null,favorites);
   async function scrollList(selector,fraction=.7){
    await page.locator('.views-viewport').evaluate((e,f)=>{e.scrollTop=(e.scrollHeight-e.clientHeight)*f;},fraction);
    await page.waitForTimeout(150);
@@ -76,21 +76,21 @@ const wav=require('./together-fixture.cjs').wave(60);
   const firstFavorite=library.tracks.find(t=>t.favorite);
   firstFavorite.favorite=0;
   await page.evaluate(()=>PainPlayer.reloadLibrary());
-  await page.waitForFunction(n=>document.querySelectorAll('#favoritesTableBody tr[data-track-id]').length===n,favorites-1);
+  await page.waitForFunction(n=>document.querySelector('#favoritesTableBody')._currentTrackList?.length===n && document.querySelector('#favoritesTableBody')._renderFrame==null,favorites-1);
   await anchorIsStable(reference,'#favoritesTableBody','remove favourite above viewport');
   // Remove the visible row via the real heart button, keeping its next neighbour visible.
   await page.locator(`#favoritesTableBody tr[data-track-id="${reference.id}"] .row-fav-btn`).click();
-  await page.waitForFunction(n=>document.querySelectorAll('#favoritesTableBody tr[data-track-id]').length===n,favorites-2);
+  await page.waitForFunction(n=>document.querySelector('#favoritesTableBody')._currentTrackList?.length===n && document.querySelector('#favoritesTableBody')._renderFrame==null,favorites-2);
   // The removed first visible song leaves room for the next surviving row, without a jump to the header.
   assert.ok(await page.locator('.views-viewport').evaluate(e=>e.scrollTop>1000));
   await page.click('.custom-playlist-item[data-id="scroll-test"]');
-  await page.waitForFunction(n=>document.querySelectorAll('#playlistTableBody tr[data-track-id]').length===n,library.tracks.length);
+  await page.waitForFunction(n=>document.querySelector('#playlistTableBody')._currentTrackList?.length===n && document.querySelector('#playlistTableBody')._renderFrame==null,library.tracks.length);
   const plRef=await scrollList('#playlistTableBody tr[data-track-id]');
   await monitor(()=>page.evaluate(()=>PainPlayer.reloadLibrary()),plRef,'playlist: reload');
   // Delayed source metadata arrives while the listener continues scrolling.
   const changed=library.tracks[0];changed.title+=' · updated';
   await page.evaluate(()=>PainPlayer.reloadLibrary());
-  await page.waitForFunction(()=>document.querySelector('#playlistTableBody .track-row-title').textContent.endsWith(' · updated'));
+  await page.waitForFunction(()=>document.querySelector('#playlistTableBody')._currentTrackList[0].title.endsWith(' · updated'));
   await anchorIsStable(plRef,'#playlistTableBody','metadata refresh');
   await page.locator(`#playlistTableBody tr[data-track-id="${plRef.id}"] .col-title`).click();
   await page.waitForFunction(()=>!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>0);
@@ -99,7 +99,7 @@ const wav=require('./together-fixture.cjs').wave(60);
   await monitor(async()=>{await page.click('#settingsToggleBtn');await page.click('#settingsDoneBtn');},playingRef,'settings open/close');
   // A real removal in the lower half of a custom playlist keeps neighbouring rows.
   await page.locator(`#playlistTableBody tr[data-track-id="${playingRef.id}"] .row-playlist-remove`).click();
-  await page.waitForFunction(n=>document.querySelectorAll('#playlistTableBody tr[data-track-id]').length===n,library.tracks.length-1);
+  await page.waitForFunction(n=>document.querySelector('#playlistTableBody')._currentTrackList?.length===n && document.querySelector('#playlistTableBody')._renderFrame==null,library.tracks.length-1);
   assert.ok(await page.locator('.views-viewport').evaluate(e=>e.scrollTop>5000));
   // Opening the picker is explicit; selecting all must not rebuild its scrolled list.
   await page.locator('#addPlaylistTracksBtn').click();
@@ -110,11 +110,11 @@ const wav=require('./together-fixture.cjs').wave(60);
   assert.equal(await page.locator('#playlistPickerList').evaluate(e=>e.scrollTop),pickerTop,'select all keeps picker scroll');
   await page.click('#playlistPickerCancel');
   await page.click('.nav-item[data-view="library"]');
-  await page.waitForFunction(n=>document.querySelectorAll('#tracksTableBody tr[data-track-id]').length===n,library.tracks.length);
+  await page.waitForFunction(n=>document.querySelector('#tracksTableBody')._currentTrackList?.length===n && document.querySelector('#tracksTableBody')._renderFrame==null,library.tracks.length);
   const libRef=await scrollList('#tracksTableBody tr[data-track-id]');
   await monitor(()=>page.evaluate(()=>PainPlayer.reloadLibrary()),libRef,'library: reload');
   await page.click('#viewModeGridBtn');
-  await page.waitForFunction(n=>document.querySelectorAll('#tracksGrid .track-card').length===n,library.tracks.length);
+  await page.waitForFunction(n=>document.querySelector('#tracksGrid')._currentTrackList?.length===n && document.querySelector('#tracksGrid')._renderFrame==null,library.tracks.length);
   const gridRef=await scrollList('#tracksGrid .track-card');
   await monitor(()=>page.evaluate(()=>PainPlayer.reloadLibrary()),gridRef,'grid: reload');
   // Replacing all metadata takes several animation frames on a slow CPU. A
@@ -126,7 +126,7 @@ const wav=require('./together-fixture.cjs').wave(60);
   await page.fill('#searchInput','__no_such_song__');await page.waitForFunction(()=>document.querySelectorAll('#tracksGrid .track-card').length===0);
   assert.ok(await page.locator('.views-viewport').evaluate(e=>e.scrollTop<500),'empty search clamps naturally');
   await page.fill('#searchInput','');
-  await page.waitForFunction(n=>document.querySelectorAll('#tracksGrid .track-card').length===n,library.tracks.length);
+  await page.waitForFunction(n=>document.querySelector('#tracksGrid')._currentTrackList?.length===n && document.querySelector('#tracksGrid')._renderFrame==null,library.tracks.length);
   await page.click('#viewModeListBtn');
   await page.locator('#sidebarPlaylistsList').evaluate(e=>e.scrollTop=e.scrollHeight/2);
   const sideTop=await page.locator('#sidebarPlaylistsList').evaluate(e=>e.scrollTop);
@@ -144,7 +144,7 @@ const wav=require('./together-fixture.cjs').wave(60);
   await page.click('.nav-item[data-view="library"]');
   // Classic themes use the same list implementation and must keep position too.
   await page.evaluate(()=>localStorage.setItem('pain_theme','paper'));await page.reload();
-  await page.waitForFunction(n=>document.querySelectorAll('#tracksTableBody tr[data-track-id]').length===n,library.tracks.length);
+  await page.waitForFunction(n=>document.querySelector('#tracksTableBody')._currentTrackList?.length===n && document.querySelector('#tracksTableBody')._renderFrame==null,library.tracks.length);
   const paperRef=await scrollList('#tracksTableBody tr[data-track-id]');
   await monitor(()=>page.evaluate(()=>PainPlayer.reloadLibrary()),paperRef,'paper theme: reload');
   assert.deepEqual(errors,[]);

@@ -7,7 +7,7 @@
  const weekdays=()=>ru()?['пн','вт','ср','чт','пт','сб','вс']:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
  let worker,sequence=0,range='all',group='all',cards=new Map(),fingerprint='',timer;
  const active=()=>!document.hidden&&document.getElementById('view-insights')?.classList.contains('active');
- const motion=()=>!document.documentElement.hasAttribute('data-reduced-motion')&&document.documentElement.dataset.performanceMode!=='maximum'&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const motion=()=>!document.documentElement.hasAttribute('data-reduced-motion')&&!document.documentElement.hasAttribute('data-resource-saver')&&document.documentElement.dataset.performanceMode!=='maximum'&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
  const value=(n,unit)=>{
   if(!Number.isFinite(n))return '—';
   if(unit==='percent')return Math.round(n)+'%';if(unit==='time')return value(n/60000,'minutes');

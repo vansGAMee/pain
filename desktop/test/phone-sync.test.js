@@ -91,3 +91,28 @@ test('partial or empty phone libraries preserve PC tracks, favorites and history
  assert.equal(merged.tracks[1].favorite,1);
  assert.equal(new Sync(sync.dir).read('library.json',null).tracks.length,2);
 });
+
+test('incremental pulls receive new phone tracks without rewriting an unchanged library',async t=>{
+ const dir=temp(t),sync=new Sync(dir),local={id:'pc',title:'Local song',favorite:1};
+ sync.saveLibrary({tracks:[local]});
+ let remote={exportedAt:'first',tracks:[{id:'phone-1',title:'Phone song'}]};
+ const base=await phone(t,(req,res)=>reply(res,remote));
+ await sync.refreshLibrary(base);
+ assert.deepEqual(sync.read('library.json',{}).tracks,[local,...remote.tracks]);
+ const file=path.join(dir,'library.json');fs.utimesSync(file,1000,1000);
+ remote={...remote,exportedAt:'second'};await sync.refreshLibrary(base);
+ assert.equal(fs.statSync(file).mtimeMs,1000000,'unchanged polling must not rebuild the user interface');
+ remote.tracks.push({id:'phone-2',title:'Just added on phone'});
+ await sync.refreshLibrary(base);
+ assert.equal(new Sync(dir).read('library.json',{}).tracks.at(-1).id,'phone-2');
+ remote={tracks:[]};await sync.refreshLibrary(base);
+ assert.equal(sync.read('library.json',{}).tracks.length,3,'a temporary empty phone scan cannot remove files');
+});
+
+test('a history failure does not hide successfully received new phone tracks',async t=>{
+ const sync=new Sync(temp(t));sync.saveStats({plays:[play]});
+ const base=await phone(t,(req,res)=>req.url==='/api/stats'?reply(res,{error:'busy'},503):reply(res,{tracks:[{id:'new-phone-track',title:'New phone song'}]}));
+ await assert.rejects(sync.synchronize(base));
+ assert.equal(sync.read('library.json',{}).tracks[0].id,'new-phone-track');
+ assert.equal(sync.read('stats.json',{}).plays[0].id,play.id);
+});

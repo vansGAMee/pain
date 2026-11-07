@@ -4,8 +4,9 @@ const parseRange=require('../src/range');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots retain PC history',async t=>{
  const data=fs.mkdtempSync(path.join(os.tmpdir(),'pain-test-'));const bytes=Buffer.alloc(4096);for(let i=0;i<bytes.length;i++)bytes[i]=i%251;
- let phoneLibrary={tracks:[{id:'трек 🎵',title:'Ночная волна',favorite:0}]},phoneStats={plays:[],slices:[]};
+ let phoneLibrary={tracks:[{id:'трек 🎵',title:'Ночная волна',favorite:0}]},phoneStats={plays:[],slices:[]},unsupported=false;
  const phone=http.createServer((req,res)=>{
+  if(unsupported){res.writeHead(404,{'Content-Type':'application/json'});res.end('{}');return;}
   if(req.url==='/api/library'||req.url==='/api/stats'){
    const send=value=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
    if(req.method==='GET'){send(req.url==='/api/library'?phoneLibrary:phoneStats);return;}
@@ -49,5 +50,11 @@ test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots
  assert.equal(phoneStats.plays.length,1);assert.equal(phoneStats.plays[0].media_heard,20000);assert.equal(phoneStats.plays[0].skipped,1);
  r=await post('/api/sync-phone',{phoneUrl});const synced=await r.json();
  assert.equal(synced.stats.plays.length,3,'PC, phone and the new play survive round trip');
+ unsupported=true;
+ r=await post('/api/sync-phone',{phoneUrl});assert.equal(r.status,500);assert.equal((await r.json()).code,'update');
+ assert.equal((await(await fetch(root+'/api/sync-status')).json()).state,'error');
+ assert.equal((await(await fetch(root+'/api/saved-library')).json()).tracks[0].title,'Ночная волна');
+ unsupported=false;await post('/api/sync-phone',{phoneUrl});
+ assert.equal((await(await fetch(root+'/api/sync-status')).json()).state,'ok');
 
 });

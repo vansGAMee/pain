@@ -14,7 +14,7 @@ function request(base,route,body,timeout=5000){
    const chunks=[];let size=0;
    res.on('data',b=>{size+=b.length;if(size>32*1024*1024)req.destroy(new Error('Sync response too large'));else chunks.push(b);});
    res.on('error',reject);
-   res.on('end',()=>{try{if(res.statusCode!==200)throw new Error('Phone HTTP '+res.statusCode);resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch(e){reject(e);}});
+   res.on('end',()=>{try{if(res.statusCode!==200){const error=new Error('Phone HTTP '+res.statusCode);error.statusCode=res.statusCode;throw error;}resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch(e){reject(e);}});
   });
   const timer=setTimeout(()=>req.destroy(new Error('Phone sync timed out')),timeout);
   req.on('close',()=>clearTimeout(timer));req.on('error',reject);req.end(payload);
@@ -37,12 +37,17 @@ class PhoneSync{
   if(!library||!Array.isArray(library.tracks))throw new Error('Invalid library');
   // A phone snapshot is not a deletion command: it can be empty while scanning,
   // and cannot contain PC files that are still waiting for upload.
-  const tracks=new Map(this.read('library.json',{tracks:[]}).tracks.map(track=>[String(track.id),track]));
+  const previous=this.read('library.json',{tracks:[]});
+  const tracks=new Map(previous.tracks.map(track=>[String(track.id),track]));
   for(const track of library.tracks)tracks.set(String(track.id),{...tracks.get(String(track.id)),...track});
   for(const [id,track]of tracks)if(this.removals.blocked(track)){this.removals.ids.add(id);tracks.delete(id);}
   this.removals.write('removed-track-ids.json',[...this.removals.ids]);
   const likes=new Map(this.pending.favorites.map(item=>[String(item.trackId),item.favorite]));
-  return this.write('library.json',{...library,tracks:[...tracks.values()].map(track=>likes.has(String(track.id))?{...track,favorite:likes.get(String(track.id))}:track)});
+  const next={...library,tracks:[...tracks.values()].map(track=>likes.has(String(track.id))?{...track,favorite:likes.get(String(track.id))}:track)};
+  // exportedAt changes on every phone read; it must not trigger a disk write
+  // and a full UI refresh when the actual collection has stayed the same.
+  const stable=value=>JSON.stringify({...value,exportedAt:undefined});
+  return stable(previous)===stable(next)?previous:this.write('library.json',next);
  }
  saveStats(stats){
   if(!stats||!Array.isArray(stats.plays))throw new Error('Invalid statistics');
@@ -86,6 +91,13 @@ class PhoneSync{
  mergeRemovals(entries){this.removals.merge(entries);this.pending={favorites:this.pending.favorites.filter(p=>!this.removals.ids.has(String(p.trackId))),plays:this.pending.plays.filter(p=>!this.removals.ids.has(String(p.track)))};this.persist();this.onRemovals?.();}
  removeTrack(track){this.removals.remove(track);this.mergeRemovals(this.removals.entries);}
  flush(base){return this.serial(()=>this.sendPending(base));}
+ refreshLibrary(base){return this.serial(async()=>{
+  const library=await request(base,'/api/library',undefined,15000);
+  if(!Array.isArray(library?.tracks))throw Error('Invalid phone snapshot');
+  const result=this.saveLibrary(library);
+  await this.sendPending(base);
+  return result;
+ });}
  async syncCompanion(base){
   const remote=await request(base,'/api/companion',undefined,15000);
   if(remote.schema!==1||typeof remote.revision!=='string')throw Error('Unsupported shared collections');
@@ -99,7 +111,7 @@ class PhoneSync{
   return {items:Object.keys(applied.entities).length,conflicts:merged.conflicts.length+applied.conflicts.length};
  }
  synchronize(base){return this.serial(async()=>{
-  const initial=await request(base,'/api/library');
+  const initial=await request(base,'/api/library',undefined,15000);
   if(!Array.isArray(initial?.tracks))throw Error('Invalid phone snapshot');
   if(initial.capabilities?.libraryRemovals===1){
    const remote=await request(base,'/api/library-removals');
@@ -108,10 +120,13 @@ class PhoneSync{
    const ack=await request(base,'/api/library-removals',{entries:this.removals.entries},15000);
    this.mergeRemovals(ack.entries);
   }
+  // New files do not have to wait for a large history or optional collections.
+  // Merging remains additive and pending local likes keep their precedence.
+  this.saveLibrary(initial);
   await this.sendPending(base);
-  const [library,remote]=await Promise.all([request(base,'/api/library'),request(base,'/api/stats')]);
+  const [library,remote]=await Promise.all([request(base,'/api/library',undefined,15000),request(base,'/api/stats',undefined,20000)]);
   let stats=remote;
-  // Validate both before changing either snapshot.
+  // Reject an incomplete response before saving this final exchange.
   if(!Array.isArray(library?.tracks)||!Array.isArray(stats?.plays))throw new Error('Invalid phone snapshot');
   // Recover PC listening saved by older versions, which had no durable outbox.
   const identity=p=>JSON.stringify([p.track,Number(p.started)]);

@@ -184,8 +184,8 @@ public final class SyncServer {
 
       if ("/api/status".equals(cleanPath)) {
         String json = String.format(
-            "{\"status\":\"ok\",\"device\":\"Android\",\"appName\":\"Pain\",\"tracks\":%d,\"timestamp\":%d}",
-            app.tracks.size(), System.currentTimeMillis());
+            "{\"status\":\"ok\",\"device\":\"Android\",\"appName\":\"Pain\",\"version\":\"%s\",\"tracks\":%d,\"timestamp\":%d}",
+            BuildConfig.VERSION_NAME, app.tracks.size(), System.currentTimeMillis());
         sendResponse(out, 200, "OK", "application/json", json);
       } else if ("/api/upload-track".equals(cleanPath) && "POST".equalsIgnoreCase(method)) {
         handleUploadTrack(request, out);

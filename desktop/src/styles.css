@@ -933,6 +933,16 @@ body,
   table-layout: fixed;
 }
 
+/* Empty spacers preserve native scrolling and table column geometry. */
+.windowed-list { overflow-anchor: none; }
+.tracks-table tr.list-window-spacer,
+.tracks-table tr.list-window-spacer > td {
+  padding: 0 !important; border: 0 !important; font-size: 0 !important;
+  line-height: 0 !important; background: none !important;
+  box-shadow: none !important; pointer-events: none;
+}
+.tracks-grid > .list-window-spacer { grid-column: 1 / -1; padding: 0; margin: 0; pointer-events: none; }
+
 .tracks-table th,
 .tracks-table td {
   border-bottom: 1px solid var(--border);

@@ -12,11 +12,16 @@
     for (let parent = container; parent; parent = parent.parentElement) {
       if (!parent.clientHeight || !/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) continue;
       const bounds = parent.getBoundingClientRect();
-      const anchor = nodes.find(node => {
-        if (!keys.has(node._listKey)) return false;
-        const rect = node.getBoundingClientRect();
-        return rect.bottom > bounds.top && rect.top < bounds.bottom;
-      });
+      // Rows/cards follow visual order. Locate the viewport in logarithmic time
+      // instead of measuring thousands of rows above it on every refresh.
+      let low=0,high=nodes.length;
+      while(low<high){const mid=(low+high)>>>1;if(nodes[mid].getBoundingClientRect().bottom<=bounds.top)low=mid+1;else high=mid;}
+      let anchor;
+      for(let i=low;i<nodes.length;i++){
+        const node=nodes[i],rect=node.getBoundingClientRect();
+        if(rect.top>=bounds.bottom)break;
+        if(keys.has(node._listKey)&&rect.bottom>bounds.top){anchor=node;break;}
+      }
       positions.push({parent, top: parent.scrollTop, key: anchor?._listKey,
         offset: anchor ? anchor.getBoundingClientRect().top - bounds.top : 0});
     }
@@ -56,10 +61,17 @@
     }
   }
 
-  function render(container, items, {key, signature, create, update, complete, empty}) {
+  function render(container, items, options) {
     cancel(container);
+    if (items.length > 160 || container._windowedList) {
+      container._windowedList ||= PainWindowedList.attach(container);
+      container._windowedList.setItems(items, options);
+      return;
+    }
+    const {key, signature, create, update, complete, empty} = options;
     const previous = new Map([...container.children].map(node => [node._listKey, node]));
-    const initial = !container.children.length;
+    const initial = !container.children.length || (items.length>0 && [...container.children].every(node=>node._listKey===undefined));
+    if(initial)container.replaceChildren();
     const nodes = [];
     let index = 0;
     function batch() {

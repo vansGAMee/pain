@@ -1,0 +1,54 @@
+// Real HTTP backend + browser, with generated media in a fresh temporary directory.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),http=require('node:http'),{spawn}=require('node:child_process');
+const {wave}=require('./together-fixture.cjs');
+(async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'pain-library-features-'));let child,browser;
+ try{
+  const now=Date.now(),tracks=[{id:'old',title:'Без даты'},{id:'pc',title:'Импорт ПК',added:Math.floor((now-300000)/1000)},{id:'phone',title:'С телефона',added:now-200000},{id:'friend',title:'От друга',added:now-100000}].map(t=>({...t,artist:'Тест',album:'Тест',duration:60000,mime:'audio/wav'}));
+  await fs.mkdir(path.join(root,'data'));await fs.mkdir(path.join(root,'cache'));
+  const lists=[{id:'mix',name:'Мой плейлист',trackIds:tracks.map(t=>t.id)}];
+  for(const [name,value]of Object.entries({'library.json':{tracks},'playlists.json':lists,'stats.json':{plays:[],slices:[]},'dj-state.json':{profiles:{}},'performance-mode.json':{mode:'maximum'}}))await fs.writeFile(path.join(root,'data',name),JSON.stringify(value));
+  const audio=wave(60);for(const t of tracks)await fs.writeFile(path.join(root,'cache',t.id+'.mp3'),audio);
+  const reserve=http.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
+  child=spawn(process.execPath,[path.resolve(__dirname,'../src/server.js')],{env:{...process.env,PAIN_DATA_DIR:root,PORT:String(port),PAIN_DISCOVERY:'false',PAIN_PULSEFLOW_AUTO_INDEX:'false',OPEN_BROWSER:'false'},stdio:['ignore','pipe','pipe']});
+  await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(Error(output||'Startup timeout')),15000);for(const stream of[child.stdout,child.stderr])stream.on('data',b=>{output+=b;if(output.includes('Web UI:')){clearTimeout(timer);resolve();}});child.once('error',reject);});
+  const base='http://127.0.0.1:'+port;
+  browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--autoplay-policy=no-user-gesture-required']});
+  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>{localStorage.setItem('pain_theme','form-night');localStorage.setItem('pain_lang','ru');localStorage.setItem('pain_performance_mode','balanced');localStorage.setItem('pain_save_history','false');localStorage.setItem('pain_track_transition','0');});
+  await page.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
+  await page.goto(base+'/#library');await page.locator('.nav-item[data-view="library"]').click();
+  await page.locator('tr[data-track-id="pc"] .col-title').click();
+  await page.waitForFunction(()=>!PainPlayer.getAudio().paused&&PainPlayer.getAudio().currentTime>0);
+  await page.selectOption('#sortSelect','added-desc');
+  const order=()=>page.locator('#tracksTableBody tr[data-track-id]').evaluateAll(rows=>rows.map(r=>r.dataset.trackId));
+  assert.deepEqual(await order(),['friend','phone','pc','old']);
+  assert.equal(await page.evaluate(()=>PainPlayer.getTrack().id),'pc','sorting does not interrupt or replace playback');
+  const response=await fetch(base+'/api/save-library',{method:'POST',body:JSON.stringify({tracks:[{...tracks[2],id:'new-phone',title:'Только что добавлено',added:Date.now()}]})});assert.equal(response.status,200);
+  await page.waitForFunction(()=>document.querySelector('#tracksTableBody tr[data-track-id]')?.dataset.trackId==='new-phone');
+  await page.locator('.custom-playlist-item[data-id="mix"]').click();await page.click('#playlistArtworkBtn');
+  const png=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=800;canvas.height=600;const c=canvas.getContext('2d');c.fillStyle='#b055da';c.fillRect(0,0,800,600);c.fillStyle='#f0c975';c.fillRect(280,180,240,240);return canvas.toDataURL('image/png').split(',')[1];});
+  const file=path.join(root,'my-cover.png');await fs.writeFile(file,Buffer.from(png,'base64'));
+  const before=await Promise.all(['library.json','playlists.json','stats.json','dj-state.json'].map(n=>fs.readFile(path.join(root,'data',n),'utf8')));
+  await page.locator('.playlist-artwork-file').setInputFiles(file);
+  await page.waitForFunction(()=>document.querySelector('input[name="playlistArtworkMode"][value="custom"]').checked);
+  const cover=await page.locator('.playlist-artwork-preview img').getAttribute('src');assert.match(cover,/\/api\/playlist-artwork\/mix\/image\?v=[a-f0-9]{16}$/);
+  await page.waitForFunction(()=>{const img=document.querySelector('.playlist-artwork-preview img');return img.complete&&img.naturalWidth===600&&img.naturalHeight===600;});
+  await page.click('.playlist-artwork-dialog [data-close]');
+  assert.equal(await page.locator('#view-playlist .playlist-artwork img').getAttribute('src'),cover);
+  assert.deepEqual(await Promise.all(['library.json','playlists.json','stats.json','dj-state.json'].map(n=>fs.readFile(path.join(root,'data',n),'utf8'))),before,'a cover change cannot change music, playlists, history or DJ data');
+  const uploaded=Buffer.from(await(await fetch(base+cover)).arrayBuffer());
+  const invalid=await fetch(base+'/api/playlist-artwork/mix',{method:'POST',body:JSON.stringify({dataUrl:'data:image/webp;base64,YmFk'})});assert.equal(invalid.status,400);
+  assert.deepEqual(Buffer.from(await(await fetch(base+cover)).arrayBuffer()),uploaded,'an invalid replacement preserves the last cover');
+  await page.reload();await page.locator('.custom-playlist-item[data-id="mix"]').click();
+  assert.equal(await page.locator('#view-playlist .playlist-artwork img').getAttribute('src'),cover);
+  await page.click('#playlistArtworkBtn');await page.check('input[name="playlistArtworkMode"][value="tracks"]');
+  assert.equal(await page.locator('.playlist-artwork-preview img').count(),4);
+  await page.check('input[name="playlistArtworkMode"][value="custom"]');assert.equal(await page.locator('.playlist-artwork-preview img').getAttribute('src'),cover);
+  await page.click('.playlist-artwork-dialog [data-close]');await page.click('.nav-item[data-view="library"]');
+  assert.equal(await page.locator('#sortSelect').inputValue(),'added-desc');assert.equal((await order())[0],'new-phone');
+  assert.equal(await page.locator('.home-record').evaluate(e=>getComputedStyle(e).animationName),'none','balanced mode disables decorative motion');
+  assert.deepEqual(errors,[]);console.log('PASS: real playback, mixed-unit recent sort, live library updates, persisted selection, image upload/decoding/reload/reset, rejected corrupt image preserves cover, collection and DJ files unchanged.');
+ }finally{await browser?.close();if(child){const exited=new Promise(r=>child.once('exit',r));child.kill();await exited;}await fs.rm(root,{recursive:true,force:true});}
+})().catch(error=>{console.error(error);process.exitCode=1;});

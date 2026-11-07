@@ -26,7 +26,7 @@
     shuffledOrder: [],
     searchQuery: '',
     categoryFilter: 'all', // 'all' | 'favorites' | 'albums' | 'artists'
-    sortOption: 'default',
+    sortOption: localStorage.getItem('pain_sort_option') || 'default',
     libraryDirty: true,
     draggedTrackId: null,
     hasPrefetchedNext: false,
@@ -624,6 +624,22 @@
       toast.classList.add('hiding');
       setTimeout(() => toast.remove(), 250);
     }, duration);
+    return toast;
+  }
+
+  let syncNotice=null,lastSyncNotice=0,lastSyncFailure=null;
+  function showSyncStatus(status,manual=false){
+    if(status?.state==='ok'){syncNotice?.remove();syncNotice=null;lastSyncFailure=null;return;}
+    if(status?.state!=='error'||(!manual&&(!localStorage.getItem('pain_phone_url')||lastSyncFailure===status.code||Date.now()-lastSyncNotice<180000)))return;
+    const messages={
+      connection:['Телефон недоступен. Открой PAIN на нём и проверь общий Wi-Fi. Синхронизация повторится автоматически.','Phone unavailable. Open PAIN on it and check that both devices use the same Wi-Fi. Sync will retry automatically.'],
+      update:['Телефон не поддерживает этот обмен. Обнови PAIN на телефоне и ПК, затем нажми «Синхронизировать всё».','This sync is unavailable on the phone. Update PAIN on both devices, then choose Sync All.'],
+      format:['Телефон прислал неполные данные. Данные на ПК сохранены. Дождись сканирования и проверь обновления PAIN на обоих устройствах.','The phone returned incomplete data. PC data is safe. Wait for its scan to finish and check PAIN updates on both devices.'],
+      conflict:['Данные изменились во время обмена. Синхронизация повторится автоматически.','Data changed during sync. Sync will retry automatically.']
+    };
+    syncNotice?.remove();lastSyncNotice=Date.now();lastSyncFailure=status.code;
+    syncNotice=showToast((messages[status.code]||messages.connection)[state.lang==='ru'?0:1],'ℹ',9000);
+    syncNotice?.setAttribute('role','status');
   }
 
   // --- TIME-OF-DAY GREETING ---
@@ -763,14 +779,16 @@
   async function init() {
     applyTheme(state.theme);
     initHomeWallpaper();
-    const changes=new EventSource('/api/library/events');let refreshing=false,repeat=false,first=true;
-    changes.onmessage=async()=>{if(first){first=false;return;}if(refreshing){repeat=true;return;}refreshing=true;try{do{repeat=false;await window.PainPlayer.reloadLibrary();await syncExcludedTracksFromServer();}while(repeat);}catch(_){}finally{refreshing=false;}};
+    const changes=new EventSource('/api/library/events');let refreshing=false,repeat=false,lastRevision;
+    changes.onmessage=async event=>{if(event.data===lastRevision)return;const first=lastRevision===undefined;lastRevision=event.data;if(first)return;if(refreshing){repeat=true;return;}refreshing=true;try{do{repeat=false;await window.PainPlayer.reloadLibrary();await syncExcludedTracksFromServer();}while(repeat);}catch(_){lastRevision=null;}finally{refreshing=false;}};
     // EventSource reconnects and delivers library changes independently of focus.
     // Switching windows must not reload the catalog or reset the Home animation.
     applyLang(state.lang);
     applyViewMode(state.viewMode);
 
     DOM.phoneIpInput.value = state.phoneUrl;
+    DOM.sortSelect.value=state.sortOption;
+    if(!DOM.sortSelect.value)state.sortOption=DOM.sortSelect.value='default';
     initEqualizerUI();
     initSettingsUI();
 
@@ -1237,7 +1255,9 @@
   async function loadLocalData() {
     try {
       // 1. Library
-      const libRes = await fetch('/api/saved-library');
+      const [libRes, plRes, statsRes] = await Promise.all([
+        fetch('/api/saved-library'), fetch('/api/playlists'), fetch('/api/saved-stats')
+      ]);
       if (libRes.ok) {
         const lib = await libRes.json();
         if (lib.tracks && Array.isArray(lib.tracks)) {
@@ -1247,7 +1267,6 @@
       }
 
       // 2. Playlists
-      const plRes = await fetch('/api/playlists');
       if (plRes.ok) {
         const pls = await plRes.json();
         if (Array.isArray(pls)) {
@@ -1256,7 +1275,6 @@
       }
 
       // 3. Stats
-      const statsRes = await fetch('/api/saved-stats');
       if (statsRes.ok) {
         const st = await statsRes.json();
         if (st) {
@@ -1338,9 +1356,9 @@
       targetPane.classList.add('active');
     }
 
+    if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
     renderCurrentView();
     if(viewName==='home')window.HomeView?.resume();
-    if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
     window.dispatchEvent(new CustomEvent('pain:view',{detail:viewName}));
   }
@@ -1491,6 +1509,12 @@
 
     // 3. Sorting
     switch (state.sortOption) {
+      case 'added-desc': {
+        // Android and room downloads store milliseconds; older PC imports use seconds.
+        const added=track=>{const n=Number(track.added);return Number.isFinite(n)&&n>0?(n<1e11?n*1000:n):0;};
+        list.sort((a,b)=>added(b)-added(a));
+        break;
+      }
       case 'title-asc':
         list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         break;
@@ -1760,6 +1784,7 @@
     ensureTableDelegation(container);
 
     PainListView.render(container, trackList, {
+      layoutKey: state.theme + ':' + (contextInfo?.type === 'library' ? state.searchQuery : ''),
       key: track => String(track.id),
       signature: track => trackPresentationKey(track, enableDragAndDrop, contextInfo),
       create: (track, index) => createTrackRow(track, index, enableDragAndDrop, contextInfo),
@@ -1906,6 +1931,7 @@
     ensureGridDelegation(container);
 
     PainListView.render(container, trackList, {
+      layoutKey: state.theme + ':' + (contextInfo?.type === 'library' ? state.searchQuery : ''),
       key: track => String(track.id), signature: track => trackPresentationKey(track,false,contextInfo),
       create: track => {const card=createTrackCard(track),snippet=lyricSearchSnippet(track,contextInfo);if(snippet)card.querySelector('.track-card-artist').insertAdjacentHTML('afterend',snippet);return card;}, complete: updatePlayingRowUI,
       empty: () => {
@@ -4688,6 +4714,7 @@
       if (document.hidden || Date.now() - lastPoll < PerformanceMode.get(state.performanceMode).discoveryMs) return;
       lastPoll = Date.now();
       try {
+        fetch('/api/sync-status',{signal:AbortSignal.timeout(3000)}).then(r=>r.ok?r.json():null).then(status=>showSyncStatus(status)).catch(()=>{});
         const res = await fetch('/api/devices');
         if (res.ok) {
           const list = await res.json();
@@ -4719,21 +4746,20 @@
     localStorage.setItem('pain_phone_url', url);
 
     try {
-      const res = await fetch(`${url}/api/status`);
-      if (res.ok) {
-        const data = await res.json();
-        DOM.sidebarDot.classList.add('connected');
-        DOM.sidebarStatusText.textContent = `${data.appName} (${data.device || 'Android'})`;
-        DOM.sidebarDetailText.textContent = `${url} · ${data.tracks} tracks`;
-        DOM.deviceInfoText.innerHTML = `
-          <strong>Connected!</strong> Device: ${data.device || 'Android'} (${data.appName}), Tracks: ${data.tracks}.
-        `;
-        return true;
-      }
+      const res = await fetch(`${url}/api/status`,{signal:AbortSignal.timeout(6000)});
+      if (!res.ok) throw Error('Phone HTTP '+res.status);
+      const data = await res.json();
+      DOM.sidebarDot.classList.add('connected');
+      DOM.sidebarStatusText.textContent = `${data.appName} (${data.device || 'Android'})`;
+      DOM.sidebarDetailText.textContent = `${url} · ${data.tracks} tracks`;
+      DOM.deviceInfoText.textContent = `${state.lang==='ru'?'Подключено':'Connected'} · ${data.device||'Android'} · ${Number(data.tracks)||0} ${state.lang==='ru'?'треков':'tracks'}${data.version?' · PAIN '+data.version:''}`;
+      showSyncStatus({state:'ok'});
+      return true;
     } catch (e) {
       DOM.deviceInfoText.innerHTML = `
         <span style="color:#D32F2F;">Connection failed.</span> Verify phone is on the same Wi-Fi and Pain is open.
       `;
+      showSyncStatus({state:'error',code:'connection'},true);
       return false;
     }
   }
@@ -4755,10 +4781,7 @@
   function isLibraryDiffer(oldTracks, newTracks) {
     if (!oldTracks || !newTracks) return true;
     if (oldTracks.length !== newTracks.length) return true;
-    if (oldTracks.length > 0) {
-      if (oldTracks[0]?.id !== newTracks[0]?.id || oldTracks[oldTracks.length - 1]?.id !== newTracks[newTracks.length - 1]?.id) return true;
-    }
-    return false;
+    return oldTracks.some((track,index)=>JSON.stringify(track)!==JSON.stringify(newTracks[index]));
   }
 
   let syncBusy = false, lastSyncAttempt = 0, localSyncRevision = 0;
@@ -4780,8 +4803,9 @@
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({phoneUrl: state.phoneUrl})
       });
-      if (!result.ok) throw new Error('Phone sync failed');
-      const {library: libData, stats, djState,companion} = await result.json();
+      const payload=await result.json();
+      if (!result.ok){const error=new Error(payload.error||'Phone sync failed');error.syncCode=payload.code;throw error;}
+      const {library: libData, stats, djState,companion} = payload;
       mergeSharedAudio(djState);
       if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
       // A local click/play during the exchange must not be rolled back by its response.
@@ -4805,13 +4829,12 @@
         window.dispatchEvent(new Event('pain:companion-synced'));
       }
       state.hasAutoSynced = true;
+      showSyncStatus({state:'ok'});
       if (libraryChanged || statsChanged) {
         invalidatePlayCountsCache();
         if (queue) setQueueTasteStats(state.stats);
         updateSidebarLikedCount();
-        if (!background || (state.currentView === 'library' || state.currentView === 'home')) {
-          renderCurrentView();
-        }
+        renderCurrentView();
       }
       if (!background) {
         if(companion?.error)showToast(state.lang==='ru'?'История синхронизирована; плейлисты и тексты повторят обмен при следующем подключении.':'History synced; playlists and lyrics will retry at the next connection.');
@@ -4821,6 +4844,7 @@
       }
     } catch (err) {
       console.warn('Sync failed:', err);
+      showSyncStatus({state:'error',code:err.syncCode||(/snapshot|JSON/.test(err.message)?'format':'connection')},!background);
       if (!background) DOM.progressBanner.classList.remove('active');
     } finally {
       syncBusy = false;
@@ -4970,6 +4994,7 @@
     // Sort Selector
     DOM.sortSelect.addEventListener('change', (e) => {
       state.sortOption = e.target.value;
+      localStorage.setItem('pain_sort_option',state.sortOption);
       state.libraryDirty = true;
       if(isFormTheme(state.theme))switchView('library');else renderLibrary();
     });

@@ -4,14 +4,15 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
  try{
-  const page=await browser.newPage(),errors=[],likes=[],syncs=[];page.on('pageerror',e=>errors.push(e.message));
-  const track={id:'song',title:'Ночная волна',artist:'Исполнитель',duration:180000,favorite:0};
+  const page=await browser.newPage(),errors=[],likes=[],syncs=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
+  const track={id:'song',title:'Ночная волна',artist:'Исполнитель',duration:180000,favorite:0};let failure=false;
   let release,arrived;const received=new Promise(r=>arrived=r);
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());
    const json=value=>route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
    if(url.pathname==='/api/sync-phone'){
     syncs.push(request.postDataJSON());
+    if(failure)return route.fulfill({status:500,json:{error:'Phone HTTP 404',code:'update'}});
     if(syncs.length===1){arrived();await new Promise(r=>release=r);}
     return json({library:{tracks:[{...track,favorite:syncs.length===1?0:1}]},stats:{plays:[],slices:[]}});
    }
@@ -21,7 +22,8 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
    const file=url.pathname.startsWith('/assets/')?path.join(__dirname,'..',url.pathname):path.join(__dirname,'../src',url.pathname==='/'?'index.html':url.pathname);
    try{return await route.fulfill({contentType:({'.html':'text/html','.js':'application/javascript','.css':'text/css','.ttf':'font/ttf'})[path.extname(file)]||'application/octet-stream',body:await fs.readFile(file)});}catch(_){return route.fulfill({status:404,body:''});}
   });
-  await page.goto('http://pain.test');
+  await page.goto('http://pain.test/#library');
+  await page.locator('.nav-item[data-view="library"]').click();
   const favorite=page.locator(':is(.row-fav-btn,.card-fav-btn):visible').first();await favorite.waitFor();
   await page.locator('#phoneIpInput').evaluate(input=>input.value='http://phone.test:8865/');
   await page.locator('#syncAllBtn').evaluate(button=>button.click());await received;
@@ -34,6 +36,14 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   assert.equal(await favorite.evaluate(b=>b.classList.contains('active')),true,'stale snapshot cannot undo a like');
   const next=page.waitForResponse(r=>r.url().endsWith('/api/sync-phone'));await page.locator('#syncAllBtn').evaluate(button=>button.click());await next;
   assert.equal(await favorite.evaluate(b=>b.classList.contains('active')),true);
+  track.title='Новое название с телефона';
+  await page.locator('#syncAllBtn').evaluate(button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('.track-row-title')?.textContent==='Новое название с телефона');
+  failure=true;await page.locator('#syncAllBtn').evaluate(button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('.toast[role="status"]')?.textContent.includes('Update PAIN'));
+  assert.equal(await page.evaluate(()=>PainPlayer.getTracks().length),1,'sync failure keeps the library');
+  failure=false;await page.locator('#syncAllBtn').evaluate(button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('.toast[role="status"]'));
   assert.deepEqual(errors,[]);console.log('PASS: manual address, single exchange, like during sync, no rollback or page errors');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

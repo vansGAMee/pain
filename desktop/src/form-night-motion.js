@@ -3,7 +3,7 @@
  const root=document.documentElement,media=matchMedia('(prefers-reduced-motion: reduce)');
  let timer,target,effect,last=null;
  const textChanges=new MutationObserver(()=>schedule());
- const allowed=()=>root.dataset.theme==='form-night'&&!document.hidden&&!root.hasAttribute('data-reduced-motion')&&root.dataset.performanceMode!=='maximum'&&!media.matches&&!document.querySelector('.app-layout.karaoke-open');
+ const allowed=()=>root.dataset.theme==='form-night'&&!document.hidden&&!root.hasAttribute('data-reduced-motion')&&!root.hasAttribute('data-resource-saver')&&!media.matches&&!document.querySelector('.app-layout.karaoke-open');
  function stop(){clearTimeout(timer);timer=null;textChanges.disconnect();if(target){target.classList.remove(effect);target.removeAttribute('data-night-glint-text');}target=null;effect=null;}
  function schedule(first=false){
   stop();if(!allowed())return;

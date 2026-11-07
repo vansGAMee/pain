@@ -177,6 +177,7 @@
             <svg class="sort-icon" viewBox="0 0 24 24"><path d="M3 6h18M6 12h12M9 18h6"/></svg>
             <select class="sort-select" id="sortSelect">
               <option value="default" data-en="Default Order" data-ru="По умолчанию">Default Order</option>
+              <option value="added-desc" data-en="Recently added" data-ru="Недавно добавленные">Недавно добавленные</option>
               <option value="title-asc" data-en="Title (A → Z)" data-ru="Название (А → Я)">Title (A → Z)</option>
               <option value="title-desc" data-en="Title (Z → A)" data-ru="Название (Я → А)">Title (Z → A)</option>
               <option value="artist-asc" data-en="Artist (A → Z)" data-ru="Артист (А → Я)">Artist (A → Z)</option>
@@ -580,7 +581,7 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
                     <span data-en="Force Sync All" data-ru="Синхронизировать всё">Force Sync All</span>
                   </div>
-                  <div class="sync-action-desc" data-en="Full library + listening stats in 1s" data-ru="Вся фонотека + статистика за 1 секунду">Full library + listening stats in 1s</div>
+                  <div class="sync-action-desc" data-en="Exchange library and history; retry if the phone is unavailable" data-ru="Обмен фонотекой и историей; повтор при недоступном телефоне">Обмен фонотекой и историей; повтор при недоступном телефоне</div>
                 </button>
 
                 <button class="sync-action-btn" id="downloadAllAudioBtn">
@@ -1388,6 +1389,7 @@
   <script src="presence/engine.js"></script>
   <script src="presence-engine.js"></script>
   <script src="performance-mode.js"></script>
+  <script src="windowed-list.js"></script>
   <script src="list-view.js"></script>
   <script src="music-search.js"></script>
   <script src="vendor/minisearch/index.js"></script>

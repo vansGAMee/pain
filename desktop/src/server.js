@@ -52,6 +52,7 @@ if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
 const wallpaperRoute=require('./appearance-wallpaper')(DATA_DIR);
+const playlistArtworkRoute=require('./playlist-artwork-store')(DATA_DIR,()=>phoneSync.read('playlists.json',[]));
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
   resolveAudio: id => getResolvedAudioFilePath(id, true), phoneBase: getMobilePhoneBaseUrl,
   getTrack:id=>getLibraryTracks().find(t=>String(t.id)===id),availabilityFile:path.join(DATA_DIR,'audio-availability.json') });
@@ -97,7 +98,13 @@ const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 let discoveredDevices = [];
 let hasAutoSynced = false;
 let autoSyncBusy = false;
-let lastFullSync=0,lastSyncDevice='';
+let lastFullSync=0,lastLibraryPull=0,lastSyncDevice='';
+let syncStatus={state:'idle',at:0};
+function syncFailed(error){
+  const code=[404,405].includes(error.statusCode)?'update':error.statusCode===409?'conflict':/Invalid.*snapshot|Unexpected token|JSON/.test(error.message)?'format':'connection';
+  syncStatus={state:'error',code,at:Date.now()};
+  return code;
+}
 let udpSocket = null;
 let resourceSaverActive = true;
 let performanceMode = 'balanced', lastArpScan = 0, lastBroadcast = 0;
@@ -270,8 +277,8 @@ async function processPendingTrackUploads(base) {
 // Background auto-sync function with debounce
 let autoSyncTimeout = null;
 function triggerBackgroundAutoSync(device) {
-  if (autoSyncBusy) return;
-  if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+  if (autoSyncBusy || autoSyncTimeout) return;
+  if (`http://${device.ip}:${device.port}`===lastSyncDevice && Date.now()-lastLibraryPull<15000) return;
   autoSyncTimeout = setTimeout(async () => {
     autoSyncTimeout = null;
     if (autoSyncBusy) return;
@@ -284,10 +291,12 @@ function triggerBackgroundAutoSync(device) {
         lastFullSync = Date.now();
         lastSyncDevice = base;
       } else {
-        await phoneSync.flush(base);
+        await phoneSync.refreshLibrary(base);
       }
       await processPendingTrackUploads(base);
-    } catch (_) { /* Keep pending changes; the next discovery retries. */ }
+      lastLibraryPull=Date.now();
+      syncStatus={state:'ok',at:lastLibraryPull};
+    } catch (error) { syncFailed(error); /* Pending changes retry at the next discovery. */ }
     finally { autoSyncBusy = false; }
   }, 1000);
 }
@@ -851,6 +860,7 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/personal/recommend') { personalRecommender.route(req,res);return; }
   if(pathname==='/api/library/events'&&req.method==='GET'){libraryEvents.route(req,res);return;}
   if(pathname.startsWith('/api/appearance/wallpaper')){wallpaperRoute(req,res,pathname);return;}
+  if(pathname.startsWith('/api/playlist-artwork/')){playlistArtworkRoute(req,res,pathname);return;}
   if(pathname==='/api/handoff'&&req.method==='POST'){
     httpSafety.readBody(req,res,16384,async body=>{
       try{
@@ -1092,6 +1102,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (pathname === '/api/sync-status' && req.method === 'GET') {
+    res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    res.end(JSON.stringify(syncStatus));return;
+  }
+
   if (pathname === '/api/devices') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(discoveredDevices));
@@ -1245,7 +1260,7 @@ const server = http.createServer((req, res) => {
           mime,
           duration,
           bytes: sz,
-          added: Math.floor(Date.now() / 1000),
+          added: Date.now(),
           album_id: 0,
           number: 0,
           favorite: 0
@@ -1643,13 +1658,14 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
         fs.writeFileSync(LAST_IP_FILE, `${base.hostname}:${base.port || MOBILE_HTTP_PORT}`, 'utf8');
         if (pathname === '/api/sync-phone') {
           const snapshots = await phoneSync.synchronize(base.href);
+          syncStatus={state:'ok',at:Date.now()};
           send(200, {status:'ok', ...snapshots});
         } else {
           let syncedToPhone = false;
-          try { await phoneSync.flush(base.href); syncedToPhone = true; } catch (_) {}
+          try { await phoneSync.flush(base.href); syncedToPhone = true; } catch (error) { syncFailed(error); }
           send(200, {status:'ok', syncedToPhone});
         }
-      } catch (e) { send(persisted ? 200 : 500, persisted ? {status:'ok', syncedToPhone:false} : {error:e.message}); }
+      } catch (e) { const code=syncFailed(e);send(persisted ? 200 : 500, persisted ? {status:'ok', syncedToPhone:false} : {error:e.message,code}); }
     });
     return;
   }
