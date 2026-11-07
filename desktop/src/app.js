@@ -4340,6 +4340,7 @@
       DOM.updateStatusText.textContent = ru ? `Установлена свежая версия ${status.currentVersion}` : `Version ${status.currentVersion} is up to date`;
       DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
     }
+    window.UpdateScreen?.render(status, {installing:updateInstalling, lang:state.lang});
   }
 
   function pollUpdateDownload() {
@@ -4365,7 +4366,7 @@
       updateStatus = await response.json();
       renderUpdateStatus();
       pollUpdateDownload();
-      if (notify && updateStatus.available && !updateNoticeShown) {
+      if (notify && updateStatus.available && updateStatus.status !== 'downloading' && !updateNoticeShown) {
         updateNoticeShown = true;
         showToast((state.lang === 'ru' ? `Доступно обновление ${updateStatus.latestVersion}` : `Update ${updateStatus.latestVersion} is available`) + (updateStatus.notes ? ': ' + updateStatus.notes.slice(0, 240) : ''), '↑', 9000);
       }
@@ -4385,8 +4386,9 @@
     }
     updateInstalling = true;
     clearTimeout(updatePollTimer);updatePollTimer=null;
-    updateStatus = { ...updateStatus, status: 'downloading' };
+    updateStatus = { ...updateStatus, status: updateStatus.status === 'downloaded' ? 'downloaded' : 'downloading' };
     renderUpdateStatus();
+    window.UpdateScreen?.open();
     try {
       const response = await fetch('/api/install-update', { method: 'POST', headers: { 'X-Pain-Update': 'install' } });
       const result = await response.json();

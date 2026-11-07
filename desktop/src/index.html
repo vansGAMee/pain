@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="form-night-theme.css">
   <link rel="stylesheet" href="sakura-theme.css">
   <link rel="stylesheet" href="library-personalization.css">
+  <link rel="stylesheet" href="update-screen.css">
 </head>
 <body>
 
@@ -1348,6 +1349,23 @@
   <!-- Toast Notifications -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <dialog id="updateScreen" class="update-screen" aria-labelledby="updateScreenTitle" aria-describedby="updateScreenDetail">
+    <div class="update-screen-content">
+      <div class="update-symbol" aria-hidden="true"><span class="update-orbit"><i></i><i></i></span><span class="update-leaf"></span></div>
+      <p class="update-screen-brand">PAIN</p>
+      <div role="status" aria-live="polite" aria-atomic="true">
+        <h2 id="updateScreenTitle" tabindex="-1" autofocus></h2>
+        <p id="updateScreenDetail"></p>
+      </div>
+      <div class="update-screen-progress" id="updateScreenProgress" role="progressbar"><span></span></div>
+      <p class="update-screen-version" id="updateScreenVersion"></p>
+      <div class="update-screen-actions">
+        <button type="button" id="updateScreenAction" hidden></button>
+        <button type="button" id="updateScreenClose"></button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Audio Elements for Seamless Dual-Deck Crossfade -->
   <audio id="audioEngine" crossorigin="anonymous"></audio>
   <audio id="audioEngineB" crossorigin="anonymous"></audio>
@@ -1397,6 +1415,7 @@
   <script src="music-search-index.js"></script>
   <script src="music-search-client.js"></script>
   <script src="playback-memory.js"></script>
+  <script src="update-screen.js"></script>
   <script src="app.js"></script>
   <script src="artist-card.js"></script>
   <script src="track-info.js"></script>

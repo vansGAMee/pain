@@ -1,0 +1,53 @@
+/* A small, composited animation; no canvas, blur or animation loop in JS. */
+#updateScreen {
+  --update-ink:#f2eff9;--update-muted:#aaa2bb;--update-accent:#c3aff0;
+  position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;
+  box-sizing:border-box;margin:0;border:0;border-radius:0;padding:32px 24px;
+  background:radial-gradient(ellipse at 50% 38%,#282232 0%,#18151e 60%);
+  color:var(--update-ink);font-family:'Geist',sans-serif;text-align:center;
+  overflow:auto;color-scheme:dark;
+}
+#updateScreen[open] {display:grid;place-items:center;}
+#updateScreen::backdrop {background:#18151e;}
+.update-screen-content {width:min(100%,400px);margin:auto;}
+.update-symbol {position:relative;display:block;width:124px;height:124px;margin:0 auto 32px;color:var(--update-accent,#c3aff0);}
+.update-orbit {position:absolute;inset:0;}
+.update-orbit i {position:absolute;display:block;width:24px;height:24px;border-radius:7px;background:currentColor;}
+.update-orbit i:first-child {left:4px;top:5px;}
+.update-orbit i:last-child {right:9px;bottom:9px;width:15px;height:15px;opacity:.4;}
+.update-leaf {
+  position:absolute;inset:28px;background:currentColor;
+  mask:url('/assets/pain-leaf.png') center/contain no-repeat;
+  -webkit-mask:url('/assets/pain-leaf.png') center/contain no-repeat;
+}
+.update-screen-brand {margin:0 0 12px;font-size:14px;font-weight:650;letter-spacing:.14em;color:var(--update-accent);}
+#updateScreenTitle {margin:0;font-size:26px;font-weight:550;line-height:1.25;letter-spacing:-.035em;outline:none;}
+#updateScreenDetail {margin:14px 0 0;min-height:48px;font-size:14px;line-height:1.65;color:var(--update-muted);text-wrap:pretty;}
+.update-screen-progress {height:3px;width:144px;margin:28px auto 0;border-radius:3px;background:#41384e;overflow:hidden;}
+.update-screen-progress > span {display:block;width:45%;height:100%;border-radius:inherit;background:var(--update-accent);transform:translateX(60%);}
+.update-screen-version {margin:18px 0 0;font-size:12px;line-height:1.5;color:var(--update-muted);font-variant-numeric:tabular-nums;}
+.update-screen-actions {display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:32px;}
+.update-screen-actions button {font:inherit;font-size:13px;line-height:1.4;cursor:pointer;border-radius:8px;padding:10px 16px;}
+#updateScreenClose {border:1px solid transparent;background:transparent;color:var(--update-muted);}
+#updateScreenClose:hover {color:var(--update-ink);background:#ffffff08;}
+#updateScreenAction {border:0;background:var(--update-accent);color:#241c31;font-weight:600;}
+.update-screen-actions button:focus-visible,.update-mini:focus-visible {outline:2px solid #c3aff0;outline-offset:4px;}
+.update-mini {display:flex;align-items:center;gap:12px;pointer-events:auto;max-width:calc(100vw - 48px);padding:12px 18px;border:1px solid var(--border-strong);border-radius:12px;background:var(--card-bg);color:var(--ink);font:inherit;text-align:left;cursor:pointer;box-shadow:0 4px 18px #0002;}
+.update-mini .update-symbol {width:32px;height:32px;flex:none;margin:0;color:var(--accent);}
+.update-mini .update-orbit i:first-child {width:8px;height:8px;border-radius:2px;left:0;top:0;}
+.update-mini .update-orbit i:last-child {width:5px;height:5px;border-radius:2px;right:0;bottom:0;}
+.update-mini .update-leaf {inset:7px;}
+.update-mini strong {display:block;font-size:12px;font-weight:600;line-height:1.6;}
+.update-mini small {display:block;font-size:11px;line-height:1.6;color:var(--ink-secondary);}
+.update-mini[hidden],.update-screen-actions [hidden],.update-screen-progress[hidden] {display:none;}
+@keyframes update-orbit {0%{transform:rotate(-12deg) scale(.92)}50%{transform:rotate(168deg) scale(1.08)}100%{transform:rotate(348deg) scale(.92)}}
+@keyframes update-leaf {0%,100%{transform:scale(.94) rotate(-5deg)}50%{transform:scale(1.04) rotate(5deg)}}
+@keyframes update-progress {0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
+@media(prefers-reduced-motion:no-preference) {
+  :root:not([data-reduced-motion]):not([data-performance-mode="maximum"]) #updateScreen[open]:is([data-phase="checking"],[data-phase="downloading"],[data-phase="restarting"]) .update-orbit,
+  :root:not([data-reduced-motion]):not([data-performance-mode="maximum"]) #toastContainer .update-mini:not([hidden]) .update-orbit {animation:update-orbit 2.8s cubic-bezier(.45,0,.55,1) infinite!important;}
+  :root:not([data-reduced-motion]):not([data-performance-mode="maximum"]) #updateScreen[open]:is([data-phase="checking"],[data-phase="downloading"],[data-phase="restarting"]) .update-leaf {animation:update-leaf 2.8s ease-in-out infinite!important;}
+  :root:not([data-reduced-motion]):not([data-performance-mode="maximum"]) #updateScreen[open] .update-screen-progress:not([hidden]) > span {animation:update-progress 1.8s ease-in-out infinite!important;}
+}
+:root[data-window-hidden] #updateScreen *, :root[data-window-hidden] #toastContainer .update-mini * {animation-play-state:paused!important;}
+@media(max-height:480px) {.update-symbol{width:84px;height:84px;margin-bottom:20px}.update-leaf{inset:20px}#updateScreen{padding:24px}.update-screen-actions{margin-top:18px}}
