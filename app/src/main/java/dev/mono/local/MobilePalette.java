@@ -3,12 +3,16 @@ package dev.mono.local;
 /** Shared native surfaces: old themes keep their own colours on every screen. */
 final class MobilePalette {
   final int paper, ink, surface, accent, muted;
-  final boolean dark;
+  final boolean dark, carbon;
 
   MobilePalette(MonoApp app) {
     String theme = app.prefs.getString("theme", "sakura");
-    dark = theme.equals("sakura") || theme.equals("night") || theme.equals("dark");
+    carbon = theme.equals("carbon");
+    dark = carbon || theme.equals("sakura") || theme.equals("night") || theme.equals("dark");
     switch (theme) {
+      case "carbon":
+        paper = 0xff222222; ink = 0xffededed; surface = 0xff292929; accent = 0xffdedede;
+        break;
       case "sakura":
         paper = 0xff0c0911; ink = 0xfff4edf8; surface = 0xff15101c; accent = 0xffd5b5f3;
         break;

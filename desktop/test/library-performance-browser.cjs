@@ -101,6 +101,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
    await page.locator('#searchInput').fill('Янтарный архипелаг');
    await page.waitForFunction(()=>document.querySelector('#tracksTableBody')._currentTrackList?.length===1);
    assert.equal(await page.locator('#tracksTableBody > tr[data-track-id]').getAttribute('data-track-id'),'1999');
+   await page.fill('#searchInput','Янтарный архипелаг около 3 минут');
+   await page.waitForFunction(()=>document.querySelector('#musicSearchHint').textContent.includes('±20'));
+   assert.deepEqual(await page.locator('#tracksTableBody > tr[data-track-id]').evaluateAll(rows=>rows.map(r=>r.dataset.trackId)),['1999']);
+   assert.equal(await page.evaluate(()=>PainPlayer.getAudio().paused),false,'duration search keeps playback running');
+   await page.fill('#searchInput','короче 4 минут');
+   await page.waitForFunction(()=>document.querySelector('#tracksTableBody')._currentTrackList?.length===2000);
+   assert.ok(await page.locator('#tracksTableBody > tr[data-track-id]').count()<100,'duration-only search keeps the large list bounded');
    await page.fill('#searchInput','');await page.waitForFunction(()=>document.querySelector('#tracksTableBody')._currentTrackList?.length===2000);
    await page.selectOption('#sortSelect','added-desc');await jump(0);
    assert.equal(await page.locator('#tracksTableBody > tr[data-track-id]').first().getAttribute('data-track-id'),'1999');

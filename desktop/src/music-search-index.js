@@ -38,6 +38,16 @@
     let source=String(value||'').slice(0,512),defaultField=null;
     const lyricFrame=/^(?:(?:найди|найти|покажи|ищу|find|search)\s+)?(?:(?:ту|та|эта|эту|the|that)\s+)?(?:песн[яю]|трек|song|track)\s+(?:со словами|в которой поют|где(?:\s+поют)?|with (?:the )?(?:words|lyrics)|that goes)\s+/i;
     if(lyricFrame.test(source)){source=source.replace(lyricFrame,'');defaultField='lyrics';}
+    // Only an explicit, unquoted suffix is an instruction. Lyric sentences
+    // and quoted song names keep their literal meaning.
+    let duration=null;
+    if(!defaultField&&!/(?:^|\s)(?:lyrics|текст):/i.test(source)){
+      const match=/(?:^|\s)(около|примерно|короче|меньше|длиннее|дольше|больше|about|under|over)\s+(\d{1,3}(?::[0-5]\d|[.,]\d{1,2})?)\s*(мин(?:ут[уы]?)?\.?|minutes?|mins?)?\s*$/iu.exec(source);
+      if(match&&(match[3]||match[2].includes(':'))&&source.slice(0,match.index).split('"').length%2===1){
+        const parts=match[2].split(':'),seconds=parts.length===2?Number(parts[0])*60+Number(parts[1]):Number(parts[0].replace(',','.'))*60;
+        if(seconds>0){duration={kind:/^(около|примерно|about)$/i.test(match[1])?'around':/^(короче|меньше|under)$/i.test(match[1])?'under':'over',ms:seconds*1000,label:match[0].trim()};source=source.slice(0,match.index).trim();}
+      }
+    }
     const terms=[],exclude=[],phrases=[];
     const re=/(?:(title|track|название|трек|artist|исполнитель|артист|album|альбом|genre|жанр|lyrics|текст):)?(-?)(?:"([^"]*)"|([^\s"]+))/giu;
     for(const m of source.matchAll(re)){
@@ -48,7 +58,7 @@
       for(const word of words){if(terms.length===24)break;terms.push({word,field,quoted:m[3]!==undefined});}
       if(terms.length===24)break;
     }
-    return {terms,exclude,phrases,value:key(terms.map(t=>t.word).join(' '))};
+    return {terms,exclude,phrases,duration,value:key(terms.map(t=>t.word).join(' '))};
   }
   function forms(word){
     const direct=key(word),swapped=key(text.swapLayout(word));
@@ -149,7 +159,7 @@
       }
     }
     search(value,{lyrics=true}={}){
-      const query=parse(value);if(!query.terms.length)return [];
+      const query=parse(value);if(!query.terms.length&&!query.duration)return [];
       const wholeValues=[query.value,key(text.swapLayout(String(value||'').slice(0,512)))];
       for(const term of query.terms){term.variants=forms(term.word);term.matches=new Map();term.phonetic=query.terms.length>1||key(term.word).length>=3;}
       const searchLyrics=lyrics&&!(query.terms.length===1&&key(query.terms[0].word).length<3&&!query.terms[0].field);
@@ -161,9 +171,9 @@
         return [{...options,queries:[word],fuzzy:term.quoted||!text.edits(word)?false:Math.max(2,text.edits(word))},
           ...(!term.quoted?[{...options,queries:['~'+text.translitKey(word)],fuzzy:false},...(term.phonetic?sounds(word).map(code=>({...options,queries:['!'+code],prefix:false,fuzzy:false})):[])]:[])];
       })}))};
-      const candidates=new Map(this.engine.search(expression).map(hit=>[String(hit.id),hit]));
-      if(!query.phrases.length)for(const hit of this.completions.search(expression))if(!candidates.has(String(hit.id)))candidates.set(String(hit.id),{id:hit.id,score:0});
-      const simple=!query.terms.some(t=>t.field||t.quoted),compactQueries=simple?[...new Set([compact(query.value),compact(text.swapLayout(String(value||'').slice(0,512)))])].filter(Boolean):[];
+      const candidates=new Map((query.terms.length?this.engine.search(expression):[...this.docs.values()].map(doc=>({id:doc.id,score:0}))).map(hit=>[String(hit.id),hit]));
+      if(query.terms.length&&!query.phrases.length)for(const hit of this.completions.search(expression))if(!candidates.has(String(hit.id)))candidates.set(String(hit.id),{id:hit.id,score:0});
+      const simple=query.terms.length>0&&!query.terms.some(t=>t.field||t.quoted),compactQueries=simple?[...new Set([compact(query.value),compact(text.swapLayout(String(value||'').slice(0,512)))])].filter(Boolean):[];
       // Whitespace and initials are deterministic aliases, never fabricated
       // song identities. Retain them even when normal token retrieval misses.
       const aliasKinds=new Map();
@@ -178,14 +188,18 @@
       });
       for(const hit of candidates.values()){
         const doc=this.docs.get(String(hit.id));if(!doc)continue;
+        if(query.duration){
+          const ms=Number(this.tracks.get(doc.id)?.track.duration),d=query.duration;
+          if(!Number.isFinite(ms)||ms<=0||(d.kind==='around'?Math.abs(ms-d.ms)>20000:d.kind==='under'?ms>=d.ms:ms<=d.ms))continue;
+        }
         const contains=(part)=> (part.field?[part.field]:allowed).some(f=>(' '+doc.normalized[f]+' ').includes(' '+part.value+' '));
         if(query.exclude.some(contains)||!query.phrases.every(contains))continue;
-        let proof=metadataProofs.has(doc.id)?metadataProofs.get(doc.id):assess(doc,query,allowed.filter(f=>f!=='lyrics')),reason='metadata';
+        let proof=!query.terms.length?{edits:0,variant:0,fields:[]}:metadataProofs.has(doc.id)?metadataProofs.get(doc.id):assess(doc,query,allowed.filter(f=>f!=='lyrics')),reason=query.terms.length?'metadata':'duration';
         const alias=aliasKinds.get(doc.id);
         if(alias==='spacing'&&(!proof||proof.edits||proof.variant))proof={edits:0,variant:0,fields:[]};
         if(!proof&&searchLyrics&&!singleMetadata){proof=lyricPhrase(doc,query)||assess(doc,query,allowed);reason='lyrics';}
         if(!proof&&!alias)continue;
-        const exact=wholeValues.includes(doc.normalized.title)||compactQueries.includes(doc.compact[0])?0:
+        const exact=!query.terms.length||wholeValues.includes(doc.normalized.title)||compactQueries.includes(doc.compact[0])?0:
           wholeValues.includes(doc.normalized.artist)||compactQueries.includes(doc.compact[1])?1:
           [doc.normalized.album,doc.normalized.genre].some(v=>wholeValues.includes(v))?2:
           proof?.fields?.length===1&&proof.fields[0]==='title'&&tokens(doc.source.title).length===query.terms.length?3:
@@ -213,7 +227,7 @@
   let cachedTracks,cachedStamp,cachedIndex;
   function filter(tracks,value){
     if(!String(value||'').trim())return tracks.slice();
-    const stamp=JSON.stringify(tracks.map(t=>[t.id,t.title,t.artist,t.album,t.genre]));
+    const stamp=JSON.stringify(tracks.map(t=>[t.id,t.title,t.artist,t.album,t.genre,t.duration]));
     if(tracks!==cachedTracks||stamp!==cachedStamp){cachedTracks=tracks;cachedStamp=stamp;cachedIndex=new Index(tracks);}
     const byId=new Map(tracks.map(t=>[String(t.id),t]));return cachedIndex.search(value,{lyrics:false}).map(h=>byId.get(h.id)).filter(Boolean);
   }

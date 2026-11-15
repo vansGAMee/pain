@@ -111,7 +111,7 @@ public class MobileNavigationTest {
         app.service.player.prepare(); app.service.player.play();
       });
       await(() -> app.service.player.isPlaying());
-      for (String saved : new String[]{"paper", "mist", "dark", "night", "sakura"}) {
+      for (String saved : new String[]{"paper", "mist", "dark", "night", "sakura", "carbon"}) {
         inst.runOnMainSync(() -> { app.prefs.edit().putString("theme", saved).putFloat("textScale", saved.equals("mist") ? 1.2f : 1).apply(); show(activity, 0); });
         inst.waitForIdleSync(); Thread.sleep(180);
         Rect[] anchor = {null}; inst.runOnMainSync(() -> anchor[0] = bounds(field(activity, "mobileDock")));

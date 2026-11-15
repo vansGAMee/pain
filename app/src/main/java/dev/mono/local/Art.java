@@ -21,6 +21,9 @@ public final class Art {
  public static void invalidate(){generation++;synchronized(pending){missing.evictAll();cache.evictAll();}}
  public static void load(Context context,ImageView view,Track track){load(context,view,track,true);}
  public static void load(Context context,ImageView view,Track track,boolean placeholder){
+   if (CarbonSurface.enabled(context)) {
+     view.setColorFilter(CarbonSurface.MONOCHROME);
+   } else view.clearColorFilter();
    String key=track==null?"":generation+":"+track.uri+":"+track.bytes+":"+track.added;
    if(key.equals(view.getTag()))return;
    view.setTag(key);if(placeholder)view.setImageResource(R.drawable.ic_music);else view.setImageDrawable(null);

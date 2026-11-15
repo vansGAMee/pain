@@ -93,3 +93,21 @@ test('heard English words typed in Russian can match by a labelled phonetic fall
  assert.equal(index.search('мьюз')[0]?.id,'muse');assert.equal(index.search('лав')[0].id,'literal','a real exact name outranks phonetic guesses');
  assert.deepEqual(index.search('genre:лав'),[],'pronunciation never assigns an invented genre');
 });
+test('remembered duration combines with artist, typos and lyrics without changing the library',()=>{
+ const rows=[{id:'near',title:'Hidden',artist:'Muse',duration:240000},{id:'edge',title:'Other',artist:'Muse',duration:260000},{id:'long',title:'Epic',artist:'Muse',duration:360000},{id:'short',title:'Brief',artist:'Other',duration:120000},{id:'unknown',title:'Unknown',artist:'Muse'},{id:'literal',title:'Около 4 минут',artist:'Other',duration:60000}];
+ const before=JSON.stringify(rows),index=new Index(rows);
+ index.updateExtras([{id:'near',lyrics:'The quiet room waits\nоколо 4 минут'}]);
+ assert.deepEqual(index.search('Muse около 4 минут').map(h=>h.id),['near','edge']);
+ assert.deepEqual(index.search('msue about 4 minutes').map(h=>h.id),['near','edge']);
+ assert.deepEqual(index.search('artist:Muse примерно 4:00').map(h=>h.id),['near','edge']);
+ assert.deepEqual(index.search('quiet room около 4 минут').map(h=>h.id),['near']);
+ assert.deepEqual(index.search('длиннее 5 минут').map(h=>h.id),['long']);
+ assert.deepEqual(index.search('короче 3 минут').map(h=>h.id),['short','literal']);
+ assert.equal(index.search('"Около 4 минут"')[0]?.id,'literal');
+ assert.equal(index.search('песня со словами около 4 минут')[0]?.id,'near');
+ assert.equal(index.search('lyrics:около 4 минут')[0]?.id,'near');
+ assert.deepEqual(index.search('Muse около 1 минуты'),[]);
+ assert.equal(JSON.stringify(rows),before);
+ rows[0].duration=100000;index.setTracks(rows);
+ assert.deepEqual(index.search('Muse около 4 минут').map(h=>h.id),['edge']);
+});

@@ -46,3 +46,4 @@ desktop/data/artist-info/
 # User-selected home wallpaper stays private
 desktop/data/home-wallpaper.bin
 desktop/data/home-wallpaper.bin.*.tmp
+desktop/data/playlist-artwork/

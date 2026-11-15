@@ -58,7 +58,7 @@ public final class MainActivity extends Activity {
 
   private String state(String key,boolean value){return app.prefs.getBoolean(key,value)?"включено":"выключено";}
   private String themeName() {
-    return switch(app.prefs.getString("theme","sakura")){case "dark"->"Графит";case "mist"->"Туман";case "night"->"Ночь";case "sakura"->"Сакура · Ночь";default->"Тёплая бумага";};
+    return switch(app.prefs.getString("theme","sakura")){case "carbon"->"Карбон";case "dark"->"Графит";case "mist"->"Туман";case "night"->"Ночь";case "sakura"->"Сакура · Ночь";default->"Тёплая бумага";};
   }
   private boolean isRu() {
     return app.prefs.getString("lang", "ru").equals("ru");
@@ -119,7 +119,8 @@ public final class MainActivity extends Activity {
   @Override
   public void onCreate(Bundle saved) {
     app = (MonoApp) getApplication();
-    if (isDarkTheme()) setTheme(R.style.DarkAppTheme);
+    if (CarbonSurface.enabled(this)) setTheme(R.style.CarbonAppTheme);
+    else if (isDarkTheme()) setTheme(R.style.DarkAppTheme);
     super.onCreate(saved);
     if (saved != null) page = saved.getInt("page", 0);
     root = new LinearLayout(this);
@@ -249,7 +250,7 @@ public final class MainActivity extends Activity {
     return Math.round(v * scale);
   }
 
-  private boolean isDarkTheme(){String t=app.prefs.getString("theme","sakura");return t.equals("dark")||t.equals("night")||t.equals("sakura");}
+  private boolean isDarkTheme(){String t=app.prefs.getString("theme","sakura");return t.equals("dark")||t.equals("night")||t.equals("sakura")||t.equals("carbon");}
 
   private int paper() { return new MobilePalette(app).paper; }
 
@@ -422,7 +423,7 @@ public final class MainActivity extends Activity {
   private InstrumentView addPlay(
       DesignScene s, float x, float y, float w, float h, boolean inverse) {
     InstrumentView v = new InstrumentView(this, "play");
-    v.ink = inverse ? paper() : ink();
+    v.ink = CarbonSurface.enabled(this) ? ink() : inverse ? paper() : ink();
     v.setContentDescription("Воспроизвести / пауза");
     s.put(v, x, y, w, h);
     View touch = s.action("Воспроизвести / пауза", x - 10, y - 10, w + 20, h + 20, this::toggle);
@@ -441,8 +442,8 @@ public final class MainActivity extends Activity {
         handoffView=label(app.prefs.contains("playbackHandoff")?(isRu()?"Продолжить с компьютера  ›":"Continue from computer  ›"):(isRu()?"Инструменты и настройки  ›":"Tools & settings  ›"),14);
         handoffView.setTextColor(new MobilePalette(app).accent);scene.put(handoffView,24,169,342,38);handoffView.setOnClickListener(v->{if(app.prefs.contains("playbackHandoff"))resumeFromPC();else quickTools();});
         homeArt=cover(scene,246,248,96,96,16);
-        GradientDrawable coverBG=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff493469,0xff100d16});coverBG.setCornerRadius(sx(16));homeArt.setBackground(coverBG);
-        scene.put(new QuietSheen(this),24,214,342,194);
+        GradientDrawable coverBG=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff493469,0xff100d16});coverBG.setCornerRadius(sx(16));homeArt.setBackground(CarbonSurface.enabled(this) ? new CarbonSurface(this,16,true) : coverBG);
+        if (!CarbonSurface.enabled(this)) scene.put(new QuietSheen(this),24,214,342,194);
         scene.action("Настройки", 320, 48, 48, 48, this::quickTools);
         TextView gear = label("☷", 23);
         scene.put(gear, 338, 60, 26, 28);
@@ -476,7 +477,7 @@ public final class MainActivity extends Activity {
         message = label("", 12);
         message.setVisibility(View.GONE);
         LinearLayout tools=new LinearLayout(this);String[] names=isRu()?new String[]{"Smart DJ","Звук","Отчёт","Ещё"}:new String[]{"Smart DJ","Sound","Report","More"};Runnable[] actions={this::smartDjMenu,this::equalizer,this::weeklyReport,this::quickTools};
-        for(int i=0;i<names.length;i++){final Runnable action=actions[i];TextView button=label(names[i],12);button.setGravity(Gravity.CENTER);button.setMinHeight(dp(44));GradientDrawable bg=new GradientDrawable();bg.setColor(new MobilePalette(app).surface);bg.setCornerRadius(sx(10));button.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(sx(3),0,sx(3),0);tools.addView(button,lp);button.setOnClickListener(v->action.run());}
+        for(int i=0;i<names.length;i++){final Runnable action=actions[i];TextView button=label(names[i],12);button.setGravity(Gravity.CENTER);button.setMinHeight(dp(44));GradientDrawable bg=new GradientDrawable();bg.setColor(new MobilePalette(app).surface);bg.setCornerRadius(sx(10));button.setBackground(CarbonSurface.enabled(this) ? new CarbonSurface(this,10,false) : bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(sx(3),0,sx(3),0);tools.addView(button,lp);button.setOnClickListener(v->action.run());}
         scene.put(tools,21,624,348,46);
         break;
       case 1:
@@ -1575,6 +1576,7 @@ public final class MainActivity extends Activity {
   }
 
   private android.graphics.drawable.Drawable rounded(int color, int radius) {
+    if (CarbonSurface.enabled(this)) return new CarbonSurface(this, radius, false);
     GradientDrawable g = new GradientDrawable();
     g.setColor(color);
     g.setCornerRadius(sx(radius));
@@ -2045,7 +2047,7 @@ public final class MainActivity extends Activity {
     for(int i=0;i<8;i++){
       final String frequency=AudioDsp.FREQUENCIES[i]>=1000?String.format(Locale.ROOT,"%.1f кГц",AudioDsp.FREQUENCIES[i]/1000):(int)AudioDsp.FREQUENCIES[i]+" Гц";
       TextView caption=label(frequency,14);box.addView(caption);
-      SeekBar slider=new SeekBar(this);slider.setMax(24);slider.setProgress(Math.max(0,Math.min(24,12+saved.optInt(i,0))));sliders[i]=slider;box.addView(slider);
+      SeekBar slider=new SeekBar(this);if(CarbonSurface.enabled(this))CarbonSurface.style(slider);slider.setMax(24);slider.setProgress(Math.max(0,Math.min(24,12+saved.optInt(i,0))));sliders[i]=slider;box.addView(slider);
       caption.setText(frequency+"   "+(slider.getProgress()-12)+" дБ");
       slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
         public void onProgressChanged(SeekBar s,int p,boolean u){caption.setText(frequency+"   "+(p-12)+" дБ");}
@@ -2152,7 +2154,7 @@ public final class MainActivity extends Activity {
       app.main.post(()->{if(isFinishing()||isDestroyed())return;AppSheet sheet=panel(isRu()?"Ваша неделя в музыке":"Your week in music");
         sheet.text(start+" — "+end.minusDays(1),14);sheet.text(Repository.formatTime(report.heard),32);
         sheet.text(isRu()?report.unique+" треков · "+report.artists.size()+" исполнителей":report.unique+" songs · "+report.artists.size()+" artists",16);
-        sheet.content.addView(new WeekChart(this,report.days,start,ink(),isDarkTheme()?0xffd5b5f3:0xff76539a),new LinearLayout.LayoutParams(-1,dp(190)));
+        sheet.content.addView(new WeekChart(this,report.days,start,ink(),CarbonSurface.enabled(this)?ink():isDarkTheme()?0xffd5b5f3:0xff76539a),new LinearLayout.LayoutParams(-1,dp(190)));
         sheet.text(isRu()?"Любимая музыка":"Most played",20);
         report.trackMs.entrySet().stream().filter(e->app.track(e.getKey())!=null).sorted(Map.Entry.<String,Long>comparingByValue().reversed()).limit(5).forEach(e->{Track track=app.track(e.getKey());sheet.button(track.title,track.artist+" · "+Repository.formatTime(e.getValue()),()->play(List.of(track),0));});
         if(report.heard==0)sheet.text(isRu()?"Послушайте музыку — здесь появится ваш отчёт.":"Listen to music to build your report.",15);
@@ -2332,13 +2334,13 @@ public final class MainActivity extends Activity {
                   new PainMenu(this)
                       .setTitle("Тема")
                       .setItems(
-                          new String[] {"Сакура · Ночь", "Тёплая бумага", "Туман", "Графит", "Ночь"},
+                          isRu() ? new String[] {"Сакура · Ночь", "Тёплая бумага", "Туман", "Графит", "Ночь", "Карбон"} : new String[] {"Sakura · Night", "Warm paper", "Mist", "Graphite", "Night", "Carbon"},
                           (dd, n) -> {
                             app.prefs
                                 .edit()
-                                .putString("theme", new String[] {"sakura", "paper", "mist", "dark", "night"}[n])
+                                .putString("theme", new String[] {"sakura", "paper", "mist", "dark", "night", "carbon"}[n])
                                 .apply();
-                            setTheme(isDarkTheme()?R.style.DarkAppTheme:R.style.AppTheme);
+                            setTheme(CarbonSurface.enabled(this)?R.style.CarbonAppTheme:isDarkTheme()?R.style.DarkAppTheme:R.style.AppTheme);
                             show(page, false);
                           })
                       .show();
@@ -2471,6 +2473,7 @@ public final class MainActivity extends Activity {
     TextView value = label("" + current, 18);
     box.addView(value);
     SeekBar seek = new SeekBar(this);
+    if (CarbonSurface.enabled(this)) CarbonSurface.style(seek);
     seek.setMax(max - min);
     seek.setProgress(current - min);
     box.addView(seek);
@@ -2500,7 +2503,7 @@ public final class MainActivity extends Activity {
     TextView intro = label(isRu() ? "Настройки для этого устройства" : "Settings for this device", 13);
     intro.setAlpha(.65f); box.addView(intro);
     TextView volume = label("", 16); volume.setPadding(0, dp(22), 0, dp(6)); box.addView(volume);
-    SeekBar limit = new SeekBar(this); limit.setMax(15);
+    SeekBar limit = new SeekBar(this); if (CarbonSurface.enabled(this)) CarbonSurface.style(limit); limit.setMax(15);
     limit.setProgress((Math.max(25, Math.min(100, app.prefs.getInt("volumeLimit", 100))) - 25) / 5);
     volume.setText((isRu() ? "Предел громкости · " : "Volume ceiling · ") + (25 + limit.getProgress() * 5) + "%");
     limit.setContentDescription(isRu() ? "Предел громкости плеера" : "Player volume ceiling");
@@ -2542,7 +2545,7 @@ public final class MainActivity extends Activity {
     row.setPadding(0, dp(22), 0, dp(6));
     TextView caption = label(title, 16);
     row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
-    Switch toggle = new Switch(this); toggle.setChecked(checked); toggle.setContentDescription(title);
+    Switch toggle = new Switch(this); if (CarbonSurface.enabled(this)) CarbonSurface.style(toggle); toggle.setChecked(checked); toggle.setContentDescription(title);
     toggle.setMinHeight(dp(48)); row.addView(toggle); box.addView(row);
     row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
     toggle.setOnCheckedChangeListener((v, enabled) -> change.accept(enabled));

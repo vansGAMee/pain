@@ -39,7 +39,7 @@ final class MobileDock extends LinearLayout {
     transport.setPadding(dp(10), dp(6), dp(4), dp(6));
     GradientDrawable surface = new GradientDrawable();
     surface.setColor(palette.surface); surface.setCornerRadius(dp(16));
-    transport.setBackground(surface);
+    transport.setBackground(palette.carbon ? new CarbonSurface(context,16,false) : surface);
     addView(transport, new LayoutParams(-1, dp(64)));
 
     LinearLayout recording = new LinearLayout(context);
@@ -65,6 +65,7 @@ final class MobileDock extends LinearLayout {
     text.addView(artist, new LayoutParams(-1, -2));
 
     FrameLayout play = new FrameLayout(context);
+    if (palette.carbon) play.setBackground(new CarbonSurface(context,24,false));
     playButton = play; play.setFocusable(true); play.setOnClickListener(v -> toggle.run());
     transport.addView(play, new LayoutParams(dp(48), dp(48)));
     playIcon = new InstrumentView(context, "play"); playIcon.ink = palette.ink;
@@ -90,6 +91,7 @@ final class MobileDock extends LinearLayout {
       tab.setOnClickListener(v -> navigate.accept(target));
       tab.setBackground(new RippleDrawable(ColorStateList.valueOf(palette.muted & 0x22ffffff),
           null, new ColorDrawable(Color.WHITE)));
+      if (palette.carbon) tab.setBackground(new CarbonSurface(context,12,true));
       nav.addView(tab, new LayoutParams(0, -1, 1));
       icons[i] = new IconView(context, symbols[i], palette.accent);
       icons[i].setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -109,6 +111,11 @@ final class MobileDock extends LinearLayout {
       boolean active = targets[i] == selected;
       tabs[i].setSelected(active); icons[i].setAlpha(active ? 1f : .5f);
       captions[i].setAlpha(active ? 1f : .65f);
+      if (palette.carbon) {
+        icons[i].setAlpha(active ? 1f : .72f);
+        captions[i].setAlpha(active ? 1f : .8f);
+        tabs[i].setBackground(active ? new CarbonSurface(getContext(),12,true) : null);
+      }
       captions[i].setTypeface(DesignScene.font(getContext(), active ? "SemiBold" : "Medium"));
     }
   }

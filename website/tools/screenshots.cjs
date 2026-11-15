@@ -16,12 +16,33 @@ const {fixture,wave}=require('../../desktop/test/together-fixture.cjs');
  await page.evaluate(()=>{const t=PainPlayer.getTracks()[0];PainPlayer.playTrackInContext(t,PainPlayer.getTracks(),{type:'library',allowNew:true,title:'Фонотека'},34);});await page.waitForFunction(()=>PainPlayer.getAudio().readyState>=2);await page.evaluate(()=>PainPlayer.sessionPause());
  if(await page.locator('#trackInfoClose').isVisible())await page.click('#trackInfoClose');
  const shot=async(name,tab)=>{if(tab)await page.locator(`.nav-item[data-view="${tab}"]`).click();await page.waitForTimeout(500);await page.screenshot({path:path.join(out,name+'.png')});};
+ if(process.env.PAIN_CAPTURE_STATISTICS_ONLY){
+  await shot('statistics-overview','insights');
+  await page.locator('.insight-figure').first().evaluate(e=>e.scrollIntoView({block:'start'}));
+  await page.waitForSelector('.insight-figure[data-mounted] svg');
+  await page.waitForTimeout(250);await shot('statistics-charts');
+  await page.locator('.insight-figure').nth(4).evaluate(e=>e.scrollIntoView({block:'start'}));
+  await page.waitForTimeout(500);await shot('statistics-patterns');
+  console.log('Captured three real statistics screens with synthetic history');return;
+ }
  await shot('desktop_home','home');await fs.copyFile(path.join(out,'desktop_home.png'),path.join(out,'tour-player.png'));
  await shot('desktop_library','library');await fs.copyFile(path.join(out,'desktop_library.png'),path.join(out,'tour-library.png'));
  await shot('desktop_favorites','favorites');await shot('desktop_player','player');await shot('desktop_insights','insights');await fs.copyFile(path.join(out,'desktop_insights.png'),path.join(out,'tour-insights.png'));
  const karaoke=page.locator('#karaokeBtn');if(await karaoke.count()){await karaoke.click();await shot('desktop_karaoke');await fs.copyFile(path.join(out,'desktop_karaoke.png'),path.join(out,'tour-karaoke.png'));await page.keyboard.press('Escape');}
  await page.click('#eqToggleBtn');await shot('desktop_equalizer');await fs.copyFile(path.join(out,'desktop_equalizer.png'),path.join(out,'tour-sound.png'));await page.click('#eqCloseBtn');
  await shot('desktop_sync','sync');await page.click('#settingsToggleBtn');await shot('desktop_settings');await page.click('#settingsDoneBtn');
+ // Every theme is captured from the real app, with the same isolated library.
+ for(const theme of ['paper','dark','studio','spotify','stereo','form','sakura','form-night','noir','carbon']){
+  await page.click('#settingsToggleBtn');
+  await page.locator(`input[name="appearanceTheme"][value="${theme}"]`).locator('..').click();
+  await page.click('#settingsDoneBtn');
+  await shot('theme-'+theme,'library');
+  if(['noir','carbon'].includes(theme)){
+   await shot('theme-'+theme+'-home','home');
+   await shot('theme-'+theme+'-player','player');
+  }
+ }
+ await page.click('#settingsToggleBtn');await page.locator('input[name="appearanceTheme"][value="sakura"]').locator('..').click();await page.click('#settingsDoneBtn');
  await f.call(0,'create',{mode:'host'});await f.wait(0,s=>s.connected);await f.call(1,'join',{invite:(await f.call(0,'invite')).invite});await f.wait(1,s=>s.connected);for(const track of tracks.slice(0,4))await f.call(0,'add',{trackId:track.id});await f.call(0,'sharing',{enabled:true});await f.wait(0,s=>s.state.allowDownloads);await page.locator('.nav-item[data-view="home"]').click();await page.click('#togetherOpen');await page.waitForTimeout(300);await shot('desktop_together');
  await fs.writeFile('/tmp/pain-phone-demo.json',JSON.stringify({tracks:tracks.map(t=>({...t,uri:'file:///data/local/tmp/pain-demo.wav',folder:'Демо',available:1})),plays,slices}));await fs.writeFile('/tmp/pain-phone-demo.wav',audio);console.log('Captured real desktop screens with',tracks.length,'demo tracks and',plays.length,'synthetic events. Original library was only read.');
  }finally{await browser.close();await f.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -2,11 +2,11 @@
 document.documentElement.classList.add('js-ready');
 // Static first: every page and download works before JavaScript or the network.
 const repo='https://github.com/vansGAMee/pain';
-const base=repo+'/releases/download/v1.9.7/';
+const base=repo+'/releases/download/v1.9.8/';
 const releases={
- windows:{name:'Windows',file:'Pain-v1.9.7-Setup.exe',size:124882590,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'b54970b1ece0fec52d90fb4938a5a0b6ab7f4de284035ab304da8ea980ca7f25'},
- android:{name:'Android',file:'Pain-v1.9.7-Android.apk',size:9807802,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'e950cfb20b9417858531ce11dc5e1cdd5e0b3212fcf54d30b2dd625f30016865'},
- linux:{name:'Linux',file:'Pain-v1.9.7-Linux.AppImage',size:129889514,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'456322950521d8d105fdeff3eeea91498ded8ee118aec0a63597cf5938d8525d'}
+ windows:{name:'Windows',file:'Pain-v1.9.8-Setup.exe',size:124891465,info:'Windows 10 и новее · установщик',label:'Скачать .exe',sha:'e730d7fe041f95abbf7cfd1f3b6a18f4ad1663bb735257337bdbdaf508b7d4da'},
+ android:{name:'Android',file:'Pain-v1.9.8-Android.apk',size:9811790,info:'Android 8 и новее · приложение для телефона',label:'Скачать .apk',sha:'33bfc360e010f413f6a1cb1121287b2cabf73c1846d2ec4ef4b08111170c6a04'},
+ linux:{name:'Linux',file:'Pain-v1.9.8-Linux.AppImage',size:129901932,info:'Linux 64-bit · готовый AppImage',label:'Скачать AppImage',sha:'07efaae8020cbbd4fc47d9fa2f611f6f3b70a765e3628c2b27294cd831686c1f'}
 };
 for(const data of Object.values(releases))data.url=base+data.file;
 let platform=/Android/i.test(navigator.userAgent)?'android':/Linux|X11/i.test(navigator.userAgent)?'linux':'windows';
@@ -32,12 +32,12 @@ async function showScreen(name){
  try{
   const sources=['desktop','android'].map(device=>{
     if(device==='desktop'){
-      if(name==='together')return 'assets/screenshots/desktop_together.png?v=190';
-      return `assets/screenshots/tour-${name}.png?v=190`;
+      if(name==='together')return 'assets/screenshots/desktop_together.webp?v=198';
+      return `assets/screenshots/tour-${name}.webp?v=198`;
     }
-    if(name==='sound')return 'assets/screenshots/android_sound.png?v=190';
-    if(name==='together')return 'assets/screenshots/android_sync.png?v=190';
-    return `assets/screenshots/android_${name}.png?v=190`;
+    if(name==='sound')return 'assets/screenshots/android_sound.webp?v=198';
+    if(name==='together')return 'assets/screenshots/android_sync.webp?v=198';
+    return `assets/screenshots/android_${name}.webp?v=198`;
   });
   await Promise.all(sources.map(src=>new Promise((resolve,reject)=>{const image=new Image();image.onload=resolve;image.onerror=reject;image.src=src;})));
   if(request!==screenRequest)return;

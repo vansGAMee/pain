@@ -87,7 +87,9 @@ public final class DesignScene extends FrameLayout {
         int color =
             fills != null && fills.length() > 0 ? paintColor(fills.getJSONObject(0)) : 0xff11110f;
         t.setTextColor(themed(color));
-        t.setAlpha((float) n.optDouble("opacity", 1));
+        float textOpacity = (float) n.optDouble("opacity", 1);
+        t.setAlpha(app.prefs.getString("theme", "sakura").equals("carbon")
+            ? Math.max(.72f, textOpacity) : textOpacity);
         if (n.optString("textAlignHorizontal").equals("CENTER"))
           t.setGravity(Gravity.CENTER_HORIZONTAL);
         t.setLineSpacing(0, 1);
@@ -196,6 +198,11 @@ public final class DesignScene extends FrameLayout {
     float lum =
         (Color.red(color) * .2126f + Color.green(color) * .7152f + Color.blue(color) * .0722f)
             / 255;
+    if (theme.equals("carbon")) {
+      float amount = Math.max(0, Math.min(1, (.93f - lum) / .865f));
+      int v = Math.round(34 + amount * 203);
+      return Color.argb(a, v, v, v);
+    }
     if(theme.equals("sakura")){
       float t=Math.max(0,Math.min(1,(.94f-lum)/.87f));return Color.argb(a,Math.round(12+t*232),Math.round(9+t*228),Math.round(17+t*231));
     }
@@ -467,6 +474,8 @@ public final class DesignScene extends FrameLayout {
           col = (col & 0xffffff) == 0xffffff ? 0x164f4f49 : 0x66000000;
         if (List.of("night","sakura").contains(app.prefs.getString("theme", "sakura")))
           col = (col & 0xffffff) == 0xffffff ? 0x182f2d32 : 0x99000000;
+        if (app.prefs.getString("theme", "sakura").equals("carbon"))
+          col = (col & 0xffffff) == 0xffffff ? 0x306b6b6b : 0xcc000000;
         p.setShadowLayer(
             (float) e.optDouble("radius") / 2 * depth,
             (float) off.optDouble("x") * depth,
@@ -498,7 +507,9 @@ public final class DesignScene extends FrameLayout {
             Math.max(.2f, (float) e.optDouble("radius") / 2 * depth),
             (float) off.optDouble("x") * depth,
             (float) off.optDouble("y") * depth,
-            List.of("night","sakura").contains(app.prefs.getString("theme","sakura"))
+            app.prefs.getString("theme","sakura").equals("carbon")
+                ? ((color(e.getJSONObject("color"))&0xffffff)==0xffffff?0x30aaaaaa:0xdd000000)
+                : List.of("night","sakura").contains(app.prefs.getString("theme","sakura"))
                 ? ((color(e.getJSONObject("color"))&0xffffff)==0xffffff?0x182f2d32:0x99000000)
                 : themed(color(e.getJSONObject("color"))));
         c.drawPath(inv, p);
@@ -506,6 +517,16 @@ public final class DesignScene extends FrameLayout {
         c.restore();
       }
     drawPaints(c, stroke, n.optJSONArray("strokePaints"), p, n, opacity);
+    if (app.prefs.getString("theme", "sakura").equals("carbon") && effects != null
+        && effects.length() > 0 && n.getJSONObject("size").optDouble("y") >= 24) {
+      JSONObject size = n.getJSONObject("size");
+      p.setShader(new LinearGradient(0, 0, (float) size.optDouble("x"),
+          (float) size.optDouble("y"), new int[]{0x66ffffff, 0x08ffffff, 0xaa000000},
+          null, Shader.TileMode.CLAMP));
+      p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(1);
+      c.save(); c.clipPath(fill); c.drawPath(fill, p); c.restore();
+      p.setShader(null); p.setStyle(Paint.Style.FILL);
+    }
     c.restore();
   }
 
@@ -539,6 +560,19 @@ public final class DesignScene extends FrameLayout {
                 Shader.TileMode.CLAMP));
       }
       if(app.prefs.getString("theme","sakura").equals("sakura")&&List.of("3:29","3:122","3:195").contains(n.optString("id"))){p.setShader(null);p.setColor(0xff100d16);}
+      if (app.prefs.getString("theme", "sakura").equals("carbon")
+          && paints == n.optJSONArray("fillPaints") && n.optJSONArray("effects") != null
+          && n.optJSONArray("effects").length() > 0
+          && n.getJSONObject("size").optDouble("y") >= 24) {
+        boolean inset = n.getJSONArray("effects").getJSONObject(0).optString("type").equals("INNER_SHADOW");
+        JSONObject size = n.getJSONObject("size");
+        p.setShader(new LinearGradient(0, 0, (float) size.optDouble("x") * .7f,
+            (float) size.optDouble("y"), inset
+                ? new int[]{0xff0b0b0b, 0xff171717, 0xff242424}
+                : new int[]{0xff414141, 0xff292929, 0xff191919},
+            new float[]{0, .48f, 1}, Shader.TileMode.CLAMP));
+        p.setAlpha((int) (255 * opacity));
+      }
       c.drawPath(path, p);
     }
     p.setShader(null);

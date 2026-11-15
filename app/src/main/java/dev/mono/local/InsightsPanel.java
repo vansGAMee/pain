@@ -100,8 +100,8 @@ final class InsightsPanel extends LinearLayout {
     int[] spans = {7, 30, 0};
     for (int i = 0; i < periods.length; i++) {
       boolean selected = spans[i] == period;
-      periods[i].setSelected(selected); periods[i].setTextColor(selected ? palette.paper : palette.ink);
-      periods[i].setBackground(surface(selected ? palette.accent : palette.surface, 12));
+      periods[i].setSelected(selected); periods[i].setTextColor(palette.carbon ? palette.ink : selected ? palette.paper : palette.ink);
+      periods[i].setBackground(palette.carbon ? new CarbonSurface(getContext(),12,selected) : surface(selected ? palette.accent : palette.surface, 12));
     }
     status.setText(loading ? (ru ? "Считаем вашу статистику…" : "Loading your listening history…") : "");
     content.setVisibility(loading ? INVISIBLE : VISIBLE);
@@ -162,7 +162,8 @@ final class InsightsPanel extends LinearLayout {
     parent.addView(text, new LayoutParams(-1, -2));
   }
 
-  private GradientDrawable surface(int color, int radius) {
+  private android.graphics.drawable.Drawable surface(int color, int radius) {
+    if (palette.carbon) return new CarbonSurface(getContext(),radius,false);
     GradientDrawable background = new GradientDrawable(); background.setColor(color);
     background.setCornerRadius(dp(radius)); return background;
   }

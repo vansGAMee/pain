@@ -4,7 +4,7 @@
 (function() {
   'use strict';
 
-  const isFormTheme = theme => theme === 'form' || theme === 'form-night' || theme === 'sakura';
+  const isFormTheme = theme => theme === 'form' || theme === 'form-night' || theme === 'sakura' || theme === 'noir' || theme === 'carbon';
   let leaderboardPlays = [];
 
   // --- APPLICATION STATE ---
@@ -1455,9 +1455,11 @@
   const searchHint=document.getElementById('musicSearchHint');
   function setSearchHint(result){
     if(!searchHint)return;const ru=state.lang==='ru',query=state.searchQuery.trim(),hit=result?.hits?.[0];
-    if(!query){searchHint.textContent=document.activeElement===DOM.searchInput?(ru?'Можно даже так: «vjknfn ljvf» или жанр:шугейз':'Try a typo, transliteration, genre or a lyric line'):'';return;}
+    if(!query){searchHint.textContent=document.activeElement===DOM.searchInput?(ru?'Можно так: «Muse около 4 минут» или «vjknfn ljvf»':'Try “Muse about 4 minutes”, a typo or a lyric line'):'';return;}
     if(!result){searchHint.textContent=ru?'Ищу в фонотеке…':'Searching your library…';return;}
-    if(hit?.phonetic)searchHint.textContent=(ru?'По созвучию: «':'Sounds like: “')+hit.title+(ru?'»':'”')+(hit.artist?' — '+hit.artist:'');
+    const duration=MusicSearchIndex.parse(query).duration;
+    if(duration)searchHint.textContent=(ru?'По длительности: ':'Duration: ')+duration.label+(duration.kind==='around'?(ru?' · допуск ±20 с':' · within ±20 s'):'');
+    else if(hit?.phonetic)searchHint.textContent=(ru?'По созвучию: «':'Sounds like: “')+hit.title+(ru?'»':'”')+(hit.artist?' — '+hit.artist:'');
     else if(hit?.reason==='lyrics')searchHint.textContent=ru?`По словам песни · текстов в поиске: ${result.lyrics}`:`Matching lyrics · ${result.lyrics} saved texts`;
     else if(hit?.fields?.length===1&&hit.fields[0]==='genre')searchHint.textContent=ru?`Понял как: жанр «${query.replace(/^(?:genre|жанр):\s*/i,'')}»`:`Genre: “${query.replace(/^(?:genre|жанр):\s*/i,'')}”`;
     else if(hit&&(hit.rank?.[1]>0||hit.rank?.[2]>0||['spacing','initials'].includes(hit.reason)))searchHint.textContent=(ru?'Ближайшее: «':'Closest: “')+hit.title+(ru?'»':'”')+(hit.artist?' — '+hit.artist:'');
@@ -4231,11 +4233,11 @@
 
   // --- THEME & LANGUAGE ---
   function applyTheme(theme) {
-    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form', 'form-night', 'sakura'].includes(theme) ? theme : 'sakura';
+    theme = ['paper', 'dark', 'studio', 'spotify', 'stereo', 'form', 'form-night', 'sakura', 'noir', 'carbon'].includes(theme) ? theme : 'sakura';
     state.theme = theme;
-    document.documentElement.setAttribute('data-theme', theme==='sakura'?'form-night':theme);
+    document.documentElement.setAttribute('data-theme', theme==='sakura'?'form-night':theme==='carbon'?'form':theme);
     document.documentElement.toggleAttribute('data-sakura',theme==='sakura');
-    if(theme==='sakura')document.documentElement.setAttribute('data-palette','sakura');else document.documentElement.removeAttribute('data-palette');
+    if(theme==='sakura'||theme==='carbon')document.documentElement.setAttribute('data-palette',theme);else document.documentElement.removeAttribute('data-palette');
     applyHomeWallpaper();
     window.dispatchEvent(new CustomEvent('pain:theme',{detail:theme}));
     document.querySelectorAll('input[name="appearanceTheme"]').forEach(input => { input.checked = input.value === theme; });
@@ -4485,7 +4487,7 @@
         root.style.setProperty('--fluid-accent-base', hex);
         root.style.setProperty('--fluid-accent-light', `rgb(${rLight}, ${gLight}, ${bLight})`);
 
-        const isDark = ['dark', 'spotify', 'stereo', 'form-night', 'sakura'].includes(state.theme) || ['dark', 'spotify', 'stereo', 'form-night', 'sakura'].includes(root.getAttribute('data-theme'));
+        const isDark = ['dark', 'spotify', 'stereo', 'form-night', 'sakura', 'noir', 'carbon'].includes(state.theme) || ['dark', 'spotify', 'stereo', 'form-night', 'sakura', 'noir', 'carbon'].includes(root.getAttribute('data-theme'));
         if (isDark) {
           root.style.setProperty('--fluid-bg-color-1', `rgba(${rD1}, ${gD1}, ${bD1}, 0.45)`);
           root.style.setProperty('--fluid-bg-color-2', `rgba(${rD2}, ${gD2}, ${bD2}, 0.55)`);
