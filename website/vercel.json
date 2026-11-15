@@ -42,5 +42,40 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "painaudio.vercel.app"
+        }
+      ],
+      "destination": "https://pain-player.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "getpain.vercel.app"
+        }
+      ],
+      "destination": "https://pain-player.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "pain-music.vercel.app"
+        }
+      ],
+      "destination": "https://pain-player.vercel.app/:path*",
+      "permanent": true
+    }
   ]
 }

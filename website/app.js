@@ -86,10 +86,12 @@ for(const button of document.querySelectorAll('[data-platform]'))button.addEvent
 renderDownload();
 document.querySelector('#copy-checksum')?.addEventListener('click',async()=>{const sha=releases[platform].sha;if(!sha)return;try{await navigator.clipboard.writeText(sha);announce('SHA-256 скопирован');}catch(_){announce('Копирование недоступно. Откройте файл контрольных сумм ниже.');}});
 // Update only complete public releases. Offline and API limits keep the verified links above.
+let releaseRefreshPending=false,lastReleaseRefresh=0;
 async function refreshRelease(){
- if(!download)return;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
+ if(!document.querySelector('[data-version]')||releaseRefreshPending||Date.now()-lastReleaseRefresh<60000)return;
+ releaseRefreshPending=true;lastReleaseRefresh=Date.now();const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
  try{
-  const response=await fetch('https://api.github.com/repos/vansGAMee/pain/releases/latest',{signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});
+  const response=await fetch('https://api.github.com/repos/vansGAMee/pain/releases/latest',{signal:controller.signal,cache:'no-store',headers:{Accept:'application/vnd.github+json'}});
   if(!response.ok)return;const release=await response.json();
   if(release.draft||release.prerelease||!/^v\d+\.\d+\.\d+$/.test(release.tag_name)||!Array.isArray(release.assets))return;
   const assets=release.assets.filter(a=>a.state==='uploaded'&&typeof a.browser_download_url==='string'&&a.browser_download_url.startsWith(repo+'/releases/download/'+release.tag_name+'/'));
@@ -98,11 +100,13 @@ async function refreshRelease(){
   if(Object.values(matches).some(a=>!a||!Number.isFinite(a.size)||a.size<=0))return;
   for(const [key,a] of Object.entries(matches))Object.assign(releases[key],{file:a.name,size:a.size,url:a.browser_download_url,sha:/^sha256:[a-f0-9]{64}$/i.test(a.digest||'')?a.digest.slice(7):null});
   for(const element of document.querySelectorAll('[data-version]'))element.textContent=release.tag_name.slice(1);
-  document.querySelector('[data-release]').href=repo+'/releases/tag/'+release.tag_name;
+  const releaseLink=document.querySelector('[data-release]');if(releaseLink)releaseLink.href=repo+'/releases/tag/'+release.tag_name;
   for(const [selector,pattern] of [['[data-windows-zip]',/-Windows\.zip$/i],['[data-source]',/-Source\.zip$/i],['[data-checksums]',/^SHA256SUMS.*\.txt$/i]]){
-   const asset=assets.find(a=>pattern.test(a.name)),link=document.querySelector(selector);link.hidden=!asset;if(asset)link.href=asset.browser_download_url;
+   const asset=assets.find(a=>pattern.test(a.name)),link=document.querySelector(selector);if(link){link.hidden=!asset;if(asset)link.href=asset.browser_download_url;}
   }
   renderDownload();
- }catch(_){}finally{clearTimeout(timer);}
+ }catch(_){}finally{clearTimeout(timer);releaseRefreshPending=false;}
 }
 window.addEventListener('load',refreshRelease,{once:true});
+window.addEventListener('pageshow',event=>{if(event.persisted)refreshRelease();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRelease();});
