@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="noir-theme.css">
   <link rel="stylesheet" href="noir-home.css">
   <link rel="stylesheet" href="carbon-theme.css">
+  <link rel="stylesheet" href="mix-reduction.css">
 </head>
 <body>
 
@@ -832,6 +833,16 @@
           <div class="eq-band-freq">12 kHz</div>
         </div>
       </div>
+      <details class="mix-reduction" id="mixReduction">
+        <summary data-en="Reduce vocals and instruments" data-ru="Приглушение вокала и инструментов">Приглушение вокала и инструментов</summary>
+        <p id="mixReductionHelp" data-en="Frequency cuts affect other instruments too. Centre vocals can become quieter; mono recordings also lose some midrange. This does not separate tracks. Flat resets all reductions." data-ru="Частотные ползунки затрагивают и другие инструменты. Вокал по центру стерео можно приглушить; в моно ослабнет и остальная середина. Это не разделение дорожек. Flat сбрасывает приглушение.">Частотные ползунки затрагивают и другие инструменты. Вокал по центру стерео можно приглушить; в моно ослабнет и остальная середина. Это не разделение дорожек. Flat сбрасывает приглушение.</p>
+        <div class="mix-reduction-fields">
+          <label class="mix-reduction-field"><span><span data-en="Vocals / centre" data-ru="Вокал / центр">Вокал / центр</span><output for="mixVocal" data-mix-value="vocal">0%</output></span><input id="mixVocal" type="range" min="0" max="100" step="1" value="0" data-mix-reduction="vocal" aria-describedby="mixReductionHelp"></label>
+          <label class="mix-reduction-field"><span><span data-en="Bass" data-ru="Бас">Бас</span><output for="mixBass" data-mix-value="bass">0%</output></span><input id="mixBass" type="range" min="0" max="100" step="1" value="0" data-mix-reduction="bass" aria-describedby="mixReductionHelp"></label>
+          <label class="mix-reduction-field"><span><span data-en="Guitars / midrange" data-ru="Гитары / середина">Гитары / середина</span><output for="mixMid" data-mix-value="mid">0%</output></span><input id="mixMid" type="range" min="0" max="100" step="1" value="0" data-mix-reduction="mid" aria-describedby="mixReductionHelp"></label>
+          <label class="mix-reduction-field"><span><span data-en="Cymbals / treble" data-ru="Тарелки / высокие">Тарелки / высокие</span><output for="mixTreble" data-mix-value="treble">0%</output></span><input id="mixTreble" type="range" min="0" max="100" step="1" value="0" data-mix-reduction="treble" aria-describedby="mixReductionHelp"></label>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -1421,6 +1432,7 @@
   <script src="music-search-client.js"></script>
   <script src="playback-memory.js"></script>
   <script src="update-screen.js"></script>
+  <script src="mix-reduction.js"></script>
   <script src="app.js"></script>
   <script src="artist-card.js"></script>
   <script src="track-info.js"></script>

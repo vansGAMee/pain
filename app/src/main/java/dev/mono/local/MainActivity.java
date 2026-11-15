@@ -2054,11 +2054,23 @@ public final class MainActivity extends Activity {
         public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}
       });
     }
+    TextView reductionTitle=label(isRu()?"Приглушение":"Reduction",17);reductionTitle.setPadding(0,dp(20),0,dp(8));box.addView(reductionTitle);
+    box.addView(label(isRu()?"Это частотная коррекция, а не разделение дорожек. Вместе с вокалом и гитарой может ослабнуть другая музыка; в моно меняется вся середина.":"These controls affect frequency ranges, not separate tracks. Other instruments may also become quieter; mono recordings lose midrange too.",12));
+    JSONArray reduction;try{reduction=new JSONArray(app.prefs.getString("mixReduction","[]"));}catch(Exception e){reduction=new JSONArray();}
+    SeekBar[] reductionSliders=new SeekBar[4];
+    String[] reductionNames=isRu()?new String[]{"Вокал / центр","Бас","Гитары / середина","Тарелки / высокие"}:new String[]{"Vocals / centre","Bass","Guitars / midrange","Cymbals / treble"};
+    for(int i=0;i<4;i++){
+      final String name=reductionNames[i];TextView caption=label(name,14);box.addView(caption);
+      SeekBar slider=new SeekBar(this);if(CarbonSurface.enabled(this))CarbonSurface.style(slider);slider.setMax(100);slider.setProgress(Math.max(0,Math.min(100,reduction.optInt(i,0))));slider.setContentDescription(name);reductionSliders[i]=slider;box.addView(slider);
+      caption.setText(String.format(Locale.getDefault(),"%s   %d%%",name,slider.getProgress()));
+      slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int value,boolean user){caption.setText(String.format(Locale.getDefault(),"%s   %d%%",name,value));}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}});
+    }
     new AlertDialog.Builder(this).setTitle("Эквалайзер").setView(scroll).setPositiveButton("Применить",(d,w)->{
       JSONArray values=new JSONArray();for(SeekBar slider:sliders)values.put(slider.getProgress()-12);
-      app.prefs.edit().putString("eqBands",values.toString()).putBoolean("equalizer",true).apply();
+      JSONArray mix=new JSONArray();for(SeekBar slider:reductionSliders)mix.put(slider.getProgress());
+      app.prefs.edit().putString("eqBands",values.toString()).putString("mixReduction",mix.toString()).putBoolean("equalizer",true).apply();
       if(app.service!=null)app.service.applyPreferences();bind();
-    }).setNeutralButton("Сбросить",(d,w)->{app.prefs.edit().putString("eqBands","[]").putBoolean("equalizer",false).putBoolean("autoEq",false).apply();if(app.service!=null)app.service.applyPreferences();bind();}).setNegativeButton("Отмена",null).show();
+    }).setNeutralButton("Сбросить",(d,w)->{app.prefs.edit().putString("eqBands","[]").remove("mixReduction").putBoolean("equalizer",false).putBoolean("autoEq",false).apply();if(app.service!=null)app.service.applyPreferences();bind();}).setNegativeButton("Отмена",null).show();
   }
 
   private void smartDjMenu(){

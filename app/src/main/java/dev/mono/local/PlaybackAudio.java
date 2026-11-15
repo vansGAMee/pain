@@ -12,6 +12,7 @@ public final class PlaybackAudio extends BaseAudioProcessor {
   private final PlaybackService service;
   private final MonoApp app;
   private final AudioDsp dsp=new AudioDsp();
+  private final MixReduction mixReduction=new MixReduction();
   private final float[][] ring=new float[2][2048];
   private final double[] frame=new double[8];
   private int offset,count;
@@ -23,6 +24,7 @@ public final class PlaybackAudio extends BaseAudioProcessor {
   private volatile double[] bands=new double[8];
   private volatile double[] manualBands=new double[8];
   private volatile double preamp,volumeDb;
+  private volatile double[] reduction=new double[4];
   public PlaybackAudio(PlaybackService service,MonoApp app){this.service=service;this.app=app;}
   public void close(){closed=true;captureAfter=Long.MAX_VALUE;}
   public void track(String id){track=id;captureAfter=0;volumeDb=0;if(app.prefs.getBoolean("autoEq",false))applyCurve(null);}
@@ -43,22 +45,27 @@ public final class PlaybackAudio extends BaseAudioProcessor {
     double[] next=new double[8];
     try{JSONArray a=new JSONArray(app.prefs.getString("eqBands","[]"));for(int i=0;i<8;i++){double value=a.optDouble(i,0);next[i]=app.prefs.getBoolean("equalizer",false)&&Double.isFinite(value)?Math.max(-12,Math.min(12,value)):0;}}catch(Exception ignored){}
     manualBands=next;applyCurve(null);
+    double[] mix=new double[4];
+    try{JSONArray a=new JSONArray(app.prefs.getString("mixReduction","[]"));for(int i=0;i<4;i++){double value=a.optDouble(i,0);mix[i]=Double.isFinite(value)?Math.max(0,Math.min(100,value)):0;}}catch(Exception ignored){}
+    reduction=mix;
   }
   @Override protected AudioFormat onConfigure(AudioFormat format){
     return format.encoding==C.ENCODING_PCM_16BIT&&format.channelCount>0&&format.channelCount<=8?format:AudioFormat.NOT_SET;
   }
-  @Override protected void onFlush(){offset=count=0;lastCapture=0;dsp.reset();}
+  @Override protected void onFlush(){offset=count=0;lastCapture=0;dsp.reset();mixReduction.reset();}
   @Override public void queueInput(ByteBuffer input){
     int channels=inputAudioFormat.channelCount,rate=inputAudioFormat.sampleRate;
     ByteBuffer output=replaceOutputBuffer(input.remaining());input.order(ByteOrder.LITTLE_ENDIAN);output.order(ByteOrder.LITTLE_ENDIAN);
-    boolean process=eqEnabled||smartVolume;
+    mixReduction.configure(rate,eqEnabled?reduction:null);
+    boolean reducing=mixReduction.active(),process=eqEnabled||smartVolume||reducing;
     if(process)dsp.configure(rate,input.remaining()/(2*channels),eqEnabled?bands:null,eqEnabled?preamp:0);
     long now=SystemClock.elapsedRealtime();boolean observe=!closed&&!busy&&(smartVolume||now>=captureAfter);
     double power=0,peak=0;int measured=0;
     while(input.remaining()>=channels*2){
       for(int ch=0;ch<channels;ch++)frame[ch]=input.getShort()/32768.0;
       if(observe){ring[0][offset]=(float)frame[0];ring[1][offset]=(float)frame[Math.min(1,channels-1)];offset=(offset+1)%2048;count=Math.min(2048,count+1);}
-      if(process)dsp.frame(frame,channels,rate,smartVolume?volumeDb:0,smartVolume||eqEnabled);
+      if(reducing)mixReduction.frame(frame,channels);
+      if(process)dsp.frame(frame,channels,rate,smartVolume?volumeDb:0,smartVolume||eqEnabled||reducing);
       if(smartVolume){power+=dsp.rms*dsp.rms;peak=Math.max(peak,dsp.peak);measured++;}
       for(int ch=0;ch<channels;ch++)output.putShort((short)Math.max(-32768,Math.min(32767,Math.round(frame[ch]*32768))));
     }

@@ -1,0 +1,14 @@
+/* The existing EQ drawer owns these controls; the main player is untouched. */
+.eq-modal-card{width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain}
+.mix-reduction{border-top:1px solid var(--border);padding-top:14px;color:var(--ink)}
+.mix-reduction summary{cursor:pointer;font-size:13px;font-weight:550;padding:6px 0;min-height:32px}
+.mix-reduction summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.mix-reduction p{font-size:12px;line-height:1.5;color:var(--ink-secondary);margin:8px 0 14px;max-width:65ch}
+.mix-reduction-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px}
+.mix-reduction-field{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:12px;min-height:48px}
+.mix-reduction-field>span{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mix-reduction-field output{font-variant-numeric:tabular-nums;color:var(--ink-muted);flex:none}
+.mix-reduction-field input{width:100%;min-width:0;height:24px;margin:0;accent-color:var(--accent);cursor:pointer}
+.mix-reduction-field input:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.mix-reduction-field input:disabled{opacity:.5;cursor:default}
+@media(max-width:480px){.mix-reduction-fields{grid-template-columns:minmax(0,1fr)}}

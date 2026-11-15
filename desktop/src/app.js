@@ -66,6 +66,11 @@
 
 
 
+    mixReduction: (() => {
+      try { return MixReduction.normalize(JSON.parse(localStorage.getItem('pain_mix_reduction_v1'))); }
+      catch (_) { return {vocal:0,bass:0,mid:0,treble:0}; }
+    })(),
+
     // Ambient Fluid Aura Settings
     fluidColor: (function() {
       try { return localStorage.getItem('pain_fluid_color') || '#7c4dff'; } catch(e) { return '#7c4dff'; }
@@ -386,6 +391,7 @@
   let isTrackFadingOut = false;
   let preampNode = null;
   let smartVolumeNode = null;
+  let mixReductionNode = null;
   let autoEqHeadroom = null;
   let pendingSeekTime = null;
   let lastPlaybackSave = -Infinity;
@@ -916,6 +922,12 @@
         return filter;
       });
 
+      try {
+        mixReductionNode = MixReduction.create(audioCtx);
+        lastNode.connect(mixReductionNode.input);
+        lastNode = mixReductionNode.output;
+      } catch (_) { mixReductionNode = null; }
+
       transitionGainNode = audioCtx.createGain();
       transitionGainNode.gain.value = 1;
 
@@ -986,6 +998,7 @@
 
   function applyEqualizerAudioGains() {
     if (!audioCtx || !preampNode) return;
+    try { mixReductionNode?.update(state.mixReduction, state.eq.enabled); } catch (_) {}
     applySmartVolume();
     if (audioCtx.state === 'suspended') {
       audioCtx.resume().catch(() => {});
@@ -1025,6 +1038,12 @@
 
     updatePresetChipsUI();
     updateAutoEqualizerUI();
+    document.querySelectorAll('[data-mix-reduction]').forEach(control => {
+      const key = control.dataset.mixReduction, value = state.mixReduction[key];
+      control.value = value; control.disabled = !state.eq.enabled || !!audioCtx && !mixReductionNode;
+      control.setAttribute('aria-valuetext', `${value}%`);
+      document.querySelector(`[data-mix-value="${key}"]`).textContent = `${value}%`;
+    });
   }
 
   function updatePresetChipsUI() {
@@ -4610,7 +4629,7 @@
 
   function applySmartVolume() {
     smartVolumeNode?.update(state.smartVolume, state.backgroundDuck,
-      document.hidden || !document.hasFocus(), state.eq.auto && state.eq.enabled || isCrossfading);
+      document.hidden || !document.hasFocus(), state.eq.enabled && (state.eq.auto || Object.values(state.mixReduction).some(value=>value>0)) || isCrossfading);
   }
 
   function displayTrackTitle(track) {
@@ -5532,6 +5551,10 @@
       chip.addEventListener('click', () => {
         initAudioNodes();
         const pKey = chip.dataset.preset;
+        if (pKey === 'flat') {
+          state.mixReduction = {vocal:0,bass:0,mid:0,treble:0};
+          try { localStorage.setItem('pain_mix_reduction_v1', JSON.stringify(state.mixReduction)); } catch (_) {}
+        }
         if (state.eq.auto && EQ_PRESETS[pKey]) {
           state.eq.manual = {enabled:true,preset:pKey,preamp:0,bands:[...EQ_PRESETS[pKey]]};
           const track = state.tracks.find(t => t.id === state.currentTrackId);
@@ -5546,6 +5569,16 @@
           initEqualizerUI();
           saveEqualizerState();
         }
+      });
+    });
+
+    document.querySelectorAll('[data-mix-reduction]').forEach(control => {
+      control.addEventListener('input', () => {
+        initAudioNodes();
+        if (!mixReductionNode) return;
+        state.mixReduction = MixReduction.normalize({...state.mixReduction, [control.dataset.mixReduction]: control.value});
+        try { localStorage.setItem('pain_mix_reduction_v1', JSON.stringify(state.mixReduction)); } catch (_) {}
+        initEqualizerUI(); applyEqualizerAudioGains();
       });
     });
 
