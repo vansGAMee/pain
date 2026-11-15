@@ -7,7 +7,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=req
   if(route==='/'&&[390,1440].includes(width)){
    assert.equal(await page.locator('#themes').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(16, 17, 16)');
    assert.ok(await page.locator('[data-preview-theme="noir"]').evaluate(e=>e.getBoundingClientRect().height>=44));
-   await page.locator('#theme-preview').evaluate(e=>e.decode());
+   await page.locator('#theme-preview').scrollIntoViewIfNeeded();await page.locator('#theme-preview').evaluate(e=>e.decode());
    await page.locator('#themes').evaluate(e=>window.scrollTo(0,e.getBoundingClientRect().top+scrollY-80));
    if(process.env.PAIN_SITE_SHOTS)await page.locator('#themes').screenshot({path:process.env.PAIN_SITE_SHOTS+`/themes-${width}.png`});
   }
