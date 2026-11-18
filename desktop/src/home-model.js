@@ -3,17 +3,34 @@
  const DAY=86400000;
  function build(tracks=[],stats={},now=Date.now()){
   const library=new Map(tracks.filter(t=>t?.id!=null).map(t=>[String(t.id),t]));
-  const details=Insights.build([...library.values()],stats,now),first=new Map(),last=new Map();
+  const catalog=[...library.values()];
+  const details=Insights.build(catalog,stats,now),first=new Map(),last=new Map();
+  const today=new Date(now),year=today.getFullYear()-1,month=today.getMonth(),day=today.getDate();
+  const yearAgo=new Date(year,month,day);
+  const anniversaryStart=yearAgo.getMonth()===month?yearAgo.getTime():Infinity;
+  const anniversaryEnd=new Date(year,month,day+1).getTime();
+  const anniversaries=[];
+  let openingTrack=null,openingReturn=null;
   for(const p of details.plays){
    const t=library.get(p.track),duration=Number(p.duration||t?.duration);
-   if(!t||p.heard<(duration>0?Math.min(30000,Math.max(1000,duration/2)):30000))continue;
-   if(!first.has(p.track))first.set(p.track,p.started);last.set(p.track,p.started);
+   if(p.heard<(duration>0?Math.min(30000,Math.max(1000,duration/2)):30000))continue;
+   openingTrack??=p.track;
+   if(!t)continue;
+   if(!first.has(p.track)){
+    first.set(p.track,p.started);
+    if(p.started>=anniversaryStart&&p.started<anniversaryEnd&&anniversaries.length<4)anniversaries.push(p.track);
+   }
+   if(p.track===openingTrack){
+    const previous=last.get(p.track);
+    if(previous!==undefined&&p.started-previous>=90*DAY)openingReturn={id:p.track,at:p.started};
+   }
+   last.set(p.track,p.started);
   }
   const recent=[...last].sort((a,b)=>b[1]-a[1]).map(([id])=>library.get(id));
   const fresh=[...first].filter(([,at])=>now-at<=30*DAY).sort((a,b)=>b[1]-a[1]).map(([id])=>library.get(id));
   const past=[...last].filter(([,at])=>now-at>=7*DAY).sort((a,b)=>(details.behavior.counts[b[0]]||0)-(details.behavior.counts[a[0]]||0)||b[1]-a[1]).map(([id])=>library.get(id));
-  const favorites=[...library.values()].filter(t=>t.favorite===1||t.favorite===true).sort((a,b)=>(last.get(String(b.id))||0)-(last.get(String(a.id))||0));
-  return {details,library,recent,fresh,past,favorites,first,last,
+  const favorites=catalog.filter(t=>t.favorite===1||t.favorite===true).sort((a,b)=>(last.get(String(b.id))||0)-(last.get(String(a.id))||0));
+  return {details,library,catalog,recent,fresh,past,favorites,first,last,anniversaries,openingReturn,
    todayMs:details.days.get(Insights.dayKey(now))||0,
    week:details.calendar.slice(-7),weekMs:details.calendar.slice(-7).reduce((sum,d)=>sum+d.ms,0)};
  }

@@ -115,7 +115,7 @@
    personalContext=messageContext;
    if(typeof HomeMessages!=='undefined'){
     messageEngine||=HomeMessages.create();
-    personalMessage=messageEngine.next(m,{lang:data.lang,now,displayTitle:handlers.title});
+    personalMessage=messageEngine.next(m,{lang:data.lang,now,displayTitle:handlers.title,isExcluded:id=>data.queue?.isExcluded?.(id)});
    }else personalMessage=t('Ваша музыка, в вашем ритме.','Your music, at your pace.');
   }
   const fact=personalMessage;

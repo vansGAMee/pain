@@ -64,6 +64,7 @@ test('a fixed listening context uses every short sentence before repeating any',
   const { model } = fixture(), storage = memoryStorage();
   // Keep a fixed eligible pool; larger summaries deliberately rotate track samples.
   for (const key of ['recent', 'fresh', 'past', 'favorites']) model[key] = model[key].slice(0, 6);
+  model.catalog = model.catalog.filter(track => !model.last.has(track.id)).slice(0, 2);
   for (const lang of ['ru', 'en']) {
     const engine = Messages.create({ storage, random: () => 0.314159 });
     const pool = availableMessages(model, lang), seen = new Set();
@@ -95,7 +96,7 @@ test('a fixed listening context uses every short sentence before repeating any',
 
 test('exact-message history survives creation of a new engine', () => {
   const { model } = fixture(), storage = memoryStorage(), seen = new Set();
-  for (let launch = 0; launch < 10; launch++) {
+  for (let launch = 0; launch < 18; launch++) {
     const engine = Messages.create({ storage, random: () => 0.25 });
     for (let i = 0; i < 10; i++) {
       const text = engine.next(model, { now: NOW, lang: 'ru' });
@@ -122,6 +123,21 @@ test('early visits rotate topics and track names, including both tracks in paire
   }
   assert.ok(Messages.candidates(model, NOW).some(card => card.family === 'foundAgain'));
   assert.ok(Messages.candidates(model, NOW).some(card => card.family === 'trackTime'));
+});
+
+test('a new fact comes before more wording for an old fact, even after reload', () => {
+  const {model} = fixture(), storage = memoryStorage(), seen = new Set();
+  for(const key of ['recent','fresh','past','favorites'])model[key]=model[key].slice(0,6);
+  model.catalog=model.catalog.filter(track=>!model.last.has(track.id)).slice(0,2);
+  const facts = new Set(Messages.candidates(model,NOW).filter(card=>!card.event).map(card=>[
+    Copy.families[card.family].fact||card.family,[card.anchor,card.related].sort().join('|')
+  ].join('|')));
+  for(let i=0;i<facts.size;i++){
+    Messages.create({storage,random:()=>.2}).next(model,{now:NOW});
+    const row=JSON.parse(storage.entries.get('pain_home_messages_v1:state')).recent.at(-1);
+    assert.ok(!seen.has(row.fact),`another wording for ${row.family} preceded a new fact on visit ${i+1}`);
+    seen.add(row.fact);
+  }
 });
 
 test('recent choices migrate from the old format without loading the old text pages', () => {
@@ -217,11 +233,12 @@ test('rendered Russian copy uses the governed number case and preserves track ti
 
 test('the complete copy catalog renders as one short sentence even with long metadata', () => {
   const values = {
-    title: 'Очень длинное название. Ещё одна часть?', otherTitle: '🎸'.repeat(64),
+    title: 'Очень длинное название. Ещё одна часть?', otherTitle: '🎸'.repeat(64), artist: '😀'.repeat(80),
+    album: 'Длинный альбом с названием на несколько слов', localDay: 2,
     days: 101, daySpan: '101 день', daySpanGen: '101 дня',
     count: 101, trackCount: '101 трек', trackCountGen: '101 трека',
     listenCount: '101 прослушивание', listenCountGen: '101 прослушивания',
-    ratio:'101 из 120',denominator:120,minutes: 1561, previousMinutes: 999, percent: 99, hour: '23:00–00:00'
+    ratio:'101 из 120',denominator:120,minutes: 1561, previousMinutes: 999, percent: 99, hour: '23:00–00:00', length: '1:42'
   };
   for (const [family, entry] of Object.entries(Copy.families)) {
     for (const lang of ['ru', 'en']) {
@@ -276,6 +293,141 @@ test('message generation consumes existing summaries without traversing the raw 
   });
   const engine = Messages.create({ storage: memoryStorage(), random: () => 0.123 });
   for (let i = 0; i < 20; i++) assertMessage(engine.next(model, { now: NOW, lang: 'ru' }));
+});
+
+test('named listening suggestions require the right track evidence', () => {
+  const tracks = [
+    {id:'new', title:'Стекло', artist:'Линии', duration:180000},
+    {id:'other', title:'Ноябрь', artist:' линии ', duration:180000},
+    {id:'old', title:'Эхо', artist:'Разные исполнители', duration:95000, favorite:true},
+    {id:'unknown', title:'Без автора', artist:'Разные исполнители', duration:180000},
+    {id:'unplayed', title:'Короткий трек', artist:'Автор', duration:63000, favorite:true},
+    {id:'heard', title:'Ветки', artist:'Линии', duration:180000}
+  ];
+  const play = (track, days, heard) => ({id:track, track, started:NOW-days*DAY, heard});
+  const plays = [play('new',1,145000), play('old',42,95000), play('heard',10,90000), play('other',0,10000)];
+  const model = Home.build(tracks,{plays},NOW);
+  const cards = Messages.candidates(model,NOW);
+  const anchors = family => cards.filter(card => card.family === family).map(card => card.anchor);
+  assert.deepEqual(anchors('artistDiscovery'), ['other']);
+  assert.ok(anchors('unheard').includes('unknown'));
+  assert.deepEqual(anchors('shortBreak'), ['old']);
+  assert.equal(cards.find(card => card.family === 'shortBreak').values.length, '1:35');
+  const pair = cards.find(card => card.family === 'contrast');
+  assert.deepEqual([pair.anchor,pair.related], ['new','old']);
+  assert.match(Messages.format(pair), /Стекло.*Эхо/);
+  const excluded = new Set(['other','old']);
+  assert.ok(Messages.candidates(model,NOW,0,undefined,id=>excluded.has(id))
+    .every(card => !excluded.has(card.anchor) && !excluded.has(card.related)));
+});
+
+test('album suggestions distinguish editions by artist and use a heard or unheard track as stated', () => {
+  const tracks = [
+    {id:'a',title:'Ветер',artist:'Линии',album:'Шум',duration:180000},
+    {id:'b',title:'Вода',artist:'Линии',album:'Шум',duration:600000},
+    {id:'c',title:'Воздух',artist:'линии',album:' ШУМ ',duration:180000},
+    {id:'d',title:'Голос',artist:'Другой',album:'Шум',duration:180000}
+  ];
+  const plays = [
+    {id:'today',track:'a',started:NOW-900000,heard:360000},
+    {id:'yesterday',track:'b',started:NOW-DAY,heard:120000}
+  ];
+  const model = Home.build(tracks,{plays},NOW);
+  const cards = Messages.candidates(model,NOW);
+  assert.deepEqual(cards.filter(card=>card.family==='albumDiscovery').map(card=>card.anchor),['c']);
+  assert.deepEqual(cards.filter(card=>card.family==='albumPair').map(card=>[card.anchor,card.related]),[['a','b']]);
+  assert.equal(cards.find(card=>card.family==='todayHeadliner')?.anchor,'a');
+  assert.equal(cards.find(card=>card.family==='slowListen')?.values.length,'10:00');
+});
+
+test('calendar messages use local hours and complete days of silence', () => {
+  const tracks = [{id:'music',title:'Мелодия'}];
+  const play = (id,day,hour,heard) => ({id,track:'music',started:new Date(2026,10,3-day,hour).getTime(),heard});
+  const plays = [play('today',0,13,180000)];
+  for(const day of [8,14,21]){
+    plays.push(play('night-'+day,day,2,600000),play('morning-'+day,day,8,660000));
+  }
+  const cards = history => Messages.candidates(Home.build(tracks,{plays:history},NOW),NOW);
+  const byFamily = Object.fromEntries(cards(plays).map(card=>[card.family,card]));
+  assert.equal(byFamily.nightTime.values.minutes,30);
+  assert.equal(byFamily.morningTime.values.minutes,33);
+  assert.equal(byFamily.breakEnded.values.days,7);
+  assert.ok(!byFamily.weekdayHabit);
+  assert.ok(cards([...plays,play('last-week',7,13,180000)]).some(card=>card.family==='weekdayHabit'));
+});
+
+test('catalog discovery accesses at most 24 positions and moves past the first page on an empty history', () => {
+  const {model} = fixture();
+  let reads = 0;
+  model.catalog = new Proxy(model.catalog,{get(target,key,receiver){
+    if(/^\d+$/.test(String(key)))reads++;
+    return Reflect.get(target,key,receiver);
+  }});
+  Messages.candidates(model,NOW,2048);
+  assert.equal(reads,24);
+  const cold = Home.build(model.catalog,{},NOW);
+  const firstTracks = seed => Messages.candidates(cold,NOW,seed).filter(card => card.family === 'ready').map(card => card.anchor);
+  const initial = new Set(firstTracks(0));
+  assert.equal(initial.size,6);
+  assert.ok(firstTracks(47).every(id => !initial.has(id)));
+});
+
+test('week and time-of-day observations require several comparable days', () => {
+  const library = [{id:'one', title:'Вечер', duration:180000}];
+  const older = Array.from({length:4},(_,i) => ({id:'earlier-'+i, track:'one',
+    started:new Date(2026,10,2-i,15,5).getTime(), heard:240000}));
+  const today = {id:'today',track:'one',started:NOW-1800000,heard:960000};
+  const cards = (plays,at=NOW) => Messages.candidates(Home.build(library,{plays},at),at);
+  const full = cards([...older,today]);
+  assert.equal(full.find(card => card.family === 'weekPeak')?.values.minutes,16);
+  assert.equal(full.find(card => card.family === 'hourRoutine')?.values.days,4);
+  assert.ok(!full.some(card => card.family === 'today' || card.family === 'peakHour'));
+  assert.ok(!cards([older[0],today]).some(card => card.family === 'weekPeak' || card.family === 'hourRoutine'));
+  assert.ok(!cards([...older,today],NOW+3600000).some(card => card.family === 'hourRoutine'));
+  assert.ok(!cards([...older,{...today,heard:360000}]).some(card => card.family === 'weekPeak'));
+});
+
+test('dated surprises show only once per event and at most once per local day', () => {
+  const tracks = [{id:'first',title:'Ночь'},{id:'year',title:'Рассвет'}];
+  const play = (id,track,started,heard=180000) => ({id,track,started,heard});
+  const plays = [
+    play('preview','removed',new Date(2024,10,2,13).getTime(),500),
+    play('opening','first',new Date(2024,10,3,13).getTime()),
+    play('anniversary','year',new Date(2025,10,3,23,58).getTime()),
+    play('return','first',NOW-2*3600000),
+    play('same-day','first',NOW-3600000)
+  ];
+  const build = (now, history=plays) => Home.build(tracks,{plays:history},now);
+  const storage = memoryStorage();
+  const next = (now,lang='ru') => Messages.create({storage,random:()=>0.2}).next(build(now),{now,lang});
+  assert.match(next(NOW), /Перемотка на год.*Рассвет/);
+  for (let i=0;i<12;i++) assert.doesNotMatch(next(NOW,'en'), /Rewind one year|came full circle/);
+  assert.match(next(NOW+DAY), /вернулся первый трек.*Ночь/);
+  assert.doesNotMatch(next(NOW+2*DAY,'en'), /came full circle/);
+  assert.ok(!Messages.candidates(build(NOW+4*DAY),NOW+4*DAY).some(card=>card.event));
+  const removedOpening = build(NOW,[...plays,play('removed','removed',new Date(2024,10,1,13).getTime())]);
+  assert.ok(!Messages.candidates(removedOpening,NOW).some(card=>card.family==='openingReturn'));
+  assert.ok(!Messages.candidates(build(NOW),NOW,0,undefined,id=>id==='year').some(card=>card.family==='anniversary'));
+  const leapDay = new Date(2028,1,29,15).getTime();
+  const afterFebruary = play('march','year',new Date(2027,2,1,0,0).getTime());
+  assert.ok(!Messages.candidates(build(leapDay,[afterFebruary]),leapDay).some(card=>card.family==='anniversary'));
+});
+
+test('the weekly chorus and 24-hour milestone are earned by listening', () => {
+  const tracks = [{id:'chorus',title:'Весна'}];
+  const play = (id,started,heard=180000) => ({id,track:'chorus',started,heard});
+  const plays = [play('today',NOW-3600000),play('yesterday',NOW-DAY-3600000),play('before',NOW-2*DAY)];
+  const cards = (history,now=NOW) => Messages.candidates(Home.build(tracks,{plays:history},now),now);
+  const chorus = cards(plays).find(card=>card.family==='newRitual');
+  assert.match(Messages.format(chorus), /припев.*3 из 7 дней/i);
+  chorus.values.title='Очень длинное название трека из фонотеки с невероятными приключениями';
+  assert.ok(Messages.format(chorus).length<=64);
+  assert.ok(!cards([plays[0],plays[1],play('same-day',NOW-7200000)]).some(card=>card.family==='newRitual'));
+  const long = play('long',NOW-3*DAY,DAY-60000);
+  const withMilestone = [long,plays[0]];
+  assert.ok(cards(withMilestone).some(card=>card.family==='dayOfMusic'));
+  assert.ok(!cards(withMilestone,NOW+DAY).some(card=>card.family==='dayOfMusic'));
+  assert.ok(!cards([long]).some(card=>card.family==='dayOfMusic'));
 });
 
 test('long hostile metadata is bounded and both languages resolve all sentence fields', () => {
