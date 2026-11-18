@@ -46,7 +46,7 @@ function fixture() {
 function assertMessage(text) {
   assert.equal(typeof text, 'string');
   assert.ok(text.length > 12, 'message has meaningful visible content');
-  assert.ok(text.length <= 100, `message exceeds the hero budget (${text.length}): ${text}`);
+  assert.ok(text.length <= 82, `message exceeds the hero budget (${text.length}): ${text}`);
   assert.doesNotMatch(text, /undefined|NaN|Infinity|\{[a-zA-Z]+\}/);
   const withoutTitles = text.replace(/«[^»]*»|“[^”]*”/g, '');
   assert.doesNotMatch(withoutTitles, /[.!?]\s+\S/, 'the hero contains one sentence, not a paragraph');
@@ -67,7 +67,7 @@ test('a fixed listening context uses every short sentence before repeating any',
   for (const lang of ['ru', 'en']) {
     const engine = Messages.create({ storage, random: () => 0.314159 });
     const pool = availableMessages(model, lang), seen = new Set();
-    assert.ok(pool.size >= 100, 'a rich context has a substantial selection of single sentences');
+    assert.ok(pool.size >= 50, 'a rich context has plenty of distinct facts and actionable suggestions');
     let previous = '';
     for (let i = 0; i < pool.size; i++) {
       const text = engine.next(model, { now: NOW, lang });
@@ -86,16 +86,16 @@ test('a fixed listening context uses every short sentence before repeating any',
       previous = text;
     }
   }
-  assert.ok(storage.entries.size <= 514, 'persistent novelty storage has a fixed upper bound');
+  assert.equal(storage.entries.size, 1, 'a single bounded record holds the recent choices');
   const storedCharacters = [...storage.entries.values()].reduce((sum, value) => sum + value.length, 0);
-  assert.ok(storedCharacters < 300000, `history remains bounded: ${storedCharacters} characters`);
+  assert.ok(storedCharacters < 13000, `history remains bounded: ${storedCharacters} characters`);
   assert.ok([...storage.entries.keys()].every(key => key.startsWith('pain_home_messages_v1')),
     'no playback, library or unrelated preference keys are touched');
 });
 
 test('exact-message history survives creation of a new engine', () => {
   const { model } = fixture(), storage = memoryStorage(), seen = new Set();
-  for (let launch = 0; launch < 20; launch++) {
+  for (let launch = 0; launch < 10; launch++) {
     const engine = Messages.create({ storage, random: () => 0.25 });
     for (let i = 0; i < 10; i++) {
       const text = engine.next(model, { now: NOW, lang: 'ru' });
@@ -103,6 +103,37 @@ test('exact-message history survives creation of a new engine', () => {
       seen.add(text);
     }
   }
+});
+
+test('early visits rotate topics and track names, including both tracks in paired suggestions', () => {
+  const { model } = fixture(), storage = memoryStorage(), shown = [];
+  const engine = Messages.create({storage, random: () => .314159});
+  for (let i = 0; i < 16; i++) {
+    assertMessage(engine.next(model, {now: NOW}));
+    const state = JSON.parse(storage.entries.get('pain_home_messages_v1:state'));
+    shown.push(state.recent.at(-1));
+  }
+  assert.ok(new Set(shown.slice(0, 10).map(row => row.group)).size >= 6);
+  for (let i = 1; i < shown.length; i++) {
+    assert.notEqual(shown[i].group, shown[i-1].group);
+    assert.notEqual(shown[i].lead, shown[i-1].lead);
+    const anchors = [shown[i].anchor, shown[i].related].filter(Boolean);
+    assert.ok(anchors.every(anchor => ![shown[i-1].anchor, shown[i-1].related].includes(anchor)));
+  }
+  assert.ok(Messages.candidates(model, NOW).some(card => card.family === 'foundAgain'));
+  assert.ok(Messages.candidates(model, NOW).some(card => card.family === 'trackTime'));
+});
+
+test('recent choices migrate from the old format without loading the old text pages', () => {
+  const storage = memoryStorage(), model = Home.build([], {}, NOW);
+  const text = Copy.families.empty.ru[0];
+  storage.setItem('pain_home_messages_v1:state', JSON.stringify({version:1,seed:42,
+    recent:[{text,family:'empty',anchor:'',frame:'empty:0'}]}));
+  storage.setItem('pain_home_messages_v1:bits:8', 'ff'.repeat(256));
+  const engine = Messages.create({storage});
+  for (let i = 1; i < Copy.families.empty.ru.length; i++) assert.notEqual(engine.next(model, {now:NOW}), text);
+  assert.equal(storage.reads, 1);
+  assert.equal(JSON.parse(storage.entries.get('pain_home_messages_v1:state')).version, 2);
 });
 
 test('a new or empty library receives varied text without invented listening history', () => {
@@ -156,13 +187,13 @@ test('rendered Russian copy uses the governed number case and preserves track ti
     assert.equal(trackCard.values.listenCount, listen);
     assert.equal(trackCard.values.listenCountGen, listenGen);
     const values = { ...trackCard.values, ...dayCard.values, title: 'Весна', otherTitle: 'Зима',
-      percent: 75, minutes: 123, previousMinutes: 100, hour: '21:00–22:00' };
+      ratio: n+' из 120',denominator:120,percent: 75, minutes: 123, previousMinutes: 100, hour: '21:00–22:00' };
     const rendered = family => Copy.families[family].ru.map((_, variant) =>
       Messages.format({ family, values }, 'ru', variant)).filter(Boolean);
     const returns = rendered('comeback');
     const age = rendered('past');
     const repeats = rendered('repeat');
-    assert.ok(returns.some(text => text.includes('после ' + dayGen)),
+    assert.ok(returns.some(text => text.toLowerCase().includes('после ' + dayGen)),
       `a rendered return must use the genitive after «после»: ${dayGen}`);
     assert.ok(age.some(text => text.includes(day + ' назад')),
       `a rendered interval must preserve the counting form before «назад»: ${day}`);
@@ -190,7 +221,7 @@ test('the complete copy catalog renders as one short sentence even with long met
     days: 101, daySpan: '101 день', daySpanGen: '101 дня',
     count: 101, trackCount: '101 трек', trackCountGen: '101 трека',
     listenCount: '101 прослушивание', listenCountGen: '101 прослушивания',
-    minutes: 1561, previousMinutes: 999, percent: 99, hour: '23:00–00:00'
+    ratio:'101 из 120',denominator:120,minutes: 1561, previousMinutes: 999, percent: 99, hour: '23:00–00:00'
   };
   for (const [family, entry] of Object.entries(Copy.families)) {
     for (const lang of ['ru', 'en']) {

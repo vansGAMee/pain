@@ -31,6 +31,15 @@ test('automatic edges respect available duration, playback speed, manual seeks a
  assert.equal(Transition.plan(a,b,null,null,0).duration,0);
  assert.equal(Transition.valid({...out,leading:1000}),false);assert.equal(Transition.valid({...out,intro:{...out.intro,rms:[NaN]}}),false);
 });
+test('early playback can skip fade checks without missing the longest valid trim at any tested speed',()=>{
+ for(const rate of [.5,1,2]){
+  const earliest=60-8-4*rate;
+  assert.equal(Transition.canFadeSoon(60,earliest-.01,rate,4),false);
+  assert.equal(Transition.canFadeSoon(60,earliest,rate,4),true);
+  const plan=Transition.plan({duration:60000},{duration:60000},{...profile(60),trailing:8},null,4,{position:earliest,rate});
+  assert.equal((plan.end-earliest)/rate,plan.duration);
+ }
+});
 test('edge decoding is stereo-safe, bounded, cached and invalidated by changed audio',async t=>{
  const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process');
  if(spawnSync('ffmpeg',['-version']).status!==0||spawnSync('ffprobe',['-version']).status!==0){t.skip('ffmpeg unavailable: player uses equal-power fallback');return;}

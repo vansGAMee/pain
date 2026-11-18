@@ -1,4 +1,4 @@
-/* Separate playback and Home workers: previews cannot delay the next song.
+/* Separate playback and preview workers: previews cannot delay the next song.
  * Each lane keeps one running and one newest waiting request, bounding CPU/memory.
  */
 (function(root){
@@ -29,14 +29,14 @@
       }
       // Operational latency limit, unrelated to musical ranking.
       lane.timer=setTimeout(()=>stop(lane,new Error('Smart DJ selection timed out')),20000);
-      lane.worker.postMessage({id:job.id,...job.payload});
+      lane.worker.postMessage({id:job.id,...job.payload},job.transfer);
     }catch(error){stop(lane,error);}
   }
-  function request(payload){
+  function request(payload,transfer=[]){
     return new Promise((resolve,reject)=>{
-      const name=payload.action==='mix'?'home':'playback';
+      const name=payload.action==='moods'?'moods':payload.action==='mood-audio'?'mood-audio':payload.action==='mix'?'home':'playback';
       let lane=lanes.get(name);if(!lane){lane={};lanes.set(name,lane);}
-      const job={id:++sequence,payload,resolve,reject};
+      const job={id:++sequence,payload,transfer,resolve,reject};
       if(lane.active){lane.waiting?.reject(superseded());lane.waiting=job;}
       else start(lane,job);
     });

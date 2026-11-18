@@ -2077,19 +2077,90 @@ public final class MainActivity extends Activity {
     Track t=current();boolean enabled=app.service!=null&&app.service.smartEnabled();
     String reason=app.service==null?"":app.service.smartReason;
     new PainMenu(this).setTitle("Smart DJ").setItems(new String[]{
-      "Подбор: "+(enabled?"включён":"выключен"),"Почему этот трек","Сохранить вайб текущего трека","Сохранённые вайбы","Исключить текущий трек из подбора","Вернуть исключённые треки"},(d,i)->{
+      isRu()?"Музыка по настроению":"Music by mood", "Подбор: "+(enabled?"включён":"выключен"),"Почему этот трек","Сохранить вайб текущего трека","Сохранённые вайбы","Исключить текущий трек из подбора","Вернуть исключённые треки"},(d,i)->{
       try{
-        if(i==0){if(app.service!=null)app.service.setSmart(!enabled);toast(app.music.error.isEmpty()?"Smart DJ: "+state("smartDj",false):app.music.error);}
-        else if(i==1)info(t==null?"Smart DJ":t.title,reason.isEmpty()?"Этот трек выбран вручную или запущен из сохранённой очереди.":reason);
-        else if(i==2&&t!=null){EditText name=input("Название вайба",t.title);new AlertDialog.Builder(this).setTitle("Сохранить вайб").setView(name).setPositiveButton("Сохранить",(dd,w)->{
+        if(i==0)moodMenu();
+        else if(i==1){if(app.service!=null)app.service.setSmart(!enabled);toast(app.music.error.isEmpty()?"Smart DJ: "+state("smartDj",false):app.music.error);}
+        else if(i==2)info(t==null?"Smart DJ":t.title,reason.isEmpty()?"Этот трек выбран вручную или запущен из сохранённой очереди.":reason);
+        else if(i==3&&t!=null){EditText name=input("Название вайба",t.title);new AlertDialog.Builder(this).setTitle("Сохранить вайб").setView(name).setPositiveButton("Сохранить",(dd,w)->{
           try{changeVibe(new JSONObject().put("action","save").put("track",t.id).put("name",name.getText().toString()));}catch(Exception ignored){}
         }).setNegativeButton("Отмена",null).show();}
-        else if(i==3)savedVibes();
-        else if(i==4&&t!=null){JSONArray excluded=new JSONArray(app.prefs.getString("djExcluded","[]"));boolean has=false;for(int n=0;n<excluded.length();n++)if(t.id.equals(excluded.optString(n)))has=true;if(!has)excluded.put(t.id);app.prefs.edit().putString("djExcluded",excluded.toString()).apply();app.music.refresh();toast("Трек исключён из Smart DJ. Файл остаётся в библиотеке.");}
-        else if(i==5){app.prefs.edit().putString("djExcluded","[]").apply();app.music.refresh();toast("Исключения сброшены");}
+        else if(i==4)savedVibes();
+        else if(i==5&&t!=null){JSONArray excluded=new JSONArray(app.prefs.getString("djExcluded","[]"));boolean has=false;for(int n=0;n<excluded.length();n++)if(t.id.equals(excluded.optString(n)))has=true;if(!has)excluded.put(t.id);app.prefs.edit().putString("djExcluded",excluded.toString()).apply();app.music.refresh();toast("Трек исключён из Smart DJ. Файл остаётся в библиотеке.");}
+        else if(i==6){app.prefs.edit().putString("djExcluded","[]").apply();app.music.refresh();toast("Исключения сброшены");}
       }catch(Exception e){toast("Не удалось сохранить настройку");}
     }).setNegativeButton("Закрыть",null).show();
   }
+
+  private void moodMenu() {
+    boolean ru = isRu();
+    MobilePalette palette = new MobilePalette(app);
+    AppSheet sheet = new AppSheet(this, ru ? "Музыка по настроению" : "Music by mood", palette.paper, palette.ink, palette.dark);
+    TextView status = sheet.text(ru ? "Ищем подходящие треки…" : "Finding matching tracks…", 14);
+    sheet.show();
+    app.music.moods(ru, (result, error) -> {
+      if (!sheet.dialog.isShowing() || isFinishing() || isDestroyed()) return;
+      if (error != null || result == null) {
+        status.setText(ru ? "Не удалось собрать подборку. Попробуйте ещё раз." : "Could not build the mix. Try again.");
+        return;
+      }
+      boolean found = false;
+      JSONArray moods = result.optJSONArray("items");
+      List<JSONObject> choices = new ArrayList<>();
+      if (moods != null) for (int i = 0; i < moods.length(); i++) {
+        JSONObject mood = moods.optJSONObject(i);
+        if (mood != null && mood.optJSONArray("ids") != null) choices.add(mood);
+      }
+      choices.sort(Comparator.comparing(mood -> mood.optJSONArray("ids").length() == 0));
+      int shown = 0;
+      for (JSONObject mood : choices) {
+        JSONArray ids = mood.optJSONArray("ids");
+        boolean enabled = ids.length() > 0;
+        found |= enabled;
+        String description = enabled ? mood.optString("description") : ru ? "Нет подходящих треков" : "No matching tracks";
+        TextView choice = sheet.button(mood.optString("label"), description, () -> {
+          if (player == null) {
+            status.setVisibility(View.VISIBLE);
+            status.setText(ru ? "Плеер подключается…" : "Connecting to the player…");
+            return;
+          }
+          Set<String> excluded = new HashSet<>();
+          try {
+            JSONArray currentExcluded = new JSONArray(app.prefs.getString("djExcluded", "[]"));
+            for (int j = 0; j < currentExcluded.length(); j++) excluded.add(currentExcluded.optString(j));
+          } catch (org.json.JSONException ignored) {}
+          List<Track> tracks = new ArrayList<>();
+          for (int j = 0; j < ids.length(); j++) {
+            Track track = app.track(ids.optString(j));
+            if (track != null && !excluded.contains(track.id)) tracks.add(track);
+          }
+          if (tracks.isEmpty()) {
+            status.setVisibility(View.VISIBLE);
+            status.setText(ru ? "Подходящие треки больше недоступны." : "The matching tracks are no longer available.");
+            return;
+          }
+          sheet.dialog.dismiss();
+          play(tracks, 0);
+        }, false, false);
+        choice.setEnabled(enabled);
+        choice.setFocusable(enabled);
+        if (!enabled) choice.setAlpha(.6f);
+        if (shown < 5 && MicroMotion.enabled(choice)) {
+          float alpha = enabled ? 1f : .6f;
+          choice.setAlpha(0f);
+          choice.setTranslationY(dp(8));
+          choice.animate().alpha(alpha).translationY(0f).setDuration(180)
+              .setStartDelay(shown * 24L).setInterpolator(MicroMotion.EASE).start();
+        }
+        shown++;
+      }
+      if (found) status.setVisibility(View.GONE);
+      else if (app.tracks.isEmpty()) status.setText(ru ? "Добавьте музыку в фонотеку." : "Add music to your library.");
+      else status.setText(ru ? "Нужны жанровые теги или данные о звучании. Послушайте ещё несколько треков и попробуйте снова."
+          : "Mood mixes need genre tags or audio data. Play a few more tracks and try again.");
+    });
+  }
+
   private void changeVibe(JSONObject request){app.music.call("vibe",request,(data,error)->{
     if(error!=null){toast(error);return;}
     app.music.saveVibes(data);

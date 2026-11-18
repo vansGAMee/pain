@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="noir-home.css">
   <link rel="stylesheet" href="carbon-theme.css">
   <link rel="stylesheet" href="mix-reduction.css">
+  <link rel="stylesheet" href="mood-dialog.css">
 </head>
 <body>
 
@@ -177,6 +178,10 @@
         </div>
 
         <div class="top-bar-right">
+          <button type="button" class="btn-minimal" id="moodOpen" aria-haspopup="dialog" aria-controls="moodDialog" aria-keyshortcuts="Alt+M">
+            <span class="mood-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span data-en="By mood" data-ru="По настроению">По настроению</span>
+          </button>
           <!-- Sort Selector -->
           <div class="sort-selector-wrapper">
             <svg class="sort-icon" viewBox="0 0 24 24"><path d="M3 6h18M6 12h12M9 18h6"/></svg>
@@ -1335,6 +1340,32 @@
     <p id="djStatus" class="dj-status" role="status"></p>
   </dialog>
 
+  <dialog id="moodDialog" class="dj-dialog" aria-labelledby="moodTitle">
+    <header class="dj-heading">
+      <div>
+        <h2 id="moodTitle" data-en="Music by mood" data-ru="Музыка по настроению">Музыка по настроению</h2>
+        <p class="dj-muted" data-en="Mixes from your own library" data-ru="Подборки из вашей фонотеки">Подборки из вашей фонотеки</p>
+      </div>
+      <form method="dialog"><button class="dj-text-button" autofocus data-en="Close" data-ru="Закрыть">Закрыть</button></form>
+    </header>
+    <div id="moodOptions" role="group" aria-labelledby="moodTitle"></div>
+    <footer class="mood-footer">
+      <div id="moodPreview" class="mood-preview" hidden>
+        <span class="mood-bars mood-preview-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <div class="mood-preview-copy" aria-live="polite">
+          <strong id="moodPreviewTitle"></strong>
+          <p id="moodPreviewTracks" class="dj-muted"></p>
+        </div>
+      </div>
+      <p id="moodStatus" class="dj-status dj-muted" role="status"></p>
+      <div class="mood-actions">
+        <button type="button" id="moodPlay" class="dj-action" disabled data-en="Play mix" data-ru="Слушать подборку">Слушать подборку</button>
+        <button type="button" id="moodWholeTaste" class="btn-minimal" data-en="My whole taste" data-ru="Весь мой вкус">Весь мой вкус</button>
+        <button type="button" id="moodAnalyze" class="dj-text-button" hidden>Поискать по звучанию</button>
+      </div>
+    </footer>
+  </dialog>
+
   <!-- Share Profile Modal Dialog -->
   <div class="share-profile-modal-backdrop" id="shareProfileModalBackdrop" style="display:none;" aria-hidden="true">
     <div class="share-profile-modal-container">
@@ -1433,7 +1464,9 @@
   <script src="playback-memory.js"></script>
   <script src="update-screen.js"></script>
   <script src="mix-reduction.js"></script>
+  <script src="mood-mix.js"></script>
   <script src="app.js"></script>
+  <script src="mood-dialog.js"></script>
   <script src="artist-card.js"></script>
   <script src="track-info.js"></script>
   <script src="discord-presence-ui.js"></script>

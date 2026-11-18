@@ -372,6 +372,8 @@
     isExcluded: id => state.excludedRecommendations.has(String(id)),
     reloadLibrary: async () => {const library=await(await fetch('/api/saved-library')).json();const previous=window.PainPlayer.getTrack();state.tracks=library.tracks||[];state.libraryDirty=true;if(previous&&!window.PainTogether?.active&&!state.tracks.some(t=>String(t.id)===String(previous.id)))window.PainPlayer.sessionReset();if(!window.PainTogether?.active)queue?.refreshLibrary(state.tracks,queue?.getContext().type==='library');state.playlists=await(await fetch("/api/playlists")).json();state.stats=await(await fetch("/api/saved-stats")).json();invalidatePlayCountsCache();if(queue)setQueueTasteStats(state.stats);renderPlaylistsSidebar();updateSidebarLikedCount();renderCurrentView();},
     getAudio: () => activeDeck || deckA,
+    playWholeTaste,
+    analyzeMoodTracks,
     sessionPause: () => {if(!audio.paused)audio.pause();syncPlaybackState();},
     sessionResume: () => {initAudioNodes();if(audioCtx?.state==='suspended')audioCtx.resume().catch(()=>{});return audio.play();},
     sessionSeek: seconds => seekToTime(seconds),
@@ -653,17 +655,17 @@
   let greetingUpdatedAt = 0;
   function updateGreeting() {
     const greetingEl = document.getElementById('viewGreeting');
-    if (!greetingEl) return;
-    const now = new Date(), plays = [...(state.stats?.plays || []), ...readTasteSkips()], last = plays.at(-1);
+    if (!greetingEl || state.currentView !== 'library' || document.hidden) return;
+    const now = new Date(), plays = state.stats?.plays || [], skips = readTasteSkips(), last = skips.at(-1) || plays.at(-1);
     const key = JSON.stringify([state.lang, now.toDateString(), now.getHours(), state.tracks.length,
-      plays.length, last?.id, last?.started, last?.heard, last?.finished, last?.skipped]);
+      plays.length + skips.length, last?.id, last?.started, last?.heard, last?.finished, last?.skipped]);
     if (key === greetingKey && now.getTime() - greetingUpdatedAt < 15 * 60000) return;
     greetingKey = key;
     greetingUpdatedAt = now.getTime();
 
     if (typeof PresenceEngine !== 'undefined' && typeof PresenceEngine.generateGreeting === 'function') {
       try {
-        const greeting = PresenceEngine.generateGreeting(state.tracks, {...state.stats, plays}, { lang: state.lang });
+        const greeting = PresenceEngine.generateGreeting(state.tracks, {...state.stats, plays: plays.concat(skips)}, { lang: state.lang });
         if (greeting && greeting.text) {
           const icon = greeting.icon || '✨';
           greetingEl.innerHTML = `<span class="greeting-icon">${icon}</span> <span class="greeting-text">${escapeHtml(greeting.text)}</span>`;
@@ -698,16 +700,23 @@
   }
 
   // --- CACHE MANAGEMENT ---
+  let cachedTracksRevision = 0;
   async function loadCachedTracksList() {
+    const revision = cachedTracksRevision;
     try {
       const res = await fetch('/api/cached-tracks');
       if (res.ok) {
         const data = await res.json();
+        if (revision !== cachedTracksRevision) return loadCachedTracksList();
         state.cachedTracks = new Set(data.cached || []);
         if (DOM.cacheStatsDesc) {
           DOM.cacheStatsDesc.textContent = state.lang === 'ru'
             ? `${state.cachedTracks.size} файлов сохранено на диске`
             : `${state.cachedTracks.size} audio files cached on disk`;
+        }
+        if (state.currentView === 'library' && state.categoryFilter === 'cached') {
+          state.libraryDirty = true;
+          renderLibrary();
         }
       }
     } catch (e) {}
@@ -723,6 +732,7 @@
       const data = await res.json();
       if (data.status === 'ok') {
         const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
+        cachedTracksRevision++;
         state.cachedTracks.delete(safeId);
         const msg = state.lang === 'ru' 
           ? `«${trackTitle || 'Трек'}» удалён из кэша` 
@@ -751,6 +761,7 @@
       });
       const data = await res.json();
       if (data.status === 'ok') {
+        cachedTracksRevision++;
         state.cachedTracks.clear();
         const msg = state.lang === 'ru' 
           ? `Удалено ${data.cleared} файлов из кэша` 
@@ -770,7 +781,8 @@
   function applyHomeWallpaper(){
     if(!homeWallpaperSettings)return;const data=homeWallpaperSettings,enabled=data.enabled&&(state.theme==='sakura'||data.custom||data.userSet);
     document.documentElement.dataset.homeWallpaper=enabled?'on':'off';
-    document.documentElement.style.setProperty('--home-wallpaper',`url("/api/appearance/wallpaper/image?v=${Number(data.version)||0}")`);
+    const image = data.custom ? `/api/appearance/wallpaper/image?v=${Number(data.version)||0}` : '/assets/sakura-evening.png';
+    document.documentElement.style.setProperty('--home-wallpaper', `url("${image}")`);
     const toggle=document.getElementById('homeWallpaperSwitch');if(toggle)toggle.checked=data.enabled;
   }
   async function saveHomeWallpaper(data){const response=await fetch('/api/appearance/wallpaper',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}),result=await response.json();if(!response.ok)throw Error(result.error);homeWallpaperSettings=result;applyHomeWallpaper();}
@@ -811,31 +823,19 @@
       if (DOM.bottomLoopBadge) DOM.bottomLoopBadge.style.display = 'none';
     }
 
-    if (DOM.bottomShuffleBtn) {
-      const mode = queue ? queue.getShuffleMode() : state.shuffleMode;
-      DOM.bottomShuffleBtn.classList.toggle('active', mode !== 'off');
-      DOM.bottomShuffleBtn.classList.toggle('smart-mode', mode === 'smart');
-      if (DOM.bottomShuffleBadge) {
-        let badge = '';
-        if (mode === 'smart') badge = 'DJ';
-        else if (mode === 'random') badge = '🔀';
-        DOM.bottomShuffleBadge.textContent = badge;
-        DOM.bottomShuffleBadge.classList.toggle('active', !!badge);
-        DOM.bottomShuffleBadge.classList.toggle('smart-badge', mode === 'smart');
-      }
-    }
+    renderShuffleControl(queue?.getShuffleMode() || state.shuffleMode);
 
-    await loadLocalData();
-    syncSharedAudio();
+    await loadLocalData({render: false});
     syncExcludedTracksFromServer();
     syncFavoriteMomentsFromServer();
-    await loadCachedTracksList();
-    updateGreeting();
     setupEventListeners();
-    updateDataGuardStatusUI();
     window.addEventListener('pain:dj-changed',syncSharedAudio);
     setInterval(() => { if (!document.hidden) { updateGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) updateGreeting(); });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.currentView === 'library') {
+        requestAnimationFrame(() => setTimeout(updateGreeting, 0));
+      }
+    });
     setTimeout(() => checkForUpdates(false, true), 800);
     setInterval(() => checkForUpdates(true, true), 6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
@@ -859,6 +859,11 @@
     } else {
       switchView(isFormTheme(state.theme)?'home':'library');
     }
+
+    // Cache enumeration and profile exchange are independent of the first view.
+    const startBackground = () => setTimeout(() => { loadCachedTracksList(); syncSharedAudio(); }, 0);
+    if (document.hidden) startBackground();
+    else requestAnimationFrame(startBackground);
 
     window.addEventListener('hashchange', () => {
       const h = window.location.hash.replace('#', '');
@@ -1271,8 +1276,9 @@
   }
 
   // --- DATA LOADING & PERSISTENCE ---
-  async function loadLocalData() {
+  async function loadLocalData({render = true} = {}) {
     try {
+      const checkpoint = state.currentTrackIndex === -1 ? PlaybackMemory.read() : null;
       // 1. Library
       const [libRes, plRes, statsRes] = await Promise.all([
         fetch('/api/saved-library'), fetch('/api/playlists'), fetch('/api/saved-stats')
@@ -1306,11 +1312,11 @@
       // Refresh UI components
       renderPlaylistsSidebar();
       updateSidebarLikedCount();
-      renderCurrentView();
+      if (render) renderCurrentView();
 
       // If library is populated, prepare first track in player bar
       if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
-        const saved=await PlaybackMemory.read();
+        const saved=await (checkpoint || PlaybackMemory.read());
         // A focus/library refresh can populate the queue before this await
         // completes. Restore the same song in both the bar and queue, while a
         // real selection made during startup always wins over the checkpoint.
@@ -1348,6 +1354,7 @@
     if(viewName==='home'&&!isFormTheme(state.theme))viewName='library';
     if (state.currentView === viewName && state.activePlaylistId === playlistId
         && document.getElementById(`view-${viewName}`)?.classList.contains('active')) {
+      if(viewName==='library')updateGreeting();
       renderCurrentView();
       return;
     }
@@ -1376,6 +1383,7 @@
     }
 
     if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
+    if(viewName==='library')updateGreeting();
     renderCurrentView();
     if(viewName==='home')window.HomeView?.resume();
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
@@ -1570,18 +1578,55 @@
 
   let playCountsCache = null;
   function getTrackPlayCount(trackId) {
-    if (!trackId || !state.stats || !state.stats.plays) return 0;
-    if (!playCountsCache) {
-      playCountsCache = new Map();
-      const plays = ListeningRecords.canonical(state.stats.plays);
-      const identities=new Set(),now=Date.now();
-      for (let i = 0; i < plays.length; i++) {
-        const p=plays[i],tid=p?.track,key=JSON.stringify([tid,p?.started]),duration=Number(p?.duration);
-        const threshold=duration>0?Math.min(30000,Math.max(1000,duration/2)):30000;
-        if(tid&&p.started>0&&p.started<=now&&p.heard>=threshold&&!identities.has(key)){identities.add(key);playCountsCache.set(tid,(playCountsCache.get(tid)||0)+1);}
+    const source = state.stats?.plays;
+    if (!trackId || !Array.isArray(source)) return 0;
+    if (playCountsCache?.source !== source) {
+      const byTrack = new Map();
+      for (const play of source) {
+        if (play?.track == null) continue;
+        const key = String(play.track);
+        if (!byTrack.has(key)) byTrack.set(key, []);
+        byTrack.get(key).push(play);
       }
+      playCountsCache = {source, byTrack, counts: new Map()};
     }
-    return playCountsCache.get(trackId) || 0;
+    const trackKey = String(trackId), {byTrack, counts} = playCountsCache;
+    const stored = byTrack.get(trackKey);
+    if (!stored) return 0;
+    if (!counts.has(trackKey)) {
+      // Canonical play identities already include the track ID. One new play
+      // only affects its own count, even when the history has many other tracks.
+      const matches = new Map(), identities = new Set(), now = Date.now();
+      for (const p of ListeningRecords.canonical(stored)) {
+        const tid=p.track,key=JSON.stringify([tid,p.started]),duration=Number(p.duration);
+        const threshold=duration>0?Math.min(30000,Math.max(1000,duration/2)):30000;
+        if(tid&&p.started>0&&p.started<=now&&p.heard>=threshold&&!identities.has(key)){identities.add(key);matches.set(tid,(matches.get(tid)||0)+1);}
+      }
+      counts.set(trackKey, matches);
+    }
+    return counts.get(trackKey).get(trackId) || 0;
+  }
+
+  function storePlayRecord(play, replace = true) {
+    const source = (state.stats.plays ||= []);
+    const index = replace ? source.findIndex(item => item?.id === play.id) : -1;
+    const previous = source[index];
+    if (index < 0) source.push(play);
+    else source[index] = play;
+    const cache = playCountsCache;
+    if (cache?.source !== source) return;
+    const key = String(play.track);
+    if (previous && String(previous.track) !== key) {
+      // A malformed/legacy record can reuse an ID for another track. In that
+      // case rebuild from the authoritative array rather than touching two buckets.
+      invalidatePlayCountsCache();
+      return;
+    }
+    if (!cache.byTrack.has(key)) cache.byTrack.set(key, []);
+    const matches = cache.byTrack.get(key);
+    if (previous) matches[matches.indexOf(previous)] = play;
+    else matches.push(play);
+    cache.counts.delete(key);
   }
 
   function invalidatePlayCountsCache() {
@@ -3003,6 +3048,38 @@
     playTrackObject(track, startPosition);
   }
 
+  function playWholeTaste() {
+    if (!queue || window.PainTogether?.active) return false;
+    const current = queue.getCurrentTrack();
+    const track = state.tracks.find(t => t.id === current?.id && !queue.isExcluded(t.id))
+      || state.tracks.find(t => !queue.isExcluded(t.id));
+    if (!track) return false;
+    if (momentsReel?.getState().active) momentsReel.stop();
+    const policy = document.getElementById('pulseflowPolicy');
+    const changedPolicy = queue.pulseflowPolicy !== 'taste';
+    if (changedPolicy) {
+      policy.value = 'taste';
+      policy.dispatchEvent(new Event('change'));
+    }
+    const hasVibe = window.PainDJVibes?.list().activeId;
+    if (hasVibe) window.PainDJVibes.select(null);
+    const context = queue.getContext();
+    if (context.type !== 'library' || !context.allowNew || queue.getShuffleMode() !== 'smart' || hasVibe || changedPolicy || current?.id !== track.id) {
+      nextNavigation = null;
+      queue.cancelPendingSelection();
+      queue.setContext('library', state.tracks, state.tracks.indexOf(track), state.lang === 'ru' ? 'Весь мой вкус' : 'My whole taste', true);
+      queue.setShuffleMode('smart');
+      state.hasPrefetchedNext = false;
+    }
+    state.shuffle = true;
+    state.shuffleMode = 'smart';
+    try { localStorage.setItem('pain_shuffle_mode', 'smart'); } catch (_) {}
+    if (String(playingTrackSnapshot?.id) !== String(track.id) || audio.ended) playTrackObject(track);
+    else if (audio.paused) togglePlay();
+    else schedulePlaybackPreparation();
+    return true;
+  }
+
   function playTrackById(trackId, startPosition = 0) {
     if(window.PainTogether?.active&&!window.PainTogether.applying){window.PainTogether.offer(state.tracks.find(track=>String(track.id)===String(trackId)));return;}
     if (queue) {
@@ -3027,8 +3104,20 @@
     playTrackById(state.tracks[index].id);
   }
 
+  function renderShuffleControl(mode) {
+    DOM.bottomShuffleBtn?.classList.toggle('active', mode !== 'off');
+    DOM.bottomShuffleBtn?.classList.toggle('smart-mode', mode === 'smart');
+    if (DOM.bottomShuffleBadge) {
+      const badge = mode === 'smart' ? 'DJ' : mode === 'random' ? '🔀' : '';
+      DOM.bottomShuffleBadge.textContent = badge;
+      DOM.bottomShuffleBadge.classList.toggle('active', !!badge);
+      DOM.bottomShuffleBadge.classList.toggle('smart-badge', mode === 'smart');
+    }
+  }
+
   function updateQueueContextUI(info) {
     if (!DOM.bottomTrackContext) return;
+    renderShuffleControl(info?.shuffleMode ?? queue?.getShuffleMode() ?? state.shuffleMode);
     if (!info || !info.context || !info.total) {
       DOM.bottomTrackContext.textContent = '';
       DOM.bottomTrackContext.dataset.contextLabel = '';
@@ -3405,6 +3494,7 @@
   }
 
   function updateSettingsExcludedSection() {
+    if (DOM.settingsModalBackdrop.style.display === 'none') return;
     const count = state.excludedRecommendations.size;
     if (DOM.excludedTracksCountHint) {
       DOM.excludedTracksCountHint.textContent = state.lang === 'ru'
@@ -3486,6 +3576,43 @@
 
   // --- LIBRARY AUDIO ANALYSIS (BATCH ANALYZER) ---
   let batchAudioAnalyzer = null;
+
+  function rememberAnalyzedTrack(track, profile, bpm) {
+    audioProfiles[track.id] = profile;
+    queue?.setAudioProfile(track.id, profile);
+    autoEqReference = null;
+    if (state.eq.auto && track.id === state.currentTrackId) applyAutoEqualizer(track, profile);
+    if (bpm) {
+      queue?.setTrackBpm(track.id, bpm);
+      schedulePersistBpmCache();
+    }
+    schedulePersistAudioProfiles();
+    if (audioSyncTimer === null) audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 2500);
+  }
+
+  function analyzeMoodTracks(tracks, signal, callbacks) {
+    const analyzer = batchAudioAnalyzer;
+    if (!analyzer || signal.aborted || ['running', 'paused'].includes(analyzer.status)) return false;
+    const stop = () => analyzer.stop();
+    signal.addEventListener('abort', stop, {once: true});
+    analyzer.phoneUrl = state.phoneUrl;
+    analyzer.start(tracks, audioProfiles, {
+      browserFallback: true,
+      onProgress: progress => {
+        if (DOM.settingsModalBackdrop.style.display !== 'none') updateAudioAnalysisSettingsUI();
+        if (!signal.aborted) callbacks.onProgress(progress);
+      },
+      onTrackComplete(track, profile, bpm) {
+        rememberAnalyzedTrack(track, profile, bpm);
+        callbacks.onTrackComplete(track);
+      },
+      onComplete(progress) {
+        signal.removeEventListener('abort', stop);
+        callbacks.onComplete(progress);
+      }
+    });
+    return true;
+  }
 
   function updateAudioAnalysisSettingsUI() {
     if (!DOM.audioAnalysisCountLabel) return;
@@ -3582,20 +3709,7 @@
       batchAudioAnalyzer.start(tracks, audioProfiles, {
         overwriteExisting: overwrite,
         onProgress: () => updateAudioAnalysisSettingsUI(),
-        onTrackComplete: (track, profile, bpm) => {
-          audioProfiles[track.id] = profile;
-          queue?.setAudioProfile(track.id, profile);
-          autoEqReference = null;
-          if (state.eq.auto && track.id === state.currentTrackId) applyAutoEqualizer(track, profile);
-          if (bpm) {
-            queue?.setTrackBpm(track.id, bpm);
-            schedulePersistBpmCache();
-          }
-          schedulePersistAudioProfiles();
-          if (audioSyncTimer === null) {
-            audioSyncTimer = setTimeout(() => { audioSyncTimer = null; syncSharedAudio(); }, 2500);
-          }
-        },
+        onTrackComplete: rememberAnalyzedTrack,
         onComplete: () => {
           schedulePersistAudioProfiles(true);
           schedulePersistBpmCache(true);
@@ -4032,7 +4146,7 @@
         // these previews out of play counts, while preserving honest skip/time data.
         const play={...feedback,id:listening.playId,session:'pc_companion',
           finished:0};
-        state.stats.plays.push(play);localSyncRevision++;
+        storePlayRecord(play, false);localSyncRevision++;
         try{await fetch('/api/sync-stats',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({play,phoneUrl:state.phoneUrl})});}catch(_){}
       }
       return;
@@ -4041,18 +4155,16 @@
     const playRecord={...audible,skipped:explicitSkip&&!audible.finished?1:0,id:listening.playId,session:'pc_companion',at:now,timestamp:now};
     const track=state.tracks.find(t=>t.id===trackId);
     if(!track)return;
-    if (!state.stats.plays) state.stats.plays = [];
-    const existing=state.stats.plays.findIndex(p=>p.id===playRecord.id);
-    if(existing>=0)state.stats.plays[existing]=playRecord;else state.stats.plays.push(playRecord);
+    storePlayRecord(playRecord);
     localSyncRevision++;
-    invalidatePlayCountsCache();
     if (queue) setQueueTasteStats(state.stats);
 
     // 1. Immediately update live DOM play count for all rows showing this track
-    const newPlayCount = getTrackPlayCount(track.id);
-    document.querySelectorAll(`tr[data-track-id="${track.id}"] .col-plays`).forEach(el => {
-      el.textContent = newPlayCount;
-    });
+    const cells = document.querySelectorAll(`tr[data-track-id="${track.id}"] .col-plays`);
+    if (cells.length) {
+      const count = getTrackPlayCount(track.id);
+      for (const cell of cells) cell.textContent = count;
+    }
 
     // 2. Relay to server
     try {
@@ -4915,6 +5027,7 @@
             body: blob
           });
           if (saveRes.ok) {
+            cachedTracksRevision++;
             state.cachedTracks.add(safeId);
             if (DOM.cacheStatsDesc) {
               DOM.cacheStatsDesc.textContent = state.lang === 'ru'
@@ -5062,32 +5175,13 @@
     DOM.bottomShuffleBtn.addEventListener('click', () => {
       if (queue) {
         const desc = queue.cycleShuffleMode();
-        state.shuffle = desc.mode !== 'off';
-        state.shuffleMode = desc.mode;
-        try {
-          localStorage.setItem('pain_shuffle_mode', desc.mode);
-        } catch (e) {}
-
-        DOM.bottomShuffleBtn.classList.toggle('active', desc.mode !== 'off');
-        DOM.bottomShuffleBtn.classList.toggle('smart-mode', desc.mode === 'smart');
-
-        if (DOM.bottomShuffleBadge) {
-          DOM.bottomShuffleBadge.textContent = desc.badge;
-          DOM.bottomShuffleBadge.classList.toggle('active', !!desc.badge);
-          DOM.bottomShuffleBadge.classList.toggle('smart-badge', desc.mode === 'smart');
+        if (queue.getContext().type !== 'mood') {
+          state.shuffle = desc.mode !== 'off';
+          state.shuffleMode = desc.mode;
+          try { localStorage.setItem('pain_shuffle_mode', desc.mode); } catch (_) {}
         }
 
         showToast(state.lang === 'ru' ? desc.labelRu : desc.labelEn, desc.badge || '🔀');
-        if (queue.getCurrentTrack()) {
-          updateQueueContextUI({
-            context: queue.getContext(),
-            track: queue.getCurrentTrack(),
-            index: queue.getCurrentIndex(),
-            total: queue.getTracks().length,
-            shuffleMode: queue.getShuffleMode(),
-            loopMode: queue.getLoopMode()
-          });
-        }
       } else {
         state.shuffle = !state.shuffle;
         DOM.bottomShuffleBtn.classList.toggle('active', state.shuffle);
@@ -5250,6 +5344,16 @@
     // --- AUDIO TIMELINE, SEEKING & POINTER SCRUBBING ---
     let isScrubbing = false;
 
+    function paintPlaybackProgress(cur, dur) {
+      const time = formatTime(cur);
+      if (DOM.currentTime.textContent !== time) DOM.currentTime.textContent = time;
+      if (!(dur > 0)) return;
+      updateDurationLabel(dur);
+      const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
+      DOM.progressFill.style.width = `${pct}%`;
+      if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
+    }
+
     function getScrubPercent(e) {
       const rect = DOM.progressTrack.getBoundingClientRect();
       if (rect.width <= 0) return 0;
@@ -5299,7 +5403,12 @@
     });
     audio.addEventListener('seeked',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     window.addEventListener('pagehide',()=>{savePlaybackPosition(true);sampleListening();if(state.currentTrackId)recordTrackFinished(state.currentTrackId,false,true);});
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)savePlaybackPosition(true);});
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden)savePlaybackPosition(true);
+      else if(!isScrubbing && pendingSeekTime === null && audio.getAttribute('src')) {
+        paintPlaybackProgress(audio.currentTime, getCurrentTrackDuration());
+      }
+    });
     audio.addEventListener('error',()=>{state.isPlaying=false;state.playbackLoading=false;updatePlayBtnUI();DOM.vinylBigDisc.classList.remove('spinning');});
     audio.addEventListener('volumechange',()=>listening?.anchor(performance.now(),audio.currentTime,!audio.paused&&!audio.muted&&audio.volume>0));
     audio.addEventListener('ratechange',()=>{
@@ -5346,7 +5455,8 @@
         }
       }
 
-      if (deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended && !isCrossfading && !audio.seeking) {
+      if (deckB && state.trackTransition > 0 && dur > 0 && !audio.paused && !audio.ended && !isCrossfading && !audio.seeking &&
+          SmartTransition.canFadeSoon(dur, cur, audio.playbackRate, state.trackTransition)) {
         const upcoming = getNextTrack(), plan = upcoming && transitionPlan(upcoming);
         const remaining = plan ? (plan.end-cur)/(audio.playbackRate||1) : Infinity;
         const isRepeatOne = state.loopMode === 'one' || (queue && queue.getLoopMode() === 'one');
@@ -5370,17 +5480,10 @@
         }
       }
 
-      DOM.currentTime.textContent = formatTime(cur);
-      if (dur > 0) {
-        updateDurationLabel(dur);
-        const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
-        DOM.progressFill.style.width = `${pct}%`;
-        if (DOM.progressThumb) DOM.progressThumb.style.left = `${pct}%`;
-
-        // Sleep-resistant prefetch next song halfway or 20s before end
-        if (cur > dur * 0.5 || (dur - cur < 20)) {
-          prefetchNextTrack();
-        }
+      if (!document.hidden) paintPlaybackProgress(cur, dur);
+      // Sleep-resistant prefetch next song halfway or 20s before end.
+      if (dur > 0 && (cur > dur * 0.5 || dur - cur < 20)) {
+        prefetchNextTrack();
       }
     });
 

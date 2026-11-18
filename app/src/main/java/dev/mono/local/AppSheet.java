@@ -20,12 +20,13 @@ final class AppSheet {
     dialog.setContentView(scroll);text(title,25);button(context.getSharedPreferences("mono",Context.MODE_PRIVATE).getString("lang","ru").equals("ru")?"Закрыть":"Close",null,()->dialog.dismiss(),false,false);
   }
   TextView text(String value,int size){TextView t=new TextView(context);t.setText(value);t.setTextColor(ink);t.setTextSize(size*context.getSharedPreferences("mono",Context.MODE_PRIVATE).getFloat("textScale",1));t.setTypeface(DesignScene.font(context));t.setPadding(0,dp(8),0,dp(8));t.setFontFeatureSettings("tnum");content.addView(t,new LinearLayout.LayoutParams(-1,-2));return t;}
-  void button(String title,String subtitle,Runnable action){button(title,subtitle,action,true,false);}
-  void button(String title,String subtitle,Runnable action,boolean dismiss,boolean danger){
+  TextView button(String title,String subtitle,Runnable action){return button(title,subtitle,action,true,false);}
+  TextView button(String title,String subtitle,Runnable action,boolean dismiss,boolean danger){
     TextView t=new TextView(context);t.setText(title+(subtitle==null?"":"\n"+subtitle));t.setTextSize(15*context.getSharedPreferences("mono",Context.MODE_PRIVATE).getFloat("textScale",1));t.setTypeface(DesignScene.font(context));t.setTextColor(danger&&!palette.carbon?(dark?0xffffb5ce:0xff9d244e):ink);t.setGravity(Gravity.CENTER_VERTICAL);t.setPadding(dp(16),dp(14),dp(16),dp(14));t.setMinHeight(dp(52));
     GradientDrawable bg=new GradientDrawable();bg.setColor(palette.surface);bg.setCornerRadius(dp(15));t.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf((palette.accent&0xffffff)|0x30000000),bg,null));
     if (palette.carbon) t.setBackground(new CarbonSurface(context,15,false));
     LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(8);content.addView(t,lp);t.setFocusable(true);t.setOnClickListener(v->{if(dismiss)dialog.dismiss();action.run();});
+    return t;
   }
   void show(){dialog.show();Window w=dialog.getWindow();w.setBackgroundDrawableResource(android.R.color.transparent);w.setGravity(Gravity.BOTTOM);w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);w.setDimAmount(.5f);w.setLayout(-1,Math.min(dp(760),(int)(context.getResources().getDisplayMetrics().heightPixels*.88f)));}
 }

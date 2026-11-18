@@ -3,6 +3,17 @@ importScripts('/session-graph.js','/audio-timbre.js','/audio-profile.js','/recom
   '/queue-engine.js','/pulseflow-player.js','/personal-player.js');
 self.onmessage=async ({data})=>{
   try{
+    if(data.action==='moods'){
+      if(!globalThis.MoodMix) importScripts('/taste-model.js','/mood-mix.js');
+      self.postMessage({id:data.id,result:MoodMix.build(data.tracks,data.options)});
+      return;
+    }
+    if(data.action==='mood-audio'){
+      if(!globalThis.AudioAnalyzer) importScripts('/audio-analyzer.js');
+      const [left,right]=data.channels;
+      self.postMessage({id:data.id,result:AudioAnalyzer.analyzePcm(left,right,data.sampleRate,data.track,data.plan)});
+      return;
+    }
     const queue=data.action==='mix'?QueueEngine.previewFromSnapshot(data.snapshot,data.tracks):QueueEngine.fromWorkerSnapshot(data.snapshot);
     let result;
     const player=queue.pulseflowPolicy==='taste'?PersonalPlayer:PulseFlowPlayer;

@@ -112,6 +112,19 @@ public final class MusicEngine {
     });
   }
   public void refreshInsights(){call("insights",new JSONObject(),(data,failure) -> {if(data!=null)insights=data;});}
+  public void moods(boolean russian, BiConsumer<JSONObject,String> callback) {
+    app.io.execute(() -> {
+      try {
+        JSONObject genres = app.companion.moodGenres();
+        app.repo.addIndexedGenres(genres);
+        JSONObject request = new JSONObject().put("lang", russian ? "ru" : "en").put("genres", genres)
+            .put("excluded", new JSONArray(app.prefs.getString("djExcluded", "[]")));
+        call("moods", request, callback);
+      } catch (Exception e) {
+        app.main.post(() -> callback.accept(null, russian ? "Не удалось собрать подборку." : "Could not build the mix."));
+      }
+    });
+  }
   public void saveVibes(JSONObject data){
     app.prefs.edit().putString("djVibes",data.toString()).apply();
     app.io.execute(() -> {synchronized(this){try{saved.put("vibes",data);persist();}catch(Exception ignored){}}});

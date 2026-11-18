@@ -131,6 +131,25 @@ public final class CompanionStore {
   public JSONObject info(Track track)throws Exception{
     String key="genres:"+trackKey(pack(track));try(Cursor c=app.repo.getReadableDatabase().rawQuery("SELECT value FROM companion_entities WHERE key=?",new String[]{key})){return c.moveToFirst()?new JSONObject(c.getString(0)):null;}
   }
+  JSONObject moodGenres() throws Exception {
+    JSONObject result = new JSONObject();
+    try (Cursor c = app.repo.getReadableDatabase().rawQuery("SELECT value FROM companion_entities WHERE kind='genres'", null)) {
+      while (c.moveToNext()) {
+        JSONObject row = new JSONObject(c.getString(0));
+        JSONObject data = row.optJSONObject("data");
+        if (data == null) continue;
+        Track track = resolve(row.getJSONObject("track"));
+        if (track == null) continue;
+        JSONArray tags = new JSONArray();
+        for (String key : new String[]{"names", "tags"}) {
+          JSONArray values = data.optJSONArray(key);
+          if (values != null) for (int i = 0; i < values.length(); i++) tags.put(values.optString(i));
+        }
+        if (tags.length() > 0) result.put(track.id, tags);
+      }
+    }
+    return result;
+  }
   public void saveMoment(Track track,double seconds)throws Exception{
     if(!Double.isFinite(seconds)||seconds<0||seconds>=86400)throw new IllegalArgumentException("Invalid moment");
     JSONObject song=pack(track);store("moment:"+trackKey(song),"moment",null,new JSONObject().put("kind","moment").put("track",song).put("seconds",seconds));generation++;

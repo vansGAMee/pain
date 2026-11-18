@@ -1,5 +1,5 @@
 /* Android adapter. Ranking, acoustic profiles, EQ and insights use the desktop modules. */
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./queue-engine'),require('./audio-profile'),require('./dj-state'),require('./listening-insights'),require('./auto-eq'),require('./smart-volume'),require('./insight-charts-model'));else root.MobileEngine=factory(root.QueueEngine,root.AudioProfile,root.DjState,root.ListeningInsights,root.AutoEqualizer,root.SmartVolume,root.InsightChartStats);})(globalThis,(Queue,Audio,State,Insights,EQ,Volume,Charts)=>{
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./queue-engine'),require('./audio-profile'),require('./dj-state'),require('./listening-insights'),require('./auto-eq'),require('./smart-volume'),require('./insight-charts-model'),require('./mood-mix'));else root.MobileEngine=factory(root.QueueEngine,root.AudioProfile,root.DjState,root.ListeningInsights,root.AutoEqualizer,root.SmartVolume,root.InsightChartStats,root.MoodMix);})(globalThis,(Queue,Audio,State,Insights,EQ,Volume,Charts,Moods)=>{
  // Same Blackman window and FFT normalization as Web Audio's AnalyserNode.
  function spectrum(wave){
   const n=wave.length,re=new Float64Array(n),im=new Float64Array(n);
@@ -73,6 +73,7 @@
    return this.vibes;
   }
   charts(data){return Charts.build(this.tracks,this.stats,data.range||'all');}
+  moods(data){return {items:Moods.build(this.tracks,{genres:data.genres,profiles:this.profiles,excluded:data.excluded??this.excluded,lang:data.lang})};}
   insights(){const d=Insights.build(this.tracks,this.stats);return {...d,plays:undefined,days:Object.fromEntries(d.days)};}
   equalize(track,profile){
    if(!this.eqReference){

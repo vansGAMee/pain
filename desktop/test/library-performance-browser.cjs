@@ -72,11 +72,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
     const status=await page.evaluate(selector=>{
      const v=document.querySelector('.views-viewport').getBoundingClientRect(),nodes=[...document.querySelectorAll(selector)];
      const shown=nodes.filter(n=>{const r=n.getBoundingClientRect();return r.bottom>v.top&&r.top<v.bottom;});
-     return {count:nodes.length,visible:shown.length,first:shown[0]?.dataset.trackId,last:shown.at(-1)?.dataset.trackId,
+     const gap=nodes.length ? parseFloat(getComputedStyle(nodes[0].parentElement).rowGap)||0 : 0;
+     return {count:nodes.length,visible:shown.length,first:shown[0]?.dataset.trackId,last:shown.at(-1)?.dataset.trackId,gap,
       top:shown[0]?.getBoundingClientRect().top-v.top,bottom:shown.at(-1)?.getBoundingClientRect().bottom-v.bottom};
     },selector);
     assert.ok(status.count<100&&status.visible>0,JSON.stringify(status));
-    if(fraction>0&&fraction<1)assert.ok(status.top<=1&&status.bottom>=-1,'the window covers the viewport');
+    // A viewport boundary can land inside a deliberate gap between grid rows.
+    if(fraction>0&&fraction<1)assert.ok(status.top<=status.gap+1&&status.bottom>=-status.gap-1,JSON.stringify(status));
     return status;
    }
    for(const fraction of[.1,.95,.4])await jump(fraction);

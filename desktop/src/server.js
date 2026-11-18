@@ -522,9 +522,9 @@ function getResolvedAudioFilePath(trackId, readOnly = false, allowAlias = true) 
   const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
 
   try {
-    if (fs.existsSync(cachedFile)) {
-      const sz = fs.statSync(cachedFile).size;
-      if (sz >= 4096) {
+    const cached = fs.statSync(cachedFile, {throwIfNoEntry:false});
+    if (cached) {
+      if (cached.size >= 4096) {
         return cachedFile;
       }
       if (!readOnly) { try { fs.unlinkSync(cachedFile); } catch (_) {} }
@@ -716,7 +716,13 @@ const server = http.createServer((req, res) => {
     const send=data=>{if(!res.destroyed){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}};
     (async()=>{
       await genres.ready;
-      if(pathname==='/api/genres/snapshot')return send({entries:Object.fromEntries(Object.entries(await genres.snapshot()).map(([id,row])=>[id,row.names||[]]))});
+      if(pathname==='/api/genres/snapshot'){
+        const withTags=url.searchParams.get('tags')==='1';
+        const entries=Object.fromEntries(Object.entries(await genres.snapshot()).map(([id,row])=>[
+          id,withTags?[...new Set([...(row.names||[]),...(row.tags||[])])]:row.names||[]
+        ]));
+        return send({entries});
+      }
       if(pathname==='/api/genres'){
         if(req.method==='POST')return send(await genres.setEnabled(url.searchParams.get('enabled')==='1'));
         return send(genres.status());

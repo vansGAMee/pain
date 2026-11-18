@@ -31,8 +31,10 @@ public class CompanionStoreTest {
   JSONObject first=store.snapshot(),song=CompanionStore.pack(a),missing=CompanionStore.pack(b).put("title","Absent recording").put("id","absent");
   JSONObject entities=new JSONObject().put("playlist:pc",new JSONObject().put("kind","playlist").put("name","Portable").put("tracks",new JSONArray().put(missing).put(song)));
   String missingKey="lyrics:"+CompanionStore.trackKey(missing);entities.put(missingKey,new JSONObject().put("kind","lyrics").put("track",missing).put("body","Keep unavailable words").put("offset",0));
-  entities.put("genres:"+CompanionStore.trackKey(song),new JSONObject().put("kind","genres").put("track",song).put("data",new JSONObject().put("names",new JSONArray().put("rock"))));
+  JSONObject genreSong=new JSONObject(song.toString()).put("id","desktop-track-id");
+  entities.put("genres:"+CompanionStore.trackKey(song),new JSONObject().put("kind","genres").put("track",genreSong).put("data",new JSONObject().put("names",new JSONArray().put("rock")).put("tags",new JSONArray().put("darkwave"))));
   JSONObject result=store.apply(first.getString("revision"),entities);assertNotNull(result);JSONArray portable=result.getJSONObject("entities").getJSONObject("playlist:pc").getJSONArray("tracks");assertEquals(2,portable.length());assertEquals("absent",portable.getJSONObject(0).getString("id"));assertEquals("Keep unavailable words",result.getJSONObject("entities").getJSONObject(missingKey).getString("body"));assertEquals("rock",store.info(a).getJSONObject("data").getJSONArray("names").getString(0));
+  assertEquals(new JSONArray(List.of("rock","darkwave")).toString(),store.moodGenres().getJSONArray(a.id).toString());
   store.saveMoment(a,24.5);assertEquals(24.5,store.moment(a),0);store.removeMoment(a);assertNull(store.moment(a));
   repo.importJson(new JSONObject().put("tracks",new JSONArray().put(new JSONObject(missing.toString()).put("id","now-present").put("uri","file:///fixture/arrived"))).toString());app.tracks=repo.tracks();
   store.snapshot();long list=repo.playlists().keySet().iterator().next();assertEquals(List.of("now-present",a.id),repo.playlist(list));assertEquals("Keep unavailable words",repo.lyrics("now-present"));

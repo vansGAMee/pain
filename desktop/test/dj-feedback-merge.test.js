@@ -114,10 +114,12 @@ test('short-skip recording preserves unique coverage in the immediate queue, sto
   };
   // Exercise the actual recorder while keeping browser/server side effects in memory.
   const source = fs.readFileSync(require.resolve('../src/app'), 'utf8');
+  const cacheStart = source.indexOf('  let playCountsCache = null;');
+  const cacheEnd = source.indexOf('  function renderLibrary(', cacheStart);
   const start = source.indexOf('  function readTasteSkips(');
   const end = source.indexOf('  // --- SLEEP-RESISTANT PREFETCHING ---', start);
-  assert.ok(start >= 0 && end > start);
-  vm.runInNewContext(source.slice(start, end), context);
+  assert.ok(cacheStart >= 0 && cacheEnd > cacheStart && start >= 0 && end > start);
+  vm.runInNewContext(source.slice(cacheStart, cacheEnd) + source.slice(start, end), context);
   await context.recordTrackFinished('skipped', true);
   assert.equal(queued.length, 1);
   const persisted = JSON.parse(storage.get('pain_taste_skips'));
@@ -134,4 +136,23 @@ test('short-skip recording preserves unique coverage in the immediate queue, sto
   await context.recordTrackFinished('skipped', true);
   assert.equal(requests.length, 1, 'a second finish must not send another play');
   assert.equal(context.state.stats.plays.length, 1);
+});
+
+test('a play update recomputes only its own track count and still merges playback aliases', () => {
+  const records = require('../src/listening-records');
+  const lengths = [];
+  const row = (id, track, heard = 30000) => ({id, track, started: NOW-120000, heard, duration: 60000});
+  const context = {
+    state: {stats: {plays: [row('phone', 'a'), row('relay', 'a', 29000), row('another', 'b')]}},
+    Date, ListeningRecords: {canonical(rows) { lengths.push(rows?.length ?? 0); return records.canonical(rows); }}
+  };
+  const source = fs.readFileSync(require.resolve('../src/app'), 'utf8');
+  const start = source.indexOf('  let playCountsCache = null;');
+  vm.runInNewContext(source.slice(start, source.indexOf('  function renderLibrary(', start)), context);
+  assert.equal(context.getTrackPlayCount('a'), 1);
+  assert.equal(context.getTrackPlayCount('b'), 1);
+  context.storePlayRecord({...row('relay', 'a'), started: NOW-60000, syncAliases: {starts: [NOW-120000]}});
+  assert.equal(context.getTrackPlayCount('a'), 1);
+  assert.equal(context.getTrackPlayCount('b'), 1);
+  assert.deepEqual(lengths, [2, 1, 2]);
 });

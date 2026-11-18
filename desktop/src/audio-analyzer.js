@@ -200,6 +200,23 @@
     return hasTexture && hasDetail;
   }
 
+  function analyzeMoodBuffer(buffer, track) {
+    const plan = planWindows(buffer.length, buffer.sampleRate);
+    if (!plan) return null;
+    const count = plan.windows.reduce((total, window) => total + window.sampleCount, 0);
+    const channels = Array.from({length: Math.min(buffer.numberOfChannels, 2)}, () => new Float32Array(count));
+    const inputs = channels.map((_, i) => buffer.getChannelData(i));
+    let packedStart = 0;
+    for (const window of plan.windows) {
+      const {sourceStart, sampleCount} = window;
+      window.packedStart = packedStart;
+      channels.forEach((channel, i) => channel.set(inputs[i].subarray(sourceStart, sourceStart + sampleCount), packedStart));
+      packedStart += sampleCount;
+    }
+    return globalThis.DJWorker.request({action: 'mood-audio', channels, sampleRate: buffer.sampleRate, track, plan},
+      channels.map(channel => channel.buffer));
+  }
+
   class BatchAnalyzer {
     constructor(options = {}) {
       this.phoneUrl = options.phoneUrl || "";
@@ -275,7 +292,7 @@
       this.currentTrack = track;
       this._notifyProgress();
       const active = () => this._generation === run.generation && this._inFlight === run;
-      let result = null, failure = null;
+      let result = null, failure = null, decoderMissing = false;
       try {
         const force = callbacks.overwriteExisting ? "?force=1" : "";
 
@@ -295,6 +312,7 @@
           } else {
             let errJson;
             try { errJson = await response.json(); } catch (_) {}
+            decoderMissing = callbacks.browserFallback && response.status === 500 && /spawn ff(?:probe|mpeg) ENOENT/.test(errJson?.error || '');
             if (errJson?.code || (response.status !== 404 && response.status !== 502)) {
               failure = new Error(errJson?.error || "Audio analysis failed (HTTP " + response.status + ")");
               failure.code = errJson?.code;
@@ -309,12 +327,12 @@
 
         // 2. If the track was not yet cached on the server disk (404), fetch it so the server
         // writes it into cache, then re-try server analysis.
-        if (!result && (!failure || failure.message?.includes("404"))) {
+        if (!result && (!failure || decoderMissing || failure.message?.includes("404"))) {
           try {
             const cacheResponse = await fetch("/api/cached-track/" + encodeURIComponent(track.id) + "?phoneUrl=" + encodeURIComponent(this.phoneUrl), { signal: run.controller.signal });
             if (cacheResponse.ok && active()) {
               // Now that the file is written to server cache, re-attempt server analysis
-              try {
+              if (!decoderMissing) try {
                 const srvRetry = await fetch("/api/analyze-track/" + encodeURIComponent(track.id) + force, {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ track }), signal: run.controller.signal
@@ -338,11 +356,14 @@
                     const context = new OfflineCtx(2, 1, 44100);
                     const buffer = await context.decodeAudioData(bytes);
                     if (active()) {
-                      result = analyzePcm(buffer.getChannelData(0), buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null, buffer.sampleRate, track);
+                      result = callbacks.browserFallback && globalThis.DJWorker
+                        ? await analyzeMoodBuffer(buffer, track)
+                        : analyzePcm(buffer.getChannelData(0), buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null, buffer.sampleRate, track);
                     }
                   }
                 }
               }
+              if (!cacheResponse.bodyUsed) cacheResponse.body?.cancel().catch(() => {});
             }
           } catch (error) {
             if (error.name === "AbortError") throw error;

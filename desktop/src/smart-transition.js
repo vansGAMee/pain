@@ -1,7 +1,8 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.SmartTransition=factory();})(globalThis,()=>{
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+ const MAX_SILENCE=8,MAX_FADE=4;
  function valid(p){return p?.version===1&&Number.isFinite(p.duration)&&p.duration>0&&
-  [p.leading,p.trailing].every(n=>Number.isFinite(n)&&n>=0&&n<=8)&&['intro','outro'].every(k=>{
+  [p.leading,p.trailing].every(n=>Number.isFinite(n)&&n>=0&&n<=MAX_SILENCE)&&['intro','outro'].every(k=>{
    const e=p[k];return e&&Number.isFinite(e.start)&&e.start>=0&&e.step===.02&&Array.isArray(e.rms)&&e.rms.length>0&&e.rms.length<=401&&Array.isArray(e.peak)&&e.peak.length===e.rms.length&&e.rms.every(n=>Number.isFinite(n)&&n>=0&&n<=64)&&e.peak.every(n=>Number.isFinite(n)&&n>=0&&n<=64);
   });}
  function albumSequence(a,b){
@@ -9,7 +10,7 @@
   return !!album&&!['download','downloads','unknown','неизвестный альбом'].includes(album)&&album===norm(b?.album)&&norm(a?.artist)===norm(b?.artist)&&n>0&&m===n+1;
  }
  function plan(a,b,outgoing,incoming,limit,{automatic=true,position=0,rate=1,duration}={}){
-  limit=clamp(Number(limit)||0,0,4);rate=Number.isFinite(rate)&&rate>0?rate:1;
+  limit=clamp(Number(limit)||0,0,MAX_FADE);rate=Number.isFinite(rate)&&rate>0?rate:1;
   const out=valid(outgoing)?outgoing:null,into=valid(incoming)?incoming:null;
   const length=Number(duration)||out?.duration||Number(a?.duration)/1000||0;
   const continuous=automatic&&albumSequence(a,b);
@@ -17,6 +18,10 @@
   const start=automatic&&!continuous?into?.leading||0:0;
   const available=Math.max(0,(end-position)/rate),incomingLength=Math.max(0,(into?.duration||Number(b?.duration)/1000||Infinity)-start)/rate;
   return {duration:continuous?0:Math.min(limit,available,incomingLength),end,start,rate,continuous,measured:!!(out&&into)};
+ }
+ function canFadeSoon(duration,position,rate,limit){
+  const speed=Number.isFinite(rate)&&rate>0?rate:1;
+  return duration-position<=MAX_SILENCE+clamp(Number(limit)||0,0,MAX_FADE)*speed;
  }
  function power(profile,which,position){
   if(!profile)return null;const e=profile[which],at=Math.floor((position-e.start)/e.step);
@@ -43,5 +48,5 @@
   fadeOut[0]=outGain;fadeIn[0]=inGain;fadeOut[points-1]=0;fadeIn[points-1]=1;
   return {fadeOut,fadeIn};
  }
- return {valid,plan,curves,albumSequence};
+ return {valid,plan,canFadeSoon,curves,albumSequence};
 });

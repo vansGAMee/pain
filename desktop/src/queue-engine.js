@@ -198,7 +198,7 @@
       };
       this.tracks = [];
       this.currentIndex = -1;
-      this.shuffleMode = options.shuffleMode || 'off'; // 'off' | 'random' | 'smart'
+      this.preferredShuffleMode = options.shuffleMode || 'off'; // 'off' | 'random' | 'smart'
       this.loopMode = options.loopMode || 'all'; // 'off' | 'all' | 'one'
       this.playedHistory = [];
       this.forwardHistory = [];
@@ -481,7 +481,8 @@
         type: contextType,
         allowNew: contextType === 'library' && allowNew,
         id: contextType === 'playlist' ? title : null,
-        title: title || (contextType === 'favorites' ? 'Избранное' : 'Фонотека')
+        title: title || (contextType === 'favorites' ? 'Избранное' : 'Фонотека'),
+        ...(contextType === 'mood' ? {shuffleMode: 'off'} : {})
       };
 
       const rows=Array.isArray(trackList)?trackList:[],seen=new Set();
@@ -577,6 +578,15 @@
 
     getContext() {
       return this.context;
+    }
+
+    get shuffleMode() {
+      return this.context.shuffleMode ?? this.preferredShuffleMode;
+    }
+
+    set shuffleMode(mode) {
+      if (this.context.type === 'mood') this.context.shuffleMode = mode;
+      else this.preferredShuffleMode = mode;
     }
 
     getShuffleMode() {
@@ -846,8 +856,9 @@
       }
 
       if (this.shuffleMode === 'smart') {
-        if (this._selectionJob?.key === this.selectionKey() && this._selectionJob?.result) {
-          const res = this._selectionJob.result;
+        const job = this._selectionJob;
+        if (job?.result && job.key === this.selectionKey()) {
+          const res = job.result;
           return res.trackId == null ? null : this.tracks.find(t => String(t.id) === String(res.trackId));
         }
         // Synchronous media callbacks can use only a current worker answer.

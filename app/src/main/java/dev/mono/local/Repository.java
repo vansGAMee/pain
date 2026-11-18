@@ -21,7 +21,7 @@ public final class Repository extends SQLiteOpenHelper {
   }
 
   Repository(Context c, String file) {
-    super(c, file, null, 1);
+    super(c, file, null, 2);
     context = c;
     setWriteAheadLoggingEnabled(true);
   }
@@ -31,7 +31,7 @@ public final class Repository extends SQLiteOpenHelper {
     d.execSQL(
         "CREATE TABLE tracks(id TEXT PRIMARY KEY,uri TEXT NOT NULL,title TEXT,artist TEXT,album"
             + " TEXT,folder TEXT,mime TEXT,duration INTEGER,bytes INTEGER,added INTEGER,album_id"
-            + " INTEGER,number INTEGER,favorite INTEGER DEFAULT 0,available INTEGER DEFAULT 1)");
+            + " INTEGER,number INTEGER,favorite INTEGER DEFAULT 0,available INTEGER DEFAULT 1,genre TEXT)");
     d.execSQL(
         "CREATE TABLE plays(id TEXT PRIMARY KEY,track TEXT,session TEXT,started INTEGER,heard"
             + " INTEGER DEFAULT 0,media_heard INTEGER DEFAULT 0,duration INTEGER,finished INTEGER"
@@ -57,7 +57,8 @@ public final class Repository extends SQLiteOpenHelper {
 
   @Override
   public void onUpgrade(SQLiteDatabase d, int old, int next) {
-    throw new IllegalStateException("Unsupported database version");
+    if (old == 1 && next == 2) d.execSQL("ALTER TABLE tracks ADD COLUMN genre TEXT");
+    else throw new IllegalStateException("Unsupported database version");
   }
 
   public List<Track> tracks() {
@@ -106,6 +107,10 @@ public final class Repository extends SQLiteOpenHelper {
   }
 
   private void upsert(SQLiteDatabase d, Track t) {
+    upsert(d, t, null);
+  }
+
+  private void upsert(SQLiteDatabase d, Track t, String genre) {
     if(removals.blocked(t)){removals.rememberId(t.id);return;}
     ContentValues v = new ContentValues();
     v.put("id", t.id);
@@ -121,6 +126,7 @@ public final class Repository extends SQLiteOpenHelper {
     v.put("album_id", t.albumId);
     v.put("number", t.number);
     v.put("available", 1);
+    if (genre != null) v.put("genre", genre);
     if (d.update("tracks", v, "id=?", new String[] {t.id}) == 0) d.insertOrThrow("tracks", null, v);
   }
 
@@ -246,10 +252,46 @@ public final class Repository extends SQLiteOpenHelper {
               0,
               0,
               false);
-      upsert(getWritableDatabase(), t);
+      upsert(getWritableDatabase(), t, m.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE));
     } finally {
       m.release();
     }
+  }
+
+  void addIndexedGenres(org.json.JSONObject genres) throws org.json.JSONException {
+    ContentResolver resolver = context.getContentResolver();
+    try {
+      if (Build.VERSION.SDK_INT >= 30) {
+        try (Cursor c = resolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            new String[] {"_id", MediaStore.Audio.Media.GENRE}, null, null, null)) {
+          if (c != null) while (c.moveToNext()) addIndexedGenre(genres, c.getLong(0), c.getString(1));
+        }
+        return;
+      }
+      try (Cursor c = resolver.query(MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI,
+          new String[] {"_id", MediaStore.Audio.Genres.NAME}, null, null, null)) {
+        if (c == null) return;
+        while (c.moveToNext()) {
+          Uri members = MediaStore.Audio.Genres.Members.getContentUri("external", c.getLong(0));
+          String genre = c.getString(1);
+          if (genre == null || genre.isBlank()) continue;
+          try (Cursor songs = resolver.query(members,
+              new String[] {MediaStore.Audio.Genres.Members.AUDIO_ID}, null, null, null)) {
+            if (songs != null) while (songs.moveToNext()) addIndexedGenre(genres, songs.getLong(0), genre);
+          }
+        }
+      }
+    } catch (SecurityException | IllegalArgumentException ignored) {
+      // MediaStore genre access varies by device and permission.
+    }
+  }
+
+  private static void addIndexedGenre(org.json.JSONObject genres, long mediaId, String genre) throws org.json.JSONException {
+    if (genre == null || genre.isBlank()) return;
+    String id = "media:" + mediaId;
+    org.json.JSONArray tags = genres.optJSONArray(id);
+    if (tags == null) genres.put(id, new org.json.JSONArray().put(genre));
+    else tags.put(genre);
   }
 
   public void favorite(String id, boolean favorite) {
@@ -602,6 +644,7 @@ public final class Repository extends SQLiteOpenHelper {
           if (tr.has("title")) v.put("title", tr.optString("title"));
           if (tr.has("artist")) v.put("artist", tr.optString("artist"));
           if (tr.has("album")) v.put("album", tr.optString("album"));
+          if (tr.has("genre")) v.put("genre", tr.optString("genre"));
           if (tr.has("folder")) v.put("folder", tr.optString("folder"));
           if (tr.has("mime")) v.put("mime", tr.optString("mime", "audio/*"));
           if (tr.has("duration")) v.put("duration", tr.optLong("duration", 0));

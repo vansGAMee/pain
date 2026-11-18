@@ -32,13 +32,17 @@
       return null;
     }
 
-    function rebuild() {
-      rowKeys = [];offsets = [0];
-      for (let i = 0; i < items.length; i += columns) {
-        const key = JSON.stringify(keys.slice(i, i + columns));
-        rowKeys.push(key);
-        offsets.push(offsets.at(-1) + (sizes.get(key) ?? estimate) + gap);
+    function rebuildOffsets() {
+      offsets = [0];
+      for (const key of rowKeys) offsets.push(offsets.at(-1) + (sizes.get(key) ?? estimate) + gap);
+    }
+
+    function rebuildRows() {
+      rowKeys = columns === 1 ? keys : [];
+      if (columns > 1) for (let i = 0; i < keys.length; i += columns) {
+        rowKeys.push(JSON.stringify(keys.slice(i, i + columns)));
       }
+      rebuildOffsets();
     }
 
     function rowAt(y) {
@@ -57,11 +61,17 @@
         node.className = 'list-window-spacer';node.setAttribute('aria-hidden', 'true');
         if (table) node.appendChild(document.createElement('td'));
       }
-      if (table) node.firstElementChild.colSpan = tableColumns;
+      if (table && node.firstElementChild.colSpan !== tableColumns) node.firstElementChild.colSpan = tableColumns;
+      node._spacerRange = [from, to];
+      sizeSpacer(node);
+      return node;
+    }
+
+    function sizeSpacer(node) {
+      const [from, to] = node._spacerRange;
       const target = table ? node.firstElementChild : node;
       const height = Math.max(0, offsets[to] - offsets[from] - gap) + 'px';
       if (target.style.height !== height) target.style.height = height;
-      return node;
     }
 
     function writeWindow(from, to) {
@@ -91,9 +101,15 @@
           const key = keys[i], signature = options.signature(items[i], i);
           let node = previous.get(key);
           if (!node || node._listSignature !== signature) node = options.create(items[i], i);
+          if (table) {
+            if (node._windowIndex !== i) node.setAttribute('aria-rowindex', i + 2);
+          } else {
+            if (node._windowIndex === undefined) node.setAttribute('role', 'listitem');
+            if (node._windowIndex !== i) node.setAttribute('aria-posinset', i + 1);
+            if (node._windowSize !== items.length) node.setAttribute('aria-setsize', items.length);
+            node._windowSize = items.length;
+          }
           node._listKey = key;node._listSignature = signature;node._windowIndex = i;
-          if (table) node.setAttribute('aria-rowindex', i + 2);
-          else {node.setAttribute('role', 'listitem');node.setAttribute('aria-posinset', i + 1);node.setAttribute('aria-setsize', items.length);}
           options.update?.(node, i);nodes.push(node);
         }
         cursorRow = b;
@@ -127,7 +143,7 @@
         if (force || !painted) container.replaceChildren(...(options.empty ? [options.empty()] : []));
         painted = true;stableAnchor = null;start = end = 0;options.complete?.();return;
       }
-      const style = getComputedStyle(container), nextWidth = container.getBoundingClientRect().width;
+      const style = table ? null : getComputedStyle(container), nextWidth = container.getBoundingClientRect().width;
       const nextColumns = table ? 1 : Math.max(1, style.gridTemplateColumns.split(/\s+/).length);
       const nextGap = table ? 0 : parseFloat(style.rowGap) || 0;
       if (invalidated || Math.abs(nextWidth - width) > .5 || columns !== nextColumns || gap !== nextGap) {
@@ -136,7 +152,7 @@
         saved ||= stableAnchor && indexByKey.has(stableAnchor.key) ? stableAnchor : anchor();
         columns = nextColumns;gap = nextGap;width = nextWidth;
         if (table) tableColumns = [...container.closest('table').tHead.rows[0].cells].filter(cell => getComputedStyle(cell).display !== 'none').length;
-        sizes.clear();bootstrap = true;invalidated = false;rebuild();force = true;
+        sizes.clear();bootstrap = true;invalidated = false;rebuildRows();force = true;
       }
       let top = viewport.scrollTop - listTop();
       if (saved && indexByKey.has(saved.key)) top = offsets[Math.floor(indexByKey.get(saved.key) / columns)] - saved.offset;
@@ -158,7 +174,11 @@
         if (h > 0 && Math.abs((sizes.get(rowKeys[row]) ?? estimate) - h) > .1) changed = true;
         sizes.set(rowKeys[row], h);
       }
-      if (changed) {rebuild();writeWindow(from, to);}
+      if (changed) {
+        rebuildOffsets();
+        // The measured rows are already mounted. Only the gaps around them changed.
+        for (const node of container.children) if (node._spacerRange) sizeSpacer(node);
+      }
       restore(saved);
       stableAnchor = anchor();
       options.complete?.();
@@ -214,7 +234,7 @@
         items = nextItems;options = nextOptions;keys = nextKeys;indexByKey = nextIndex;
         if (layoutKey !== options.layoutKey) {layoutKey = options.layoutKey;invalidated = true;}
         if (table) container.closest('table').setAttribute('aria-rowcount', items.length + 1);
-        rebuild();const retained = new Set(rowKeys);for (const key of sizes.keys()) if (!retained.has(key)) sizes.delete(key);
+        rebuildRows();const retained = new Set(rowKeys);for (const key of sizes.keys()) if (!retained.has(key)) sizes.delete(key);
         draw(true, saved);
       },
       reveal
