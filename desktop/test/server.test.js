@@ -4,12 +4,13 @@ const parseRange=require('../src/range');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots retain PC history',async t=>{
  const data=fs.mkdtempSync(path.join(os.tmpdir(),'pain-test-'));const bytes=Buffer.alloc(4096);for(let i=0;i<bytes.length;i++)bytes[i]=i%251;
- let phoneLibrary={tracks:[{id:'трек 🎵',title:'Ночная волна',favorite:0}]},phoneStats={plays:[],slices:[]},unsupported=false;
+ let phoneLibrary={tracks:[{id:'трек 🎵',title:'Ночная волна',favorite:0}]},phoneStats={plays:[],slices:[]},unsupported=false,appName='Pain',libraryReads=0;
  const phone=http.createServer((req,res)=>{
   if(unsupported){res.writeHead(404,{'Content-Type':'application/json'});res.end('{}');return;}
+  if(req.url==='/api/status'){res.end(JSON.stringify({appName,status:'ok',device:'Android',tracks:1}));return;}
   if(req.url==='/api/library'||req.url==='/api/stats'){
    const send=value=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
-   if(req.method==='GET'){send(req.url==='/api/library'?phoneLibrary:phoneStats);return;}
+   if(req.method==='GET'){if(req.url==='/api/library')libraryReads++;send(req.url==='/api/library'?phoneLibrary:phoneStats);return;}
    let body='';req.setEncoding('utf8');req.on('data',c=>body+=c);req.on('end',()=>{
     const value=JSON.parse(body);
     if(req.url==='/api/library')phoneLibrary.tracks[0].favorite=value.tracks[0].favorite;
@@ -37,6 +38,12 @@ test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots
  assert.equal((await (await fetch(root+'/api/saved-stats')).json()).plays.length,2);
  const post=(route,body)=>fetch(root+route,{method:'POST',body:JSON.stringify(body)});
  const phoneUrl='http://127.0.0.1:'+phone.address().port;
+ r=await post('/api/phone-status',{phoneUrl:phoneUrl.slice(7)});assert.equal(r.status,200);assert.equal((await r.json()).url,phoneUrl);
+ appName='Other app';r=await post('/api/phone-status',{phoneUrl});assert.equal(r.status,502);assert.equal((await r.json()).code,'device');appName='Pain';
+ r=await post('/api/phone-status',{phoneUrl:'wrong address'});assert.equal(r.status,400);
+ assert.equal(fs.readFileSync(path.join(data,'data/last_phone_ip.txt'),'utf8'),phoneUrl.slice(7));
+ r=await post('/api/preload-track/cache-check?phoneUrl='+encodeURIComponent(phoneUrl),{});assert.equal(r.status,200);
+ assert.deepEqual(fs.readFileSync(path.join(data,'cache/cache-check.mp3')),bytes);
  await post('/api/save-library',phoneLibrary);
  r=await post('/api/sync-like',{phoneUrl:'invalid address',trackId:'трек 🎵',favorite:1});
  assert.equal((await r.json()).syncedToPhone,false);
@@ -54,7 +61,14 @@ test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots
  r=await post('/api/sync-phone',{phoneUrl});assert.equal(r.status,500);assert.equal((await r.json()).code,'update');
  assert.equal((await(await fetch(root+'/api/sync-status')).json()).state,'error');
  assert.equal((await(await fetch(root+'/api/saved-library')).json()).tracks[0].title,'Ночная волна');
- unsupported=false;await post('/api/sync-phone',{phoneUrl});
+ unsupported=false;libraryReads=0;await post('/api/sync-phone',{phoneUrl});
+ assert.equal(libraryReads,1,'unchanged likes do not require a second library snapshot');
  assert.equal((await(await fetch(root+'/api/sync-status')).json()).state,'ok');
+ r=await post('/api/network-preferences',{sync:'manual',autoUpdateDownloads:false});assert.equal((await r.json()).sync,'manual');
+ r=await post('/api/sync-like',{phoneUrl,trackId:'трек 🎵',favorite:0});assert.equal((await r.json()).syncedToPhone,false);
+ assert.equal(phoneLibrary.tracks[0].favorite,1,'manual mode leaves local changes in the outbox');
+ assert.equal((await(await fetch(root+'/api/saved-library')).json()).tracks[0].favorite,0);
+ await post('/api/sync-phone',{phoneUrl});assert.equal(phoneLibrary.tracks[0].favorite,0,'a manual exchange flushes saved local changes');
+ assert.equal(JSON.parse(fs.readFileSync(path.join(data,'data/network-preferences.json'),'utf8')).sync,'manual');
 
 });

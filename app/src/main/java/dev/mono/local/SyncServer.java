@@ -31,6 +31,7 @@ public final class SyncServer {
   private ServerSocket serverSocket;
   private DatagramSocket udpSocket;
   private volatile boolean running = false;
+  private volatile long generation;
   private SyncListener listener;
 
   public interface SyncListener {
@@ -48,78 +49,110 @@ public final class SyncServer {
   public synchronized void start() {
     if (running) return;
     running = true;
+    long session = ++generation;
+    threadPool.execute(() -> runHttp(session));
+    threadPool.execute(() -> runDiscovery(session));
+    threadPool.execute(() -> announcePeriodically(session));
+  }
 
-    // Start HTTP Server
-    threadPool.execute(() -> {
-      try {
-        serverSocket = new ServerSocket(HTTP_PORT);
-        notifyListener("server_started", getLocalIp() + ":" + HTTP_PORT);
-        while (running && !serverSocket.isClosed()) {
-          try {
-            Socket client = serverSocket.accept();
-            activeClients.add(client);
-            try{clients.execute(() -> handleClient(client));}catch(RejectedExecutionException busy){activeClients.remove(client);client.close();}
-          } catch (IOException e) {
-            if (!running) break;
+  private boolean active(long session) {
+    return running && generation == session;
+  }
+
+  private void runHttp(long session) {
+    try (ServerSocket socket = new ServerSocket()) {
+      synchronized (this) {
+        if (!active(session)) return;
+        socket.setReuseAddress(true);
+        socket.bind(new InetSocketAddress(HTTP_PORT));
+        serverSocket = socket;
+        notifyAll();
+      }
+      notifyListener("server_started", getLocalIp() + ":" + HTTP_PORT);
+      while (active(session)) {
+        Socket client = socket.accept();
+        synchronized (this) {
+          if (!active(session)) {
+            client.close();
+            break;
+          }
+          activeClients.add(client);
+          try { clients.execute(() -> handleClient(client)); }
+          catch (RejectedExecutionException busy) {
+            activeClients.remove(client);
+            client.close();
           }
         }
-      } catch (Exception e) {
-        notifyListener("server_error", e.getMessage());
       }
-    });
+    } catch (IOException error) {
+      synchronized (this) {
+        if (!active(session)) return;
+        stop();
+        notifyListener("server_error", error.getMessage());
+      }
+    }
+  }
 
-    // Start UDP Discovery Listener
-    threadPool.execute(() -> {
-      byte[] buf = new byte[1024];
-      try {
-        udpSocket = new DatagramSocket(UDP_PORT);
-        udpSocket.setBroadcast(true);
-        while (running && !udpSocket.isClosed()) {
-          DatagramPacket packet = new DatagramPacket(buf, buf.length);
-          udpSocket.receive(packet);
-          String message = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8).trim();
-          if (message.startsWith("PAIN_DISCOVERY")) {
-            String reply = "PAIN_DEVICE|Android|" + HTTP_PORT + "|" + app.tracks.size();
-            byte[] replyBytes = reply.getBytes(StandardCharsets.UTF_8);
-            DatagramPacket replyPacket = new DatagramPacket(replyBytes, replyBytes.length, packet.getAddress(), packet.getPort());
-            udpSocket.send(replyPacket);
-            notifyListener("peer_discovered", packet.getAddress().getHostAddress());
-          }
+  private void runDiscovery(long session) {
+    try (DatagramSocket socket = new DatagramSocket(null)) {
+      synchronized (this) {
+        if (!active(session)) return;
+        socket.setReuseAddress(true);
+        socket.bind(new InetSocketAddress(UDP_PORT));
+        socket.setBroadcast(true);
+        udpSocket = socket;
+        notifyAll();
+      }
+      byte[] buffer = new byte[1024];
+      while (active(session)) {
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+        socket.receive(packet);
+        String message = new String(buffer, 0, packet.getLength(), StandardCharsets.UTF_8).trim();
+        if (message.equals("PAIN_DISCOVERY") && httpReady(session)) {
+          byte[] reply = announcement();
+          socket.send(new DatagramPacket(reply, reply.length, packet.getAddress(), packet.getPort()));
+          notifyListener("peer_discovered", packet.getAddress().getHostAddress());
         }
-      } catch (Exception ignored) {
-        // UDP socket closed or network error
       }
-    });
+    } catch (IOException ignored) {
+      // Manual HTTP sync remains available if the discovery port is busy.
+    }
+  }
 
-    // Periodically broadcast presence to LAN every 3 seconds
-    threadPool.execute(() -> {
-      while (running) {
+  private synchronized boolean httpReady(long session) {
+    return active(session) && serverSocket != null && !serverSocket.isClosed();
+  }
+
+  private byte[] announcement() {
+    return ("PAIN_DEVICE|Android|" + HTTP_PORT + "|" + app.tracks.size()).getBytes(StandardCharsets.UTF_8);
+  }
+
+  private synchronized void announcePeriodically(long session) {
+    try {
+      while (active(session)) {
+        if (!httpReady(session) || udpSocket == null || udpSocket.isClosed()) {
+          wait();
+          continue;
+        }
         try {
-          if (udpSocket != null && !udpSocket.isClosed()) {
-            String announcement = "PAIN_DEVICE|Android|" + HTTP_PORT + "|" + app.tracks.size();
-            byte[] bytes = announcement.getBytes(StandardCharsets.UTF_8);
-            DatagramPacket packet = new DatagramPacket(bytes, bytes.length, InetAddress.getByName("255.255.255.255"), UDP_PORT);
-            udpSocket.send(packet);
-          }
-        } catch (Exception ignored) {}
-        try {
-          Thread.sleep(3000);
-        } catch (InterruptedException e) {
-          break;
-        }
+          byte[] bytes = announcement();
+          udpSocket.send(new DatagramPacket(bytes, bytes.length, InetAddress.getByName("255.255.255.255"), UDP_PORT));
+        } catch (IOException ignored) {}
+        wait(15000);
       }
-    });
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   public synchronized void stop() {
     running = false;
-    try {
-      if (serverSocket != null) serverSocket.close();
-    } catch (Exception ignored) {}
-    for(Socket socket:activeClients)try{socket.close();}catch(IOException ignored){}
-    try {
-      if (udpSocket != null) udpSocket.close();
-    } catch (Exception ignored) {}
+    try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
+    for (Socket socket : activeClients) try { socket.close(); } catch (IOException ignored) {}
+    if (udpSocket != null) udpSocket.close();
+    serverSocket = null;
+    udpSocket = null;
+    notifyAll();
     notifyListener("server_stopped", "");
   }
 
@@ -265,7 +298,7 @@ public final class SyncServer {
         notifyListener("play_recorded", trackId + " (" + (heard / 1000) + "s)");
       } else if (cleanPath.startsWith("/api/track/") && ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method))) {
         String trackId = URLDecoder.decode(cleanPath.substring("/api/track/".length()), StandardCharsets.UTF_8.name());
-        streamTrack(trackId, out);
+        streamTrack(trackId, request.getHeader("range"), "HEAD".equalsIgnoreCase(method), out);
       } else {
         sendResponse(out, 404, "Not Found", "text/plain", "Not Found");
       }
@@ -447,22 +480,19 @@ public final class SyncServer {
     }
   }
 
-  private void streamTrack(String trackId, OutputStream out) {
-    Track target = null;
-    for (Track t : app.tracks) {
-      if (t.id.equals(trackId)) {
-        target = t;
-        break;
-      }
-    }
+  private void streamTrack(String trackId, String rangeHeader, boolean head, OutputStream out) {
+    Track target = app.track(trackId);
+    // HTTP can be ready while the first library snapshot is still being loaded.
+    if (target == null) target = app.repo.track(trackId);
     if (target == null) {
       try {
-        sendResponse(out, 404, "Not Found", "text/plain", "Track not found: " + trackId);
+        sendResponse(out, 404, "Not Found", "text/plain", head ? "" : "Track not found: " + trackId);
       } catch (Exception ignored) {}
       return;
     }
 
     InputStream fileIn = null;
+    boolean headersSent = false;
     try {
       if (target.uri != null && !target.uri.isEmpty()) {
         try {
@@ -487,27 +517,50 @@ public final class SyncServer {
       }
 
       if (fileIn == null) {
-        sendResponse(out, 404, "Not Found", "text/plain", "File unreadable");
+        sendResponse(out, 404, "Not Found", "text/plain", head ? "" : "File unreadable");
         return;
       }
       String mime = target.mime != null && !target.mime.isEmpty() ? target.mime : "audio/mpeg";
-      String header = "HTTP/1.1 200 OK\r\n"
+      long size = target.bytes;
+      SyncHttp.ByteRange range = rangeHeader != null && size > 0 ? SyncHttp.range(rangeHeader, size) : null;
+      if (rangeHeader != null && size > 0 && range == null) {
+        out.write(("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */" + size
+          + "\r\nContent-Length: 0\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        return;
+      }
+      if (range != null && !head) {
+        long remaining = range.start;
+        while (remaining > 0) {
+          long skipped = fileIn.skip(remaining);
+          if (skipped == 0) {
+            if (fileIn.read() < 0) throw new EOFException("Audio ended before the requested range");
+            skipped = 1;
+          }
+          remaining -= skipped;
+        }
+      }
+      long length = range != null ? range.length() : size > 0 ? size : -1;
+      String header = (range == null ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 206 Partial Content\r\n")
           + "Content-Type: " + mime + "\r\n"
-          + "Content-Length: " + target.bytes + "\r\n"
-          + "Accept-Ranges: bytes\r\n"
+          + (length >= 0 ? "Content-Length: " + length + "\r\nAccept-Ranges: bytes\r\n" : "")
+          + (range != null ? "Content-Range: bytes " + range.start + "-" + range.end + "/" + size + "\r\n" : "")
           + "Access-Control-Allow-Origin: *\r\n"
           + "Connection: close\r\n\r\n";
       out.write(header.getBytes(StandardCharsets.UTF_8));
+      headersSent = true;
+      if (head) return;
 
       byte[] buffer = new byte[65536];
-      int n;
-      while ((n = fileIn.read(buffer)) != -1) {
+      for (long remaining = length; remaining != 0;) {
+        int n = fileIn.read(buffer, 0, remaining < 0 ? buffer.length : (int)Math.min(buffer.length, remaining));
+        if (n < 0) break;
         out.write(buffer, 0, n);
+        if (remaining > 0) remaining -= n;
       }
       out.flush();
     } catch (Exception e) {
       try {
-        sendResponse(out, 500, "Error", "text/plain", "Error: " + e.getMessage());
+        if (!headersSent) sendResponse(out, 500, "Error", "text/plain", head ? "" : "Error: " + e.getMessage());
       } catch (Exception ignored) {}
     } finally {
       if (fileIn != null) {

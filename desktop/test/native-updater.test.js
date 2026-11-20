@@ -100,6 +100,16 @@ test('concurrent checks share work, cache results, and expose readable native re
   assert.equal(api.publicState().canInstall, true);
 });
 
+test('checking with downloads disabled leaves the installer for an explicit update action',async()=>{
+  const {api,counts}=launch();
+  assert.equal((await api.check(true,{download:false})).status,'ready');
+  assert.equal((await api.check(false,{download:false})).available,true);
+  assert.equal(counts.checks,1);
+  assert.equal(counts.downloads,0);
+  assert.equal((await api.prepareInstall()).state.status,'downloaded');
+  assert.equal(counts.downloads,1);
+});
+
 test('concurrent downloads share preparation and checking cannot replace a pending install', async () => {
   const pending = deferred();
   const { api, counts, restarts } = launch({ download: () => pending.promise });

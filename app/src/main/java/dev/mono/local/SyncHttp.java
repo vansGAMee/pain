@@ -6,6 +6,29 @@ import java.util.Locale;
 
 /** HTTP framing is byte based, including when JSON contains Cyrillic or emoji. */
 final class SyncHttp {
+  static final class ByteRange {
+    final long start, end;
+    ByteRange(long start, long end) { this.start = start; this.end = end; }
+    long length() { return end - start + 1; }
+  }
+
+  private static final java.util.regex.Pattern RANGE = java.util.regex.Pattern.compile("bytes=(\\d*)-(\\d*)", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+  static ByteRange range(String header, long size) {
+    java.util.regex.Matcher match = RANGE.matcher(header.trim());
+    if (size <= 0 || !match.matches()) return null;
+    String first = match.group(1), last = match.group(2);
+    try {
+      if (first.isEmpty()) {
+        if (last.isEmpty()) return null;
+        long suffix = Long.parseLong(last);
+        return suffix > 0 ? new ByteRange(Math.max(0, size - suffix), size - 1) : null;
+      }
+      long start = Long.parseLong(first), end = last.isEmpty() ? size - 1 : Long.parseLong(last);
+      return start < size && end >= start ? new ByteRange(start, Math.min(end, size - 1)) : null;
+    } catch (NumberFormatException invalid) { return null; }
+  }
+
   static final class Request implements Closeable {
     final String method, path, body;
     final byte[] rawBody;

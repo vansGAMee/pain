@@ -3,8 +3,8 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const {normalize}=require('./genre-profile-model');
 module.exports=function createGenres(dir,{localMedia,catalog,store,wiki,deezer,getTracks,loadStats,interval=3000}={}){
  const file=path.join(dir,'genres.json'),prefs=path.join(dir,'genre-preferences.json');
- let entries={},enabled=true,mode='balanced',timer,active,revision=0,queue=new Map(),saveTail=Promise.resolve(),stopped=false,seeding,warming;
- const match=require('./cover-matching');let identities=new Map(),recordings=new Map(),albums=new Map(),indexedTracks;
+ let entries={},enabled=true,mode='balanced',timer,active,revision=0,queue=new Map(),saveTail=Promise.resolve(),stopped=false,seeding,warming,nextSeedAt=0;
+ const match=require('./cover-matching');let identities=new Map(),recordings=new Map(),albums=new Map(),indexedTracks,indexedRevision=-1;
  const signature=t=>JSON.stringify([2,t.title,t.artist,t.album,t.duration]);
  const ready=Promise.all([
   fs.readFile(file,'utf8').then(JSON.parse).then(data=>{entries=data.entries||{};}).catch(()=>{}),
@@ -29,7 +29,9 @@ module.exports=function createGenres(dir,{localMedia,catalog,store,wiki,deezer,g
   return {...rows[0],names:normalize(rows.flatMap(r=>r.names||[])),tags:[...new Set(rows.flatMap(r=>r.tags||[]))],tagSource:tagged?.tagSource||tagged?.source,genreSources:sources,metadataVersion:rows.some(r=>r.metadataVersion===2)?2:undefined};
  }
  function indexSources(){
-  const tracks=getTracks();recordings=new Map();albums=new Map();
+  const tracks=getTracks();
+  if(tracks===indexedTracks&&revision===indexedRevision)return;
+  indexedRevision=revision;recordings=new Map();albums=new Map();
   if(tracks!==indexedTracks){
    indexedTracks=tracks;const known=tracks.map(t=>t.artist);identities=new Map();
    for(const track of tracks){const recovered=match.fromFilename(track,known),meta=match.metadata(recovered);if(meta)identities.set(String(track.id),{meta:{...meta,rawTitle:recovered.title},signature:signature(track)});}
@@ -69,34 +71,45 @@ module.exports=function createGenres(dir,{localMedia,catalog,store,wiki,deezer,g
    if(!abort.signal.aborted){entries[String(job.track.id)]={...(entry(job.track)||{names:[]}),signature:signature(job.track),metadataVersion:2,at:Date.now(),failed:true};revision++;await persist();}
   }finally{active=null;schedule();}
  }
+ function fresh(track){const cached=exact(track);return cached?.metadataVersion===2&&Date.now()-cached.at<(cached.failed?10*60000:cached.names.length?30*86400000:86400000);}
  async function enqueue(track,priority=false){
-  await ready;if(!enabled||!track||stopped)return;
-  const cached=entry(track);if(cached?.metadataVersion===2&&Date.now()-cached.at<(cached.failed?10*60000:cached.names.length?30*86400000:86400000))return;
+  await ready;if(!enabled||!track||stopped||fresh(track))return;
   if(active?.track.id===track.id)return;
   const id=String(track.id);queue.set(id,{track,priority:priority||queue.get(id)?.priority||false});schedule();
  }
  async function seed(){
   if(seeding)return seeding;
-  seeding=(async()=>{await ready;if(!enabled||stopped)return;indexSources();
-  warming=new AbortController();const options={signal:warming.signal},metas=[...identities.values()].map(x=>x.meta);
-  const prepared=getTracks().map(t=>{const meta=identity(t);return meta?{...t,...meta,title:meta.rawTitle||meta.title}:t;});
-  const jobs=[];if(wiki)jobs.push(wiki.warm(metas,options));if(catalog?.prefetchGenres)jobs.push(catalog.prefetchGenres(metas,options));if(deezer)jobs.push(deezer.prefetch(prepared,options));
-  const results=await Promise.allSettled(jobs);for(const result of results)if(result.status==='fulfilled')revision++;
-  indexSources();
+  if(Date.now()<nextSeedAt||mode==='maximum'||queue.size)return;
+  seeding=(async()=>{await ready;if(!enabled||stopped||mode==='maximum')return;
+  warming=new AbortController();const options={signal:warming.signal};
+  nextSeedAt=Date.now()+10*60000;
   const stats=await loadStats().catch(()=>({})),heard=new Map();
   for(const p of stats.plays||[])heard.set(String(p.track),(heard.get(String(p.track))||0)+Math.max(0,Number(p.heard)||0));
-  for(const track of [...getTracks()].sort((a,b)=>(heard.get(String(b.id))||0)-(heard.get(String(a.id))||0)))await enqueue(track);
+  if(!enabled||stopped||mode==='maximum'||options.signal.aborted)return;
+  const tracks=getTracks().filter(t=>heard.get(String(t.id))>0&&!fresh(t))
+   .sort((a,b)=>heard.get(String(b.id))-heard.get(String(a.id))).slice(0,mode==='full'?24:12);
+  if(!tracks.length)return;
+  indexSources();
+  const metas=tracks.map(identity).filter(Boolean);
+  // Read the published sources for a small batch when listeners open their profile.
+  for(const load of [wiki?.warm,catalog?.prefetchGenres]){
+   if(!load||options.signal.aborted)continue;
+   try{await load(metas,options);revision++;}catch(_){}
+  }
+  if(!options.signal.aborted)for(const track of tracks)await enqueue(track);
   })().finally(()=>{seeding=null;warming=null;});return seeding;
  }
  async function setEnabled(value){
   await ready;enabled=!!value;
   if(!enabled){clearTimeout(timer);timer=null;active?.abort.abort();warming?.abort();queue.clear();}
   await fs.mkdir(dir,{recursive:true});await fs.writeFile(prefs,JSON.stringify({enabled}));
-  if(enabled)seed().catch(()=>{});return status();
+  if(enabled)nextSeedAt=0;
+  return status();
  }
- function setMode(value){mode=value;schedule();}
+ function cancelSeed(){warming?.abort();if(!active?.priority)active?.abort.abort();for(const [id,job] of queue)if(!job.priority)queue.delete(id);nextSeedAt=0;}
+ function setMode(value){mode=value;if(value==='maximum')cancelSeed();schedule();}
  function status(){return {enabled,revision:revision+(wiki?.revision?.()||0)+(catalog?.genreRevision?.()||0)+(deezer?.revision?.()||0)+(store?.genreRevision?.()||0),queued:queue.size,active:!!active,scanning:!!seeding,mode};}
  async function snapshot(){await ready;indexSources();return Object.fromEntries(getTracks().map(t=>[String(t.id),entry(t)||{names:normalize(t.genre),scope:'file'}]));}
  function close(){stopped=true;clearTimeout(timer);active?.abort.abort();warming?.abort();queue.clear();}
- return {ready,seed,enqueue,setEnabled,setMode,status,snapshot,entry,close};
+ return {ready,seed,cancelSeed,enqueue,setEnabled,setMode,status,snapshot,entry,close};
 };

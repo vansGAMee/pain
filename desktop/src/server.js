@@ -51,6 +51,7 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(COVERS_DIR)) fs.mkdirSync(COVERS_DIR, { recursive: true });
 
 const phoneSync = new PhoneSync(DATA_DIR);
+const network = require('./network-preferences')(DATA_DIR);
 const wallpaperRoute=require('./appearance-wallpaper')(DATA_DIR);
 const playlistArtworkRoute=require('./playlist-artwork-store')(DATA_DIR,()=>phoneSync.read('playlists.json',[]));
 const ensureAudio = require('./audio-download')({ cacheDir: CACHE_DIR,
@@ -98,10 +99,57 @@ const LAST_IP_FILE = path.join(DATA_DIR, 'last_phone_ip.txt');
 let discoveredDevices = [];
 let hasAutoSynced = false;
 let autoSyncBusy = false;
-let lastFullSync=0,lastLibraryPull=0,lastSyncDevice='';
+let lastFullSync=0,lastLibraryPull=0,lastSyncDevice='',nextAutoSyncAt=0,syncRevision=0;
 let syncStatus={state:'idle',at:0};
+const PHONE_FRESH_MS=90000;
+const lastProbe=new Map(),fullExchanges=new Map();
+const busyFlushes=new Set(),flushRetry=new Map();
+function phoneBase(input){
+  if(typeof input!=='string'||!input.trim()||input.length>500)throw Error('Invalid phone address');
+  const text=input.trim(),address=text.includes('://')?text:'http://'+text;
+  const url=new URL(address);
+  if(url.protocol!=='http:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Invalid phone address');
+  if(!url.port&&!/^http:\/\/[^/]+:80\/?$/i.test(address))url.port=String(MOBILE_HTTP_PORT);
+  return url.origin;
+}
+function savedPhone(){try{return phoneBase(fs.readFileSync(LAST_IP_FILE,'utf8'));}catch(_){return '';}}
+function rememberPhone(base){
+  if(savedPhone()===base)return;
+  const url=new URL(base);
+  try{dataGuard.safeWrite(LAST_IP_FILE,`${url.hostname}:${url.port||80}`);}catch(_){}
+}
+function currentDevices(){
+  const preferred=savedPhone(),now=Date.now();
+  discoveredDevices=discoveredDevices.filter(device=>now-device.lastSeen<PHONE_FRESH_MS);
+  return [...discoveredDevices].sort((a,b)=>Number(b.url===preferred)-Number(a.url===preferred)||b.lastSeen-a.lastSeen);
+}
+function syncPhone(base){
+  if(fullExchanges.has(base))return fullExchanges.get(base);
+  const preferred=savedPhone();
+  const job=phoneSync.synchronize(base).then(result=>{
+    hasAutoSynced=true;lastFullSync=lastLibraryPull=Date.now();lastSyncDevice=base;flushRetry.delete(base);
+    if(savedPhone()===preferred)rememberPhone(base);
+    return result;
+  }).finally(()=>fullExchanges.delete(base));
+  fullExchanges.set(base,job);return job;
+}
+async function flushPhone(base){
+  if(busyFlushes.has(base)||fullExchanges.has(base)||Date.now()<(flushRetry.get(base)||0))return false;
+  busyFlushes.add(base);
+  try{await phoneSync.flush(base);flushRetry.delete(base);return true;}
+  catch(error){
+    syncFailed(error);flushRetry.set(base,Date.now()+30000);
+    if(flushRetry.size>64)flushRetry.delete(flushRetry.keys().next().value);
+    return false;
+  }finally{busyFlushes.delete(base);}
+}
+async function verifyPhone(base, timeout){
+  const info=await PhoneSync.request(base,'/api/status',undefined,timeout,16384);
+  if(info?.status!=='ok'||typeof info.appName!=='string'||!/^pain$/i.test(info.appName))throw Error('Not a PAIN device');
+  return info;
+}
 function syncFailed(error){
-  const code=[404,405].includes(error.statusCode)?'update':error.statusCode===409?'conflict':/Invalid.*snapshot|Unexpected token|JSON/.test(error.message)?'format':'connection';
+  const code=/^Invalid (?:phone address|URL)$/.test(error.message)?'address':[404,405].includes(error.statusCode)?'update':error.statusCode===409?'conflict':/Invalid.*snapshot|Unexpected token|JSON/.test(error.message)?'format':'connection';
   syncStatus={state:'error',code,at:Date.now()};
   return code;
 }
@@ -113,64 +161,35 @@ resourceSaverActive = performanceMode !== 'full';
 findOnlineCover.setMode(performanceMode);
 pulseflow.setBackgroundAllowed(performanceMode !== 'maximum');
 genres.setMode(performanceMode);
-setTimeout(()=>genres.seed().catch(()=>{}),15000).unref();
 let lastDjStatePostHash = '', lastDjStateResponseJson = null;
 
 // ==========================================
 // 1. MEGA-SMART DISCOVERY & AUTO-SYNC ENGINE
 // ==========================================
 
-function registerDevice(device) {
-  if (!device || !device.ip) return;
-  const existing = discoveredDevices.find(d => d.ip === device.ip);
+function registerDevice(base,info,{automatic=true}={}) {
+  const address=new URL(base);
+  const device={url:base,ip:address.hostname,port:Number(address.port||80),name:`${info.appName} (${info.device||'Android'})`,tracks:Number(info.tracks)||0,lastSeen:Date.now()};
+  const existing = discoveredDevices.find(d => d.url === base);
   if (existing) {
     Object.assign(existing, device);
   } else {
     discoveredDevices.push(device);
     console.log(`[Discovery] Found Android device: ${device.name} at http://${device.ip}:${device.port} (${device.tracks} tracks)`);
   }
-  try {
-    fs.writeFileSync(LAST_IP_FILE, `${device.ip}:${device.port}`, 'utf8');
-  } catch (e) {}
-
-  // Auto-sync library immediately in background
-  triggerBackgroundAutoSync(device);
+  if(automatic)triggerBackgroundAutoSync();
+  return device;
 }
 
-function probeDevice(ip, port = MOBILE_HTTP_PORT, timeoutMs = 1200) {
-  return new Promise((resolve) => {
-    const req = http.get(`http://${ip}:${port}/api/status`, { timeout: timeoutMs }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.status === 'ok') {
-            const dev = {
-              name: json.appName ? `${json.appName} (${json.device || 'Android'})` : 'Android Device',
-              ip: ip,
-              port: port,
-              tracks: json.tracks || 0,
-              lastSeen: Date.now()
-            };
-            registerDevice(dev);
-            resolve(dev);
-            return;
-          }
-        } catch (e) {}
-        resolve(null);
-      });
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(null);
-    });
-
-    req.on('error', () => {
-      resolve(null);
-    });
-  });
+async function probeDevice(ip, port = MOBILE_HTTP_PORT, timeoutMs = 1500) {
+  try{
+    const base=phoneBase(`http://${ip}:${port}`),now=Date.now();
+    const known=discoveredDevices.some(device=>device.url===base&&now-device.lastSeen<PHONE_FRESH_MS);
+    if(now-(lastProbe.get(base)||0)<(known?30000:6000))return null;
+    lastProbe.delete(base);lastProbe.set(base,now);
+    if(lastProbe.size>512)lastProbe.delete(lastProbe.keys().next().value);
+    return registerDevice(base,await verifyPhone(base,timeoutMs));
+  }catch(_){return null;}
 }
 
 const PENDING_UPLOADS_FILE = path.join(DATA_DIR, 'pending-uploads.json');
@@ -276,28 +295,29 @@ async function processPendingTrackUploads(base) {
 
 // Background auto-sync function with debounce
 let autoSyncTimeout = null;
-function triggerBackgroundAutoSync(device) {
-  if (autoSyncBusy || autoSyncTimeout) return;
-  if (`http://${device.ip}:${device.port}`===lastSyncDevice && Date.now()-lastLibraryPull<15000) return;
+function triggerBackgroundAutoSync() {
+  if(process.env.PAIN_DISCOVERY==='false'||network.state().sync==='manual'||autoSyncBusy||autoSyncTimeout||Date.now()<nextAutoSyncAt)return;
   autoSyncTimeout = setTimeout(async () => {
     autoSyncTimeout = null;
-    if (autoSyncBusy) return;
+    const mode=network.state().sync,device=currentDevices()[0];
+    if(autoSyncBusy||mode==='manual'||!device)return;
+    const base=device.url,now=Date.now();
+    const full=!hasAutoSynced||base!==lastSyncDevice||now-lastFullSync>=(mode==='sparse'?15:5)*60000;
+    if(!full&&(mode==='sparse'||now-lastLibraryPull<60000))return;
     autoSyncBusy = true;
+    const snapshot=()=>['library.json','stats.json','dj-state.json','playlists.json','favorite-moments.json','excluded-tracks.json']
+      .map(name=>{try{const stat=fs.statSync(path.join(DATA_DIR,name));return `${stat.mtimeMs}:${stat.size}`;}catch(_){return '';}}).join('|');
+    const previous=snapshot();
     try {
-      const base = `http://${device.ip}:${device.port}`;
-      if (!hasAutoSynced || base !== lastSyncDevice || Date.now() - lastFullSync >= 300000) {
-        await phoneSync.synchronize(base);
-        hasAutoSynced = true;
-        lastFullSync = Date.now();
-        lastSyncDevice = base;
-      } else {
-        await phoneSync.refreshLibrary(base);
-      }
-      await processPendingTrackUploads(base);
+      if(full)await syncPhone(base);else await phoneSync.refreshLibrary(base);
       lastLibraryPull=Date.now();
       syncStatus={state:'ok',at:lastLibraryPull};
-    } catch (error) { syncFailed(error); /* Pending changes retry at the next discovery. */ }
-    finally { autoSyncBusy = false; }
+    } catch (error) {nextAutoSyncAt=Date.now()+60000;syncFailed(error);}
+    finally {
+      if(snapshot()!==previous)syncRevision=Math.max(Date.now(),syncRevision+1);
+      autoSyncBusy=false;
+    }
+    if(syncStatus.state==='ok'&&network.state().sync!=='manual')processPendingTrackUploads(base);
   }, 1000);
 }
 
@@ -312,7 +332,7 @@ function scanArpTable() {
       if (err || !stdout) return;
       const ipMatches = stdout.match(/\b(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b/g);
       if (ipMatches) {
-        const uniqueIps = Array.from(new Set(ipMatches));
+        const uniqueIps = Array.from(new Set(ipMatches)).slice(0,24);
         for (const ip of uniqueIps) {
           if (!ip.endsWith('.255') && !ip.endsWith('.1')) {
             probeDevice(ip, MOBILE_HTTP_PORT, 1200);
@@ -326,14 +346,8 @@ function scanArpTable() {
 // Check last known IP first
 function checkLastKnownIp() {
   try {
-    if (fs.existsSync(LAST_IP_FILE)) {
-      const content = fs.readFileSync(LAST_IP_FILE, 'utf8').trim();
-      if (content) {
-        const [ip, portStr] = content.split(':');
-        const port = parseInt(portStr, 10) || MOBILE_HTTP_PORT;
-        probeDevice(ip, port, 1000);
-      }
-    }
+    const base=savedPhone();if(!base)return;
+    const address=new URL(base);probeDevice(address.hostname,Number(address.port||80));
   } catch (e) {}
 }
 
@@ -403,10 +417,9 @@ function broadcastDiscovery() {
       if (/^(amn|tun|tap|wg|docker|veth|br-|virbr|dummy|lo)/i.test(name)) continue;
       for (const iface of interfaces[name]) {
         if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal && iface.address) {
-          const parts = iface.address.split('.');
-          if (parts.length === 4) {
-            parts[3] = '255';
-            const bcast = parts.join('.');
+          const parts=iface.address.split('.'),mask=String(iface.netmask||'255.255.255.0').split('.');
+          if (parts.length===4&&mask.length===4) {
+            const bcast=parts.map((byte,index)=>Number(byte)|(255^Number(mask[index]))).join('.');
             udpSocket.send(message, 0, message.length, UDP_PORT, bcast, () => {});
           }
         }
@@ -417,50 +430,30 @@ function broadcastDiscovery() {
 
 // Test/offline environments can explicitly disable LAN discovery.
 function startDiscovery(){
-if(process.env.PAIN_DISCOVERY !== 'false') {
-// Setup UDP
-try {
-  udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-  udpSocket.on('error', () => {});
-
-  udpSocket.on('message', (msg, rinfo) => {
-    const text = msg.toString('utf8').trim();
-    if (text.startsWith('PAIN_DEVICE')) {
-      const parts = text.split('|');
-      const device = {
-        name: parts[1] || 'Android Device',
-        ip: rinfo.address,
-        port: parseInt(parts[2], 10) || MOBILE_HTTP_PORT,
-        tracks: parseInt(parts[3], 10) || 0,
-        lastSeen: Date.now()
-      };
-      registerDevice(device);
-    }
-  });
-
-  udpSocket.bind(UDP_PORT, () => {
-    udpSocket.setBroadcast(true);
-    broadcastDiscovery();
-    setInterval(broadcastDiscovery, 5000);
-  });
-} catch (e) {
-  try {
-    udpSocket = dgram.createSocket('udp4');
-    udpSocket.bind(0, () => {
-      udpSocket.setBroadcast(true);
-      broadcastDiscovery();
-      setInterval(broadcastDiscovery, 5000);
+  if(process.env.PAIN_DISCOVERY==='false')return;
+  function bind(port){
+    let socket;
+    try{socket=dgram.createSocket({type:'udp4',reuseAddr:true});}catch(_){return;}
+    let listening=false;
+    socket.on('error',()=>{
+      if(listening)return;
+      try{socket.close();}catch(_){}
+      if(port&&server.listening)bind(0);
     });
-  } catch (err) {}
-}
-
-// Trigger initial scans
-checkLastKnownIp();
-scanArpTable();
-setTimeout(scanArpTable, 1500);
-setTimeout(scanSubnetsSmart, 2000);
-setInterval(scanArpTable, 20000);
-}
+    socket.on('message',(msg,rinfo)=>{
+      const [kind,,value]=msg.toString('utf8').trim().split('|'),phonePort=Number(value);
+      if(kind==='PAIN_DEVICE'&&Number.isInteger(phonePort)&&phonePort>0&&phonePort<=65535)probeDevice(rinfo.address,phonePort);
+    });
+    server.once('close',()=>{try{socket.close();}catch(_){}if(udpSocket===socket)udpSocket=null;});
+    socket.bind(port,()=>{listening=true;udpSocket=socket;try{socket.setBroadcast(true);broadcastDiscovery();}catch(_){}});
+  }
+  bind(UDP_PORT);
+  checkLastKnownIp();
+  scanArpTable();
+  const broadcastTimer=setInterval(broadcastDiscovery,5000);
+  const arpTimer=setInterval(scanArpTable,20000);
+  const subnetTimer=setTimeout(scanSubnetsSmart,2000);
+  server.once('close',()=>{clearInterval(broadcastTimer);clearInterval(arpTimer);clearTimeout(subnetTimer);clearTimeout(autoSyncTimeout);});
 }
 
 
@@ -482,17 +475,7 @@ const MIME_TYPES = {
 };
 
 function getMobilePhoneBaseUrl() {
-  if (discoveredDevices.length > 0) {
-    const dev = discoveredDevices[0];
-    return `http://${dev.ip}:${dev.port}`;
-  }
-  try {
-    if (fs.existsSync(LAST_IP_FILE)) {
-      const c = fs.readFileSync(LAST_IP_FILE, 'utf8').trim();
-      if (c) return `http://${c}`;
-    }
-  } catch (e) {}
-  return 'http://192.168.1.2:8865';
+  return currentDevices()[0]?.url||savedPhone();
 }
 
 let trackMimeCache = new Map();
@@ -508,7 +491,6 @@ function getLibraryTracks() {
       libraryFileMtime = stat.mtimeMs;
       const parsed = JSON.parse(fs.readFileSync(libFile, 'utf8'));
       libraryTracksCache = Array.isArray(parsed.tracks) ? parsed.tracks : [];
-      setImmediate(()=>genres.seed().catch(()=>{}));
     }
     return libraryTracksCache;
   } catch (e) {
@@ -734,6 +716,7 @@ const server = http.createServer((req, res) => {
         await genres.enqueue(track,true);return send({id,...(genres.entry(track)||{names:require('./genre-profile-model').normalize(track.genre),scope:'file'})});
       }
       const range=url.searchParams.get('range')==='28'?'28':'all';
+      if(network.state().profileGenres)genres.seed().catch(()=>{});
       const stamps=await Promise.all(['stats.json','library.json'].map(name=>fs.promises.stat(path.join(DATA_DIR,name)).then(s=>s.mtimeMs).catch(()=>0)));
       const key=JSON.stringify([stamps,genres.status().revision,new Date().toDateString()]);
       let saved=genreProfiles.get(range);
@@ -829,6 +812,24 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ resourceSaver: resourceSaverActive, mode: performanceMode }));
       return;
     }
+  }
+
+  if(pathname==='/api/network-preferences'){
+    const send=(code,data)=>{res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+    if(req.method==='GET')return send(200,network.state());
+    if(req.method==='POST'){
+      httpSafety.readBody(req,res,4096,body=>{
+        try{
+          const input=JSON.parse(body);
+          if(!input||typeof input!=='object'||Array.isArray(input))return send(400,{error:'Invalid network settings'});
+          const previous=network.state(),next=network.update(input);
+          if(previous.profileGenres&&!next.profileGenres)genres.cancelSeed();
+          if(previous.sync!==next.sync&&next.sync!=='manual'){nextAutoSyncAt=0;triggerBackgroundAutoSync();}
+          return send(200,next);
+        }catch(error){return send(400,{error:error.message});}
+      });return;
+    }
+    return send(405,{error:'Method not allowed'});
   }
 
   if (pathname === '/api/dj-state') {
@@ -1081,10 +1082,11 @@ const server = http.createServer((req, res) => {
 
   // API endpoints
   if (pathname === '/api/update-status' && req.method === 'GET') {
-    updater.check(url.searchParams.get('refresh') === '1').then(status => {
+    const force=url.searchParams.get('refresh')==='1',prefs=network.state();
+    Promise.resolve(force||prefs.autoUpdates?updater.check(force,{download:prefs.autoUpdates&&prefs.autoUpdateDownloads}):updater.publicState()).then(status => {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(status));
-    });
+    }).catch(()=>{if(!res.destroyed){res.writeHead(503);res.end();}});
     return;
   }
 
@@ -1110,12 +1112,24 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/sync-status' && req.method === 'GET') {
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
-    res.end(JSON.stringify(syncStatus));return;
+    res.end(JSON.stringify({...syncStatus,revision:syncRevision}));return;
+  }
+
+  if(pathname==='/api/phone-status'&&req.method==='POST'){
+    httpSafety.readBody(req,res,2048,async body=>{
+      const send=(code,value)=>{if(!res.destroyed){res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));}};
+      let base;try{base=phoneBase(JSON.parse(body).phoneUrl);}catch(_){return send(400,{code:'address'});}
+      try{
+        const info=await verifyPhone(base,6000);
+        rememberPhone(base);registerDevice(base,info,{automatic:false});
+        return send(200,{...info,url:base});
+      }catch(error){return send(502,{code:error.message==='Not a PAIN device'?'device':'connection'});}
+    });return;
   }
 
   if (pathname === '/api/devices') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(discoveredDevices));
+    res.end(JSON.stringify(currentDevices()));
     return;
   }
 
@@ -1416,45 +1430,16 @@ const server = http.createServer((req, res) => {
     playbackStream(req,res,trackId,{phoneUrl:url.searchParams.get('phoneUrl')||undefined,refresh:url.searchParams.get('refresh')==='1'});return;
   }
 
-  // Pre-fetch track in background for sleep-resistant seamless queue
   if (pathname.startsWith('/api/preload-track/') && req.method === 'POST') {
-    const trackId = decodeURIComponent(pathname.substring('/api/preload-track/'.length));
+    const trackId=decodeURIComponent(pathname.slice('/api/preload-track/'.length));
     if(phoneSync.removals.ids.has(trackId)){res.writeHead(410);res.end();return;}
-    const safeId = trackId.replace(/[/\\?%*:|"<>]/g, '_');
-    const cachedFile = path.join(CACHE_DIR, `${safeId}.mp3`);
-    const tmpFile = path.join(CACHE_DIR, `${safeId}.${require("crypto").randomUUID()}.tmp`);
-    const localAudioPath = getResolvedAudioFilePath(trackId);
-    if (localAudioPath) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'already_cached' }));
-      return;
-    }
-    const phoneUrl = url.searchParams.get('phoneUrl') || getMobilePhoneBaseUrl();
-    http.get(`${phoneUrl}/api/track/${encodeURIComponent(trackId)}`, (phoneRes) => {
-      if (phoneRes.statusCode === 200) {
-        const fileStream = fs.createWriteStream(tmpFile);
-        fileStream.on('error',()=>{try{fs.unlinkSync(tmpFile);}catch(_){}if(!res.headersSent){res.writeHead(500);res.end();}});
-        phoneRes.on('aborted',()=>{fileStream.destroy();try{fs.unlinkSync(tmpFile);}catch(_){}if(!res.headersSent){res.writeHead(502);res.end();}});
-        phoneRes.on('error',()=>fileStream.destroy());
-        phoneRes.pipe(fileStream);
-        fileStream.on('finish', () => {
-          try {
-            if (phoneRes.complete && fs.existsSync(tmpFile) && fs.statSync(tmpFile).size >= 4096 && (!phoneRes.headers['content-length'] || fs.statSync(tmpFile).size === Number(phoneRes.headers['content-length']))) {
-              safeAtomicRename(tmpFile, cachedFile);
-            }
-          } catch (e) {}
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'cached', trackId }));
-        });
-      } else {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: `Phone responded ${phoneRes.statusCode}` }));
-      }
-    }).on('error', (e) => {
-      try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (err) {}
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    });
+    const send=(status,value)=>{if(!res.destroyed){res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(value));}};
+    if(getResolvedAudioFilePath(trackId,true))return send(200,{status:'already_cached'});
+    let base;
+    try{base=phoneBase(url.searchParams.get('phoneUrl')||getMobilePhoneBaseUrl());}
+    catch(_){return send(400,{code:'PHONE_UNAVAILABLE',error:'Invalid phone address'});}
+    ensureAudio(trackId,{base}).then(()=>send(200,{status:'cached',trackId}))
+      .catch(error=>send(502,{code:ensureAudio.getStatus(trackId,base)?.code,error:error.message}));
     return;
   }
 
@@ -1593,7 +1578,8 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
     const trackArtist = track?.artist || 'Audio';
     // Never hold an image HTTP connection while waiting on the internet:
     // Chromium needs the same connection pool to start/seek audio streams.
-    if (track) findOnlineCover(track, coverFile, () => true, { online: url.searchParams.get('online') === '1', priority: url.searchParams.get('priority') === '1' }).catch(() => {});
+    const priority=url.searchParams.get('priority')==='1';
+    if (track) findOnlineCover(track, coverFile, () => true, { online: url.searchParams.get('online') === '1' && (priority||network.state().covers==='visible'), priority }).catch(() => {});
     const svg = generateProceduralCoverSvg(trackTitle, trackArtist);
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(svg);
@@ -1659,16 +1645,16 @@ function generateProceduralCoverSvg(title = 'Pain', artist = 'Audio') {
         if (pathname === '/api/sync-stats') {
           const {phoneUrl, ...play} = parsed; phoneSync.play(parsed.play || play); persisted = true;
         }
-        const base = new URL(parsed.phoneUrl || getMobilePhoneBaseUrl());
-        if (base.protocol !== 'http:') throw new Error('Invalid phone URL');
-        fs.writeFileSync(LAST_IP_FILE, `${base.hostname}:${base.port || MOBILE_HTTP_PORT}`, 'utf8');
+        if(persisted&&network.state().sync!=='auto')return send(200,{status:'ok',syncedToPhone:false});
+        const address=parsed.phoneUrl || getMobilePhoneBaseUrl();
+        if(persisted&&!address)return send(200,{status:'ok',syncedToPhone:false});
+        const base=phoneBase(address);
         if (pathname === '/api/sync-phone') {
-          const snapshots = await phoneSync.synchronize(base.href);
+          const snapshots = await syncPhone(base);
           syncStatus={state:'ok',at:Date.now()};
-          send(200, {status:'ok', ...snapshots});
+          send(200, {status:'ok', phoneUrl:base, ...snapshots});
         } else {
-          let syncedToPhone = false;
-          try { await phoneSync.flush(base.href); syncedToPhone = true; } catch (error) { syncFailed(error); }
+          const syncedToPhone=await flushPhone(base);
           send(200, {status:'ok', syncedToPhone});
         }
       } catch (e) { const code=syncFailed(e);send(persisted ? 200 : 500, persisted ? {status:'ok', syncedToPhone:false} : {error:e.message,code}); }
@@ -1698,6 +1684,7 @@ server.personalRecommender=personalRecommender;
 server.runtimeInstaller=runtimeInstaller;
 server.once('close',()=>runtimeInstaller.close());
 server.once('close',()=>personalRecommender.close());
+server.once('close',()=>genres.close());
 server.once('close',()=>{together.close();libraryEvents.close();});
 server.headersTimeout=15000;
 server.requestTimeout=10*60*1000;
@@ -1744,7 +1731,7 @@ server.once('listening', () => {
       const pulseflowTimer = setInterval(() => { if (performanceMode !== 'maximum') pulseflow.start({automatic:true}).catch(() => {}); }, 10 * 60 * 1000);
       pulseflowTimer.unref(); server.once('close', () => clearInterval(pulseflowTimer));
     }
-    setTimeout(() => updater.check().catch(() => {}), 3000).unref();
+    setTimeout(() => {const prefs=network.state();if(prefs.autoUpdates)updater.check(false,{download:prefs.autoUpdateDownloads}).catch(() => {});}, 3000).unref();
 });
 
 function startServer(p) {server.listen(p, '0.0.0.0');}

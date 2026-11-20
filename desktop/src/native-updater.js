@@ -19,10 +19,13 @@ module.exports = function createNativeUpdater(options) {
   }
   const api = {
     publicState: () => ({ ...state }),
-    async check(force = false) {
+    async check(force = false, { download = true } = {}) {
       if (installing || ['downloading', 'downloaded'].includes(state.status)) return api.publicState();
       if (checking) return checking;
-      if (!force && Date.now() - (state.checkedAt || 0) < 6 * 3600000) return api.publicState();
+      if (!force && Date.now() - (state.checkedAt || 0) < 6 * 3600000) {
+        if (download && state.available && state.canInstall) api.prepareInstall().catch(() => {});
+        return api.publicState();
+      }
       checking = (async () => {
         try {
           if (!updater) { state = { ...await fallback.check(force), canInstall: false }; return api.publicState(); }
@@ -32,7 +35,7 @@ module.exports = function createNativeUpdater(options) {
           const notes = Array.isArray(info?.releaseNotes) ? info.releaseNotes.map(item => item.note).join('\n') : info?.releaseNotes;
           state = { ...state, status: 'ready', latestVersion: info?.version, available, canInstall: available,
             notes: releaseSummary(notes), page: 'https://github.com/vansGAMee/pain/releases/latest', checkedAt: Date.now(), error: null };
-          if (available) api.prepareInstall().catch(() => {});
+          if (available && download) api.prepareInstall().catch(() => {});
         } catch (error) { state = { ...state, status: 'error', available: false, canInstall: false, error: error.message }; }
         return api.publicState();
       })().finally(() => { checking = null; });

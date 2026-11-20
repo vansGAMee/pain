@@ -15,6 +15,7 @@ module.exports=function createBackend(){
    let result;
    if(message.method==='preferences')result=await preferences.update(...message.args);
    else if(message.method==='check')result=await updater.check(...message.args);
+   else if(message.method==='update-state')result=updater.publicState();
    else if(message.method==='install'){const installation=await updater.prepareInstall();result=installation.state;restart=installation.restart;}
    else if(message.method==='restart')restart?.();
    else throw new Error('Unknown native operation');

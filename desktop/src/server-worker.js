@@ -7,7 +7,7 @@ function call(method,args=[]){return new Promise((resolve,reject)=>{
 });}
 globalThis.painShell={
  preferences:{state:()=>preferences,start(){},update:async body=>preferences=await call('preferences',[body])},
- updater:{check:force=>call('check',[force]),prepareInstall:async()=>{
+ updater:{check:(...args)=>call('check',args),publicState:()=>call('update-state'),prepareInstall:async()=>{
   const state=await call('install');return {state,restart:()=>call('restart').catch(()=>{})};
  }}
 };

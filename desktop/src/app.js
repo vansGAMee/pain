@@ -30,9 +30,7 @@
     libraryDirty: true,
     draggedTrackId: null,
     hasPrefetchedNext: false,
-    phoneUrl: (localStorage.getItem('pain_phone_url') && localStorage.getItem('pain_phone_url') !== 'http://localhost:8865') 
-      ? localStorage.getItem('pain_phone_url') 
-      : 'http://192.168.1.2:8865',
+    phoneUrl: localStorage.getItem('pain_phone_url') || '',
     stats: { plays: [], slices: [] },
     cachedTracks: new Set(),
     devices: [],
@@ -640,10 +638,11 @@
     if(status?.state==='ok'){syncNotice?.remove();syncNotice=null;lastSyncFailure=null;return;}
     if(status?.state!=='error'||(!manual&&(!localStorage.getItem('pain_phone_url')||lastSyncFailure===status.code||Date.now()-lastSyncNotice<180000)))return;
     const messages={
-      connection:['Телефон недоступен. Открой PAIN на нём и проверь общий Wi-Fi. Синхронизация повторится автоматически.','Phone unavailable. Open PAIN on it and check that both devices use the same Wi-Fi. Sync will retry automatically.'],
+      address:['Введите адрес из PAIN на телефоне в разделе «Устройства».','Enter the address shown in PAIN on the phone, in Devices.'],
+      connection:['Телефон недоступен. Откройте PAIN на нём и сверьте адрес в разделе «Устройства».','Phone unavailable. Open PAIN on it and compare its address in Devices.'],
       update:['Телефон не поддерживает этот обмен. Обнови PAIN на телефоне и ПК, затем нажми «Синхронизировать всё».','This sync is unavailable on the phone. Update PAIN on both devices, then choose Sync All.'],
       format:['Телефон прислал неполные данные. Данные на ПК сохранены. Дождись сканирования и проверь обновления PAIN на обоих устройствах.','The phone returned incomplete data. PC data is safe. Wait for its scan to finish and check PAIN updates on both devices.'],
-      conflict:['Данные изменились во время обмена. Синхронизация повторится автоматически.','Data changed during sync. Sync will retry automatically.']
+      conflict:['Данные изменились во время обмена. Повторите синхронизацию.','Data changed during the exchange. Sync again.']
     };
     syncNotice?.remove();lastSyncNotice=Date.now();lastSyncFailure=status.code;
     syncNotice=showToast((messages[status.code]||messages.connection)[state.lang==='ru'?0:1],'ℹ',9000);
@@ -829,6 +828,7 @@
     syncExcludedTracksFromServer();
     syncFavoriteMomentsFromServer();
     setupEventListeners();
+    setupNetworkSettings();
     window.addEventListener('pain:dj-changed',syncSharedAudio);
     setInterval(() => { if (!document.hidden) { updateGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
     document.addEventListener('visibilitychange', () => {
@@ -837,7 +837,7 @@
       }
     });
     setTimeout(() => checkForUpdates(false, true), 800);
-    setInterval(() => checkForUpdates(true, true), 6 * 60 * 60 * 1000);
+    setInterval(() => {if(window.PainNetwork?.autoUpdates!==false)checkForUpdates(true,true);},6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
     let homeFrame=0;
     window.addEventListener('pain:queue-ui',()=>{
@@ -4453,6 +4453,9 @@
     if (!status || status.status === 'checking') {
       DOM.updateStatusText.textContent = ru ? 'Проверка обновлений…' : 'Checking for updates…';
       DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
+    } else if (status.status === 'idle') {
+      DOM.updateStatusText.textContent = ru ? 'Готово к проверке обновлений' : 'Ready to check for updates';
+      DOM.updateActionBtn.textContent = ru ? 'Проверить' : 'Check';
     } else if (status.status === 'downloading') {
       DOM.updateStatusText.textContent = ru ? 'Загрузка и проверка обновления…' : 'Downloading and verifying update…';
       DOM.updateActionBtn.textContent = ru ? 'Загрузка…' : 'Downloading…';
@@ -4843,59 +4846,66 @@
   }
 
   // --- DISCOVERY & ZERO-TOUCH AUTO-SYNC ---
+  const rememberPhoneAddress = url => {
+    state.phoneUrl = url;
+    DOM.phoneIpInput.value = url;
+    localStorage.setItem('pain_phone_url', url);
+  };
+  let checkingPhone=false, appliedSyncRevision=0;
   function startDiscoveryPolling() {
-    let lastPoll = 0;
-    setInterval(async () => {
-      if (document.hidden || Date.now() - lastPoll < PerformanceMode.get(state.performanceMode).discoveryMs) return;
+    let lastPoll = 0, polling = false;
+    async function poll() {
+      if (polling || document.hidden || Date.now() - lastPoll < PerformanceMode.get(state.performanceMode).discoveryMs) return;
       lastPoll = Date.now();
+      polling=true;
       try {
-        fetch('/api/sync-status',{signal:AbortSignal.timeout(3000)}).then(r=>r.ok?r.json():null).then(status=>showSyncStatus(status)).catch(()=>{});
-        const res = await fetch('/api/devices');
-        if (res.ok) {
-          const list = await res.json();
-          if (Array.isArray(list) && list.length > 0) {
-            state.devices = list;
-            const phone = list[0];
-
+        const read=path=>fetch(path,{signal:AbortSignal.timeout(3000)}).then(res=>res.ok?res.json():null).catch(()=>null);
+        const [list,status]=await Promise.all([read('/api/devices'),read('/api/sync-status')]);
+        if(Array.isArray(list)){
+          state.devices=list;
+          const phone=list[0];
+          if(phone){
             DOM.sidebarDot.classList.add('connected');
-            DOM.sidebarStatusText.textContent = phone.name;
-            DOM.sidebarDetailText.textContent = `${phone.ip}:${phone.port} · ${phone.tracks} tracks`;
-
-            if (phone.ip && phone.ip !== '127.0.0.1') {
-              state.phoneUrl = `http://${phone.ip}:${phone.port}`;
-              DOM.phoneIpInput.value = state.phoneUrl;
-              localStorage.setItem('pain_phone_url', state.phoneUrl);
+            DOM.sidebarStatusText.textContent=phone.name;
+            DOM.sidebarDetailText.textContent=`${phone.ip}:${phone.port} · ${phone.tracks} ${state.lang==='ru'?'треков':'tracks'}`;
+            if(phone.url&&phone.url!==state.phoneUrl&&!checkingPhone&&!syncBusy&&document.activeElement!==DOM.phoneIpInput&&DOM.phoneIpInput.value.trim()===state.phoneUrl){
+              rememberPhoneAddress(phone.url);
             }
-
-            // Refresh quietly without overlapping exchanges.
-            if (!syncBusy && Date.now() - lastSyncAttempt > 180000) syncAll({background:true});
+          }else if(DOM.sidebarDot.classList.contains('connected')){
+            DOM.sidebarDot.classList.remove('connected');
+            DOM.sidebarStatusText.textContent=state.lang==='ru'?'Телефон не найден':'Phone not found';
+            DOM.sidebarDetailText.textContent=state.lang==='ru'?'Проверьте Wi-Fi':'Check Wi-Fi';
           }
         }
-      } catch (ignored) {}
-    }, 4000);
+        showSyncStatus(status);
+        if(status?.revision>appliedSyncRevision&&!syncBusy&&await syncAll({background:true}))appliedSyncRevision=status.revision;
+      } finally { polling=false; }
+    }
+    poll();
+    setInterval(poll,4000);
   }
 
   async function checkConnection() {
-    const url = DOM.phoneIpInput.value.trim().replace(/\/$/, '');
-    state.phoneUrl = url;
-    localStorage.setItem('pain_phone_url', url);
-
+    if(checkingPhone)return false;
+    const address=DOM.phoneIpInput.value.trim();
+    checkingPhone=true;DOM.connectBtn.disabled=true;
     try {
-      const res = await fetch(`${url}/api/status`,{signal:AbortSignal.timeout(6000)});
-      if (!res.ok) throw Error('Phone HTTP '+res.status);
+      const res=await fetch('/api/phone-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneUrl:address}),signal:AbortSignal.timeout(8000)});
       const data = await res.json();
+      if(!res.ok){const error=new Error('Phone not verified');error.code=data.code;throw error;}
+      if(DOM.phoneIpInput.value.trim()===address)rememberPhoneAddress(data.url);
       DOM.sidebarDot.classList.add('connected');
       DOM.sidebarStatusText.textContent = `${data.appName} (${data.device || 'Android'})`;
-      DOM.sidebarDetailText.textContent = `${url} · ${data.tracks} tracks`;
+      DOM.sidebarDetailText.textContent = `${data.url} · ${data.tracks} ${state.lang==='ru'?'треков':'tracks'}`;
       DOM.deviceInfoText.textContent = `${state.lang==='ru'?'Подключено':'Connected'} · ${data.device||'Android'} · ${Number(data.tracks)||0} ${state.lang==='ru'?'треков':'tracks'}${data.version?' · PAIN '+data.version:''}`;
       showSyncStatus({state:'ok'});
       return true;
     } catch (e) {
-      DOM.deviceInfoText.innerHTML = `
-        <span style="color:#D32F2F;">Connection failed.</span> Verify phone is on the same Wi-Fi and Pain is open.
-      `;
-      showSyncStatus({state:'error',code:'connection'},true);
+      const messages={address:['Введите адрес из PAIN на телефоне, например 192.168.1.5:8865.','Enter the address shown in PAIN on the phone, for example 192.168.1.5:8865.'],device:['По этому адресу ответило другое приложение. Сверьте адрес в PAIN на телефоне.','Another app answered at this address. Check the address in PAIN on the phone.'],connection:['Телефон не ответил. Откройте PAIN на нём, сверьте адрес и попробуйте снова.','The phone did not respond. Open PAIN on it, check its address and try again.']};
+      DOM.deviceInfoText.textContent=(messages[e.code]||messages.connection)[state.lang==='ru'?0:1];
       return false;
+    } finally {
+      checkingPhone=false;DOM.connectBtn.disabled=false;
     }
   }
 
@@ -4919,32 +4929,37 @@
     return oldTracks.some((track,index)=>JSON.stringify(track)!==JSON.stringify(newTracks[index]));
   }
 
-  let syncBusy = false, lastSyncAttempt = 0, localSyncRevision = 0;
+  let syncBusy = false, localSyncRevision = 0;
   async function syncAll({background = false} = {}) {
     if (syncBusy) return;
     syncBusy = true;
-    lastSyncAttempt = Date.now();
     const revision = localSyncRevision;
+    const address=(DOM.phoneIpInput.value.trim()||state.phoneUrl).replace(/\/+$/, '');
     if (!background) {
-      state.phoneUrl = (DOM.phoneIpInput.value.trim() || state.phoneUrl).replace(/\/+$/, '');
-      localStorage.setItem('pain_phone_url', state.phoneUrl);
       DOM.progressBanner.classList.add('active');
       DOM.progressTaskTitle.textContent = state.lang === 'ru' ? 'Синхронизация фонотеки…' : 'Syncing library…';
       DOM.syncProgressFill.style.width = '25%';
       DOM.progressPercent.textContent = '25%';
     }
     try {
-      const result = await fetch('/api/sync-phone', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({phoneUrl: state.phoneUrl})
-      });
-      const payload=await result.json();
-      if (!result.ok){const error=new Error(payload.error||'Phone sync failed');error.syncCode=payload.code;throw error;}
+      const read=async(path,options)=>{
+        const result=await fetch(path,options),payload=await result.json();
+        if(!result.ok){const error=new Error(payload.error||'Phone sync failed');error.syncCode=payload.code;throw error;}
+        return payload;
+      };
+      let payload;
+      if(background){
+        const [library,stats,djState]=await Promise.all(['/api/saved-library','/api/saved-stats','/api/dj-state'].map(path=>read(path,{signal:AbortSignal.timeout(15000)})));
+        payload={library,stats,djState,companion:{}};
+      }else{
+        payload=await read('/api/sync-phone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneUrl:address})});
+        if(payload.phoneUrl&&DOM.phoneIpInput.value.trim().replace(/\/+$/,'')===address)rememberPhoneAddress(payload.phoneUrl);
+      }
       const {library: libData, stats, djState,companion} = payload;
-      mergeSharedAudio(djState);
       if (!Array.isArray(libData?.tracks) || !Array.isArray(stats?.plays)) throw new Error('Invalid sync snapshot');
       // A local click/play during the exchange must not be rolled back by its response.
-      if (revision !== localSyncRevision) { lastSyncAttempt = 0; return; }
+      if (revision !== localSyncRevision) return false;
+      mergeSharedAudio(djState);
       const libraryChanged = isLibraryDiffer(state.tracks, libData.tracks);
       const statsChanged = isStatsDiffer(state.stats, stats);
       if (libraryChanged) {
@@ -4977,83 +4992,91 @@
         DOM.progressPercent.textContent = '100%';
         setTimeout(() => DOM.progressBanner.classList.remove('active'), 1200);
       }
+      return true;
     } catch (err) {
       console.warn('Sync failed:', err);
-      showSyncStatus({state:'error',code:err.syncCode||(/snapshot|JSON/.test(err.message)?'format':'connection')},!background);
+      if(!background)showSyncStatus({state:'error',code:err.syncCode||(/snapshot|JSON/.test(err.message)?'format':'connection')},true);
       if (!background) DOM.progressBanner.classList.remove('active');
+      return false;
     } finally {
       syncBusy = false;
       if (!background && revision !== localSyncRevision) DOM.progressBanner.classList.remove('active');
     }
   }
 
+  let cachingAudio=false;
   async function downloadAllAudio() {
-    if (state.tracks.length === 0) {
-      await syncAll();
-    }
-    if (state.tracks.length === 0) return;
-
-    DOM.progressBanner.classList.add('active');
-    const total = state.tracks.length;
-
-    for (let i = 0; i < total; i++) {
-      const track = state.tracks[i];
-      const safeId = track.id.replace(/[/\\?%*:|"<>]/g, '_');
-      const pct = Math.round(((i + 1) / total) * 100);
-      DOM.syncProgressFill.style.width = `${pct}%`;
-      DOM.progressPercent.textContent = `${pct}%`;
-
-      if (state.cachedTracks && state.cachedTracks.has(safeId)) {
-        DOM.progressTaskTitle.textContent = `${state.lang === 'ru' ? 'В кэше' : 'Cached'}: ${track.title} (${i+1}/${total})`;
-        continue;
-      }
-
-      DOM.progressTaskTitle.textContent = `${state.lang === 'ru' ? 'Кэширование' : 'Caching'}: ${track.title} (${i+1}/${total})`;
-
-      try {
-        const streamUrl = `${state.phoneUrl}/api/track/${encodeURIComponent(track.id)}`;
-        const res = await fetch(streamUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const ext = track.path ? track.path.split('.').pop() : 'mp3';
-          const filename = `${track.artist} - ${track.title}.${ext}`;
-          const saveRes = await fetch('/api/save-audio', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'X-Track-Id': encodeURIComponent(track.id),
-              'X-Filename': encodeURIComponent(filename)
-            },
-            body: blob
-          });
-          if (saveRes.ok) {
-            cachedTracksRevision++;
-            state.cachedTracks.add(safeId);
-            if (DOM.cacheStatsDesc) {
-              DOM.cacheStatsDesc.textContent = state.lang === 'ru'
-                ? `${state.cachedTracks.size} файлов сохранено на диске`
-                : `${state.cachedTracks.size} audio files cached on disk`;
-            }
+    if(cachingAudio)return;
+    cachingAudio=true;
+    DOM.downloadAllAudioBtn.disabled=true;
+    try{
+      if(!state.tracks.length)await syncAll();
+      if(!state.tracks.length)return;
+      const tracks=state.tracks;
+      const base=state.phoneUrl;
+      DOM.progressBanner.classList.add('active');
+      let failed=0, interrupted=false;
+      for(const [index,track] of tracks.entries()){
+        const safeId=String(track.id).replace(/[/\\?%*:|"<>]/g,'_');
+        const pct=Math.round((index+1)*100/tracks.length);
+        DOM.syncProgressFill.style.width=pct+'%';
+        DOM.progressPercent.textContent=pct+'%';
+        if(state.cachedTracks.has(safeId))continue;
+        DOM.progressTaskTitle.textContent=`${state.lang==='ru'?'Кэширование':'Caching'}: ${track.title} (${index+1}/${tracks.length})`;
+        try{
+          const res=await fetch(`/api/preload-track/${encodeURIComponent(track.id)}?phoneUrl=${encodeURIComponent(base)}`,{method:'POST',signal:AbortSignal.timeout(125000)});
+          if(!res.ok){
+            const error=await res.json().catch(()=>({}));
+            if(error.code==='PHONE_UNAVAILABLE'){interrupted=true;break;}
+            throw Error('Audio unavailable');
           }
-        }
-      } catch (e) {}
+          cachedTracksRevision++;
+          state.cachedTracks.add(safeId);
+        }catch(_){failed++;}
+      }
+      if(DOM.cacheStatsDesc)DOM.cacheStatsDesc.textContent=state.lang==='ru'?`${state.cachedTracks.size} файлов сохранено на диске`:`${state.cachedTracks.size} audio files cached on disk`;
+      DOM.progressTaskTitle.textContent=interrupted
+        ?(state.lang==='ru'?'Кэширование остановлено: телефон недоступен.':'Caching stopped: phone unavailable.')
+        :failed
+        ?(state.lang==='ru'?`Не удалось сохранить треков: ${failed}`:`Tracks not cached: ${failed}`)
+        :(state.lang==='ru'?'Кэширование завершено!':'Caching complete!');
+      setTimeout(()=>DOM.progressBanner.classList.remove('active'),1500);
+    }finally{
+      cachingAudio=false;
+      DOM.downloadAllAudioBtn.disabled=false;
     }
-
-    DOM.progressTaskTitle.textContent = state.lang === 'ru' ? 'Кэширование завершено!' : 'Caching complete!';
-    setTimeout(() => {
-      DOM.progressBanner.classList.remove('active');
-    }, 1500);
   }
 
-
-
-
-
-
-
-
-
-
+  function setupNetworkSettings() {
+    const controls={sync:'networkSyncMode',covers:'networkCoverScope',profileGenres:'networkGenreProfile',
+      lyricsAhead:'networkLyricsAhead',trackInfoAuto:'networkTrackInfoAuto',autoUpdates:'networkUpdateChecks',autoUpdateDownloads:'networkUpdateDownloads'};
+    const elements=Object.entries(controls).map(([key,id])=>[key,document.getElementById(id)]);
+    const message=document.getElementById('networkSettingsStatus');
+    let failed=false,busy=true;
+    function render(prefs){
+      if(prefs){window.PainNetwork=prefs;window.dispatchEvent(new CustomEvent('pain:network',{detail:prefs}));}
+      for(const [key,input] of elements){
+        const value=window.PainNetwork?.[key],isSwitch=input.type==='checkbox';
+        if(value!==undefined)input[isSwitch?'checked':'value']=value;
+        input.disabled=busy||value===undefined||(key==='autoUpdateDownloads'&&!window.PainNetwork.autoUpdates);
+      }
+      message.hidden=!failed;
+      message.textContent=failed?(state.lang==='ru'?'Не удалось сохранить настройки сети.':'Could not save network settings.'):'';
+    }
+    async function request(patch){
+      let prefs;busy=true;failed=false;render();
+      try{
+        const res=await fetch('/api/network-preferences',{signal:AbortSignal.timeout(5000),...(patch&&{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)
+        })});
+        if(!res.ok)throw Error('Network settings unavailable');
+        prefs=await res.json();
+      }catch(_){failed=true;}
+      finally{busy=false;render(prefs);}
+    }
+    for(const [key,input] of elements)input.addEventListener('change',()=>request({[key]:input.type==='checkbox'?input.checked:input.value}));
+    request();
+  }
 
   // --- EVENT LISTENERS SETUP ---
 

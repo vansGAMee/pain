@@ -26,6 +26,17 @@ public class SyncHttpTest {
     SyncHttp.Request request = SyncHttp.read(input("GET /api/stats HTTP/1.1", ""));
     assertEquals("GET", request.method); assertEquals("{}", request.body);
   }
+  @Test public void audioRangesAreBoundedForSeekingAndMetadata() {
+    SyncHttp.ByteRange range = SyncHttp.range("bytes=100-199", 1024);
+    assertEquals(100, range.start); assertEquals(199, range.end); assertEquals(100, range.length());
+    assertEquals(24, SyncHttp.range("bytes=1000-", 1024).length());
+    assertEquals(48, SyncHttp.range("bytes=-48", 1024).length());
+    assertEquals(1024, SyncHttp.range("bytes=-5000", 1024).length());
+    assertEquals(124, SyncHttp.range("bytes=900-5000", 1024).length());
+    for (String header : new String[]{"bytes=1024-", "bytes=10-9", "bytes=-0", "bytes=0-1,4-5", "bytes=9223372036854775808-"}) {
+      assertNull(header, SyncHttp.range(header, 1024));
+    }
+  }
   @Test public void preservesRawBinaryBytesAndHeadersForTrackUpload() throws Exception {
     byte[] audioDummy = new byte[] { (byte)0xFF, (byte)0xFB, (byte)0x90, (byte)0x64, 0x00, 0x01, 0x02 };
     ByteArrayOutputStream stream = new ByteArrayOutputStream();

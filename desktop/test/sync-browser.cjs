@@ -5,7 +5,8 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
  try{
   const page=await browser.newPage(),errors=[],likes=[],syncs=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
-  const track={id:'song',title:'Ночная волна',artist:'Исполнитель',duration:180000,favorite:0};let failure=false;
+  const track={id:'song',title:'Ночная волна',artist:'Исполнитель',duration:180000,favorite:0};let failure=false,backgroundRevision=0;
+  await page.addInitScript(()=>localStorage.setItem('pain_performance_mode','full'));
   let release,arrived;const received=new Promise(r=>arrived=r);
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());
@@ -17,6 +18,8 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
     return json({library:{tracks:[{...track,favorite:syncs.length===1?0:1}]},stats:{plays:[],slices:[]}});
    }
    if(url.pathname==='/api/sync-like'){likes.push(request.postDataJSON());return json({status:'ok',syncedToPhone:true});}
+   if(url.pathname==='/api/sync-status')return json({state:'ok',revision:backgroundRevision});
+   if(url.pathname==='/api/devices'&&backgroundRevision)return json([{url:'http://discovered.test:8865',ip:'discovered.test',port:8865,name:'Phone',tracks:1}]);
    if(url.pathname.startsWith('/api/'))return json(url.pathname==='/api/saved-library'?{tracks:[track]}:url.pathname==='/api/saved-stats'?{plays:[],slices:[]}:url.pathname==='/api/cached-tracks'?{cached:[]}:[]);
    if(url.origin!=='http://pain.test')return route.abort();
    const file=url.pathname.startsWith('/assets/')?path.join(__dirname,'..',url.pathname):path.join(__dirname,'../src',url.pathname==='/'?'index.html':url.pathname);
@@ -44,6 +47,12 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
   assert.equal(await page.evaluate(()=>PainPlayer.getTracks().length),1,'sync failure keeps the library');
   failure=false;await page.locator('#syncAllBtn').evaluate(button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('.toast[role="status"]'));
-  assert.deepEqual(errors,[]);console.log('PASS: manual address, single exchange, like during sync, no rollback or page errors');
+  const previousRequests=syncs.length;
+  await page.locator('#phoneIpInput').evaluate(input=>input.value='http://typing.test:8865');
+  track.title='Фоновый снимок';backgroundRevision=1;
+  await page.waitForFunction(()=>document.querySelector('.track-row-title')?.textContent==='Фоновый снимок');
+  assert.equal(syncs.length,previousRequests,'the renderer reads the local snapshot without requesting another phone exchange');
+  assert.equal(await page.locator('#phoneIpInput').inputValue(),'http://typing.test:8865','discovery must not overwrite an address being edited');
+  assert.deepEqual(errors,[]);console.log('PASS: manual address, single exchange, like during sync, background snapshot, no rollback or page errors');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

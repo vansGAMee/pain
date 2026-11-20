@@ -6,7 +6,7 @@
  entry.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>';
  entry.title=entry.ariaLabel=t('Текст и караоке','Lyrics and karaoke');document.getElementById('fullscreenPlayerBtn').before(entry);
  const panel=document.createElement('section');panel.id='karaoke';panel.hidden=true;panel.setAttribute('aria-label',t('Караоке','Karaoke'));shell.append(panel);
- let track=null,lines=[],history=[],editing=false,next=0,active=-2,loadToken=0,manualUntil=0,saveBusy=false,ownsFullscreen=false,loadController,onlineEnabled=true,prefetchTimer,prefetchId;
+ let track=null,lines=[],history=[],editing=false,next=0,active=-2,loadToken=0,manualUntil=0,saveBusy=false,ownsFullscreen=false,loadController,onlineEnabled=true,prefetchTimer,prefetchId,prefetchController;
  const $=s=>panel.querySelector(s),key=id=>'pain_lyrics_draft_'+id;
  function note(s){const n=$('#karaokeStatus');if(n)n.textContent=s;}
  function describe(data){
@@ -84,16 +84,25 @@
   if(token!==loadToken)return;window.dispatchEvent(new CustomEvent('pain:lyrics',{detail:{id:track.id,lines}}));recalc();$('#karaokeText').value=localStorage.getItem(key(track.id)+'_text')??lines.map(l=>l.time===null?l.text:`[${clock(l.time)}]${l.text}`).join('\n');setEditing(false);describe(data);$('#karaokeSearch').disabled=!onlineEnabled;
   if(!lines.length)$('.karaoke-empty').textContent=data.instrumental?'♪':t('Пока без текста. Добавьте свой в редакторе или повторите поиск.','No lyrics yet. Add your own in the editor or retry the search.');
  }
- async function open(){panel.hidden=false;shell.classList.add('karaoke-open');entry.setAttribute('aria-pressed','true');await load();$('#karaokeClose')?.focus();}
+ async function open(){cancelPrefetch();panel.hidden=false;shell.classList.add('karaoke-open');entry.setAttribute('aria-pressed','true');await load();$('#karaokeClose')?.focus();}
  function close(){panel.hidden=true;shell.classList.remove('karaoke-open');++loadToken;loadController?.abort();entry.setAttribute('aria-pressed','false');if(ownsFullscreen&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});ownsFullscreen=false;entry.focus();}
  entry.onclick=()=>panel.hidden?open():close();
- function prefetch(current){clearTimeout(prefetchTimer);if(!onlineEnabled||!current||String(current.id)===prefetchId)return;prefetchId=String(current.id);prefetchTimer=setTimeout(()=>fetch('/api/lyrics?track='+encodeURIComponent(current.id)).then(r=>r.ok?r.json():null).then(data=>{if(Array.isArray(data?.lines))window.dispatchEvent(new CustomEvent('pain:lyrics',{detail:{id:current.id,lines:data.lines}}));}).catch(()=>{}),900);}
+ function cancelPrefetch(){clearTimeout(prefetchTimer);prefetchController?.abort();prefetchId=null;}
+ function prefetch(current){
+  if(!window.PainNetwork?.lyricsAhead||!onlineEnabled||!panel.hidden||document.hidden||!current||String(current.id)===prefetchId)return;
+  cancelPrefetch();prefetchId=String(current.id);
+  const controller=prefetchController=new AbortController();
+  prefetchTimer=setTimeout(()=>fetch('/api/lyrics?track='+encodeURIComponent(current.id),{signal:controller.signal})
+   .then(r=>r.ok?r.json():null).then(data=>{if(!controller.signal.aborted&&Array.isArray(data?.lines))window.dispatchEvent(new CustomEvent('pain:lyrics',{detail:{id:current.id,lines:data.lines}}));}).catch(()=>{}),900);
+ }
+ window.addEventListener('pain:network',()=>{if(window.PainNetwork?.lyricsAhead)prefetch(window.PainPlayer.getTrack());else cancelPrefetch();});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPrefetch();else prefetch(window.PainPlayer.getTrack());});
  window.addEventListener('pain:track',e=>{if(!panel.hidden&&e.detail?.id!==track?.id)load();else prefetch(e.detail);});
  window.addEventListener('pain:companion-synced',()=>{if(!panel.hidden)load();});
  for(const deck of document.querySelectorAll('audio')){deck.addEventListener('timeupdate',highlight);deck.addEventListener('seeked',()=>{manualUntil=0;highlight();});}
  const toggle=document.getElementById('onlineLyricsSwitch'),sourceMode=document.getElementById('lyricsSourceMode');let savedMode='auto';
  fetch('/api/lyrics/settings').then(r=>{if(!r.ok)throw Error();return r.json();}).then(data=>{onlineEnabled=data.enabled!==false;if(toggle){toggle.checked=onlineEnabled;toggle.disabled=false;}savedMode=data.mode||'auto';if(sourceMode){sourceMode.value=savedMode;sourceMode.disabled=!onlineEnabled;}prefetch(window.PainPlayer.getTrack());}).catch(()=>{if(toggle)toggle.disabled=true;});
- if(toggle)toggle.onchange=async()=>{const enabled=toggle.checked;toggle.disabled=true;try{const r=await fetch('/api/lyrics/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'lyrics'},body:JSON.stringify({enabled})});if(!r.ok)throw Error();onlineEnabled=enabled;if(sourceMode)sourceMode.disabled=!enabled;clearTimeout(prefetchTimer);prefetchId=null;if(enabled)prefetch(window.PainPlayer.getTrack());if(!panel.hidden)$('#karaokeSearch').disabled=!enabled;}catch(_){toggle.checked=onlineEnabled;}finally{toggle.disabled=false;}};
- if(sourceMode)sourceMode.onchange=async()=>{const mode=sourceMode.value;sourceMode.disabled=true;try{const r=await fetch('/api/lyrics/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'lyrics'},body:JSON.stringify({mode})});if(!r.ok)throw Error();savedMode=mode;clearTimeout(prefetchTimer);prefetchId=null;if(!panel.hidden)await load();else prefetch(window.PainPlayer.getTrack());}catch(_){sourceMode.value=savedMode;}finally{sourceMode.disabled=!onlineEnabled;}};
+ if(toggle)toggle.onchange=async()=>{const enabled=toggle.checked;toggle.disabled=true;try{const r=await fetch('/api/lyrics/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'lyrics'},body:JSON.stringify({enabled})});if(!r.ok)throw Error();onlineEnabled=enabled;if(sourceMode)sourceMode.disabled=!enabled;cancelPrefetch();if(enabled)prefetch(window.PainPlayer.getTrack());if(!panel.hidden)$('#karaokeSearch').disabled=!enabled;}catch(_){toggle.checked=onlineEnabled;}finally{toggle.disabled=false;}};
+ if(sourceMode)sourceMode.onchange=async()=>{const mode=sourceMode.value;sourceMode.disabled=true;try{const r=await fetch('/api/lyrics/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Pain-Update':'lyrics'},body:JSON.stringify({mode})});if(!r.ok)throw Error();savedMode=mode;cancelPrefetch();if(!panel.hidden)await load();else prefetch(window.PainPlayer.getTrack());}catch(_){sourceMode.value=savedMode;}finally{sourceMode.disabled=!onlineEnabled;}};
  document.addEventListener('keydown',e=>{if(panel.hidden)return;if(e.key==='Escape'){close();return;}if(e.key==='Enter'&&editing&&!e.repeat&&!['INPUT','TEXTAREA','BUTTON'].includes(document.activeElement.tagName)){e.preventDefault();stamp(next);}});
 })();

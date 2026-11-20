@@ -54,7 +54,7 @@
    return `<p><a href="${escape(u.href)}" target="_blank" rel="noopener noreferrer">${escape(u.hostname)} · ${escape(s.scope==='album'?t('издание','release'):t('запись','recording'))}</a><br>${s.names.map(escape).join(', ')}</p>`;
   }).join('')}</details>`;
  }
- async function render(){
+ async function render(online=false){
   clearTimeout(timer);controller?.abort();const generation=++ticket;
   if(panel.hidden)return;
   const track=window.PainPlayer?.getTrack();lastId=track?.id;
@@ -72,7 +72,6 @@
   body.insertBefore(rating,body.querySelector('dl'));
   body.querySelector('img').onerror=e=>{e.target.hidden=true;};
   panel.scrollTop=0;controller=new AbortController();
-  fetch(`/api/track-rating/${encodeURIComponent(track.id)}`,{signal:controller.signal}).then(r=>r.ok?r.json():{reason:'unavailable'}).then(data=>{if(generation===ticket)showRating(data);}).catch(error=>{if(generation===ticket&&error.name!=='AbortError')showRating({reason:'unavailable'});});
   fetch(`/api/track-info/${encodeURIComponent(track.id)}?local=1&lang=${ru()?'ru':'en'}`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(history=>{
    if(!history||generation!==ticket)return;
    document.getElementById('trackInfoContext').innerHTML=(history.cards||[]).map(contextSection).join('');
@@ -90,6 +89,12 @@
    const detailsHtml=localDetails.length?`<section class="track-info-article"><h3>${t('Что хранится в аудиофайле','Inside your audio file')}</h3><dl>${localDetails.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl></section>`:'';
    document.getElementById('trackInfoHistory').innerHTML=detailsHtml+`<section class="track-info-article"><h3>${t('Ваша история с этой песней','Your history with this song')}</h3><dl>${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl></section>`;
   }).catch(()=>{});
+  if(!online&&!window.PainNetwork?.trackInfoAuto){
+   rating.hidden=true;
+   document.getElementById('trackInfoArticles').innerHTML=`<button type="button" class="btn-minimal" data-info-retry>${t('Загрузить справку и оценку','Load articles and rating')}</button>`;
+   return;
+  }
+  fetch(`/api/track-rating/${encodeURIComponent(track.id)}`,{signal:controller.signal}).then(r=>r.ok?r.json():{reason:'unavailable'}).then(data=>{if(generation===ticket)showRating(data);}).catch(error=>{if(generation===ticket&&error.name!=='AbortError')showRating({reason:'unavailable'});});
   try{
    const response=await fetch(`/api/track-info/${encodeURIComponent(track.id)}?lang=${ru()?'ru':'en'}`,{signal:controller.signal});
    if(!response.ok)throw new Error('Unavailable');
@@ -100,10 +105,10 @@
     `<details class="track-info-story"><summary>${data.unavailable?t('Онлайн-источники пока недоступны','Online sources are currently unavailable'):t('Отдельная статья пока не найдена','No matching article yet')}</summary><p class="track-info-status">${t('Ниже — контекст из названия, фонотеки и сохранённой истории.','Below is context from the title, your library and listening history.')}</p><button type="button" class="btn-minimal" data-info-retry>${t('Повторить поиск','Try again')}</button></details>`)+catalog;
   }catch(error){if(generation!==ticket||error.name==='AbortError')return;document.getElementById('trackInfoArticles').innerHTML=`<p class="track-info-status">${t('Не удалось загрузить историю. Проверьте подключение.','Could not load the story. Check your connection.')}</p><button type="button" class="btn-minimal" data-info-retry>${t('Повторить','Retry')}</button>`;}
  }
- function open(value,restoreFocus=true){panel.hidden=!value;document.querySelector('.app-layout').classList.toggle('track-info-open',value);button.setAttribute('aria-expanded',String(value));if(value)render();else{++ticket;clearTimeout(timer);controller?.abort();if(restoreFocus)button.focus();}}
+ function open(value,restoreFocus=true){panel.hidden=!value;document.querySelector('.app-layout').classList.toggle('track-info-open',value);button.setAttribute('aria-expanded',String(value));if(value)render(restoreFocus);else{++ticket;clearTimeout(timer);controller?.abort();if(restoreFocus)button.focus();}}
  button.title=t('О треке и исполнителе','About the track and artist');button.setAttribute('aria-label',button.title);
  button.onclick=()=>open(panel.hidden);document.getElementById('trackInfoClose').onclick=()=>open(false);
- body.addEventListener('click',event=>{if(event.target.closest('[data-info-retry]'))render();});
+ body.addEventListener('click',event=>{if(event.target.closest('[data-info-retry]'))render(true);});
  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){open(false);event.stopPropagation();}});
  window.addEventListener('pain:track',event=>{if(!panel.hidden&&event.detail?.id!==lastId){controller?.abort();++ticket;clearTimeout(timer);timer=setTimeout(render,250);}});
  window.addEventListener('pain:genres',event=>{if(!panel.hidden&&event.detail?.id===lastId)showGenres(event.detail);});

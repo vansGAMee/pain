@@ -176,6 +176,7 @@ public final class MainActivity extends Activity {
   @Override
   protected void onResume() {
     super.onResume();
+    app.syncServer.start();
     resumed = true;
     handler.removeCallbacks(ticker);
     handler.post(ticker);

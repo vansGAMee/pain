@@ -43,3 +43,14 @@ test('genres of one song never fill unrelated songs by the same performer',async
  const service=create(dir,{getTracks:()=>[a,b],loadStats:async()=>({})});t.after(()=>service.close());
  const snapshot=await service.snapshot();assert.deepEqual(snapshot.a.names,['rock']);assert.deepEqual(snapshot.b.names,[]);
 });
+
+test('opening the profile batches at most twelve played tracks and cools down between requests',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pain-genres-budget-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const tracks=Array.from({length:100},(_,i)=>({id:String(i),title:'Song '+i,artist:'Artist'}));
+ const warmed=[],service=create(dir,{getTracks:()=>tracks,loadStats:async()=>({plays:tracks.slice(0,50).map((track,i)=>({track:track.id,heard:i+1}))}),
+  localMedia:{read:async track=>({track})},catalog:{prefetchGenres:async rows=>warmed.push(rows.map(row=>row.rawTitle))}});
+ t.after(()=>service.close());
+ await service.seed();await service.seed();
+ assert.equal(service.status().queued,12);
+ assert.deepEqual(warmed,[tracks.slice(38,50).reverse().map(track=>track.title)]);
+});

@@ -6,13 +6,13 @@ const { safeWrite, createSnapshot } = require('./data-guard');
 const CompanionStore=require('./companion-store'),CompanionModel=require('./companion-model');
 const LibraryRemovals=require('./library-removals');
 const flag=value=>value===true||value===1?1:0;
-function request(base,route,body,timeout=5000){
+function request(base,route,body,timeout=5000,maxBytes=32*1024*1024){
  return new Promise((resolve,reject)=>{
   const url=new URL(route,base);if(url.protocol!=='http:')return reject(new Error('Invalid phone URL'));
   const payload=body===undefined?null:JSON.stringify(body);
   const req=http.request(url,{method:payload===null?'GET':'POST',headers:payload===null?{}:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}},res=>{
    const chunks=[];let size=0;
-   res.on('data',b=>{size+=b.length;if(size>32*1024*1024)req.destroy(new Error('Sync response too large'));else chunks.push(b);});
+   res.on('data',b=>{size+=b.length;if(size>maxBytes)req.destroy(new Error('Sync response too large'));else chunks.push(b);});
    res.on('error',reject);
    res.on('end',()=>{try{if(res.statusCode!==200){const error=new Error('Phone HTTP '+res.statusCode);error.statusCode=res.statusCode;throw error;}resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch(e){reject(e);}});
   });
@@ -51,11 +51,13 @@ class PhoneSync{
  }
  saveStats(stats){
   if(!stats||!Array.isArray(stats.plays))throw new Error('Invalid statistics');
-  return this.write('stats.json',this.removals.stats(mergeStats(this.read('stats.json',{plays:[],slices:[]}),stats)));
+  const previous=this.read('stats.json',{plays:[],slices:[]});
+  const next=this.removals.stats(mergeStats(previous,stats));
+  return JSON.stringify(previous)===JSON.stringify(next)?previous:this.write('stats.json',next);
  }
  saveDjState(state){
-  const merged=DjState.merge(this.read('dj-state.json',{}),state);
-  return this.write('dj-state.json',merged);
+  const previous=this.read('dj-state.json',{}),merged=DjState.merge(previous,state);
+  return JSON.stringify(previous)===JSON.stringify(merged)?previous:this.write('dj-state.json',merged);
  }
  favorite(trackId,favorite){
   if(typeof trackId!=='string'||!trackId||trackId.length>1024)throw new Error('Invalid track');
@@ -78,6 +80,7 @@ class PhoneSync{
  }
  serial(task){const job=this.chain.catch(()=>{}).then(task);this.chain=job;return job;}
  async sendPending(base){
+  let sentFavorites=false;
   // Snapshot objects: an acknowledgement must never remove a newer local change.
   for(const [key,route,pack] of [['favorites','/api/library',items=>({tracks:items.map(p=>({id:p.trackId,favorite:p.favorite}))})],['plays','/api/stats',items=>({plays:items})]]){
    const snapshot=this.pending[key].slice();
@@ -85,8 +88,10 @@ class PhoneSync{
     const batch=snapshot.slice(i,i+200),reply=await request(base,route,pack(batch));
     if(reply.status!=='ok')throw new Error('Phone did not acknowledge sync');
     const sent=new Set(batch);this.pending[key]=this.pending[key].filter(item=>!sent.has(item));this.persist();
+    if(key==='favorites')sentFavorites=true;
    }
   }
+  return sentFavorites;
  }
  mergeRemovals(entries){this.removals.merge(entries);this.pending={favorites:this.pending.favorites.filter(p=>!this.removals.ids.has(String(p.trackId))),plays:this.pending.plays.filter(p=>!this.removals.ids.has(String(p.track)))};this.persist();this.onRemovals?.();}
  removeTrack(track){this.removals.remove(track);this.mergeRemovals(this.removals.entries);}
@@ -115,16 +120,19 @@ class PhoneSync{
   if(!Array.isArray(initial?.tracks))throw Error('Invalid phone snapshot');
   if(initial.capabilities?.libraryRemovals===1){
    const remote=await request(base,'/api/library-removals');
-   this.mergeRemovals(remote.entries);
+   if(!remote?.entries||typeof remote.entries!=='object'||Array.isArray(remote.entries))throw Error('Invalid removals snapshot');
+   if(Object.keys(remote.entries).some(key=>!Object.hasOwn(this.removals.entries,key)))this.mergeRemovals(remote.entries);
    // A local deletion made while awaiting HTTP must be included as well.
-   const ack=await request(base,'/api/library-removals',{entries:this.removals.entries},15000);
-   this.mergeRemovals(ack.entries);
+   if(Object.keys(this.removals.entries).some(key=>!Object.hasOwn(remote.entries,key))){
+    const ack=await request(base,'/api/library-removals',{entries:this.removals.entries},15000);
+    this.mergeRemovals(ack.entries);
+   }
   }
   // New files do not have to wait for a large history or optional collections.
   // Merging remains additive and pending local likes keep their precedence.
   this.saveLibrary(initial);
-  await this.sendPending(base);
-  const [library,remote]=await Promise.all([request(base,'/api/library',undefined,15000),request(base,'/api/stats',undefined,20000)]);
+  const sentFavorites=await this.sendPending(base);
+  const [library,remote]=await Promise.all([sentFavorites?request(base,'/api/library',undefined,15000):initial,request(base,'/api/stats',undefined,20000)]);
   let stats=remote;
   // Reject an incomplete response before saving this final exchange.
   if(!Array.isArray(library?.tracks)||!Array.isArray(stats?.plays))throw new Error('Invalid phone snapshot');

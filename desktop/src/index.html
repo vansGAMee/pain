@@ -999,42 +999,10 @@
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
-              <label for="onlineLyricsSwitch" data-en="Find karaoke lyrics automatically" data-ru="Автоматически искать текст и караоке">Автоматически искать текст и караоке</label>
-              <span class="fluid-row-hint" data-en="LRCLIB, KuGou, NetEase and a plain-text fallback. Source timing when available; saved locally. Your edits take priority." data-ru="LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.">LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.</span>
-            </div>
-            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineLyricsSwitch" checked disabled><span class="switch-slider round"></span></label></div>
-          </div>
-          <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label"><label for="lyricsSourceMode" data-en="Lyrics sources" data-ru="Источники текста">Источники текста</label><span class="fluid-row-hint" data-en="If the main source is unreachable without a VPN, try the backup first. Availability depends on your network." data-ru="Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.">Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.</span></div>
-            <select id="lyricsSourceMode" class="sort-select" disabled><option value="auto" data-ru="Автоматически" data-en="Automatic">Автоматически</option><option value="regional" data-ru="Сначала запасные источники" data-en="Backup sources first">Сначала запасные источники</option><option value="primary" data-ru="Только LRCLIB" data-en="LRCLIB only">Только LRCLIB</option></select>
-          </div>
-          <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label">
-              <label for="onlineCoversSwitch" data-en="Find track covers online" data-ru="Искать обложки в интернете">Искать обложки в интернете</label>
-              <span class="fluid-row-hint" data-en="Embedded artwork first, then iTunes and MusicBrainz. Disabling stops internet searches; saved covers remain." data-ru="Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.">Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.</span>
-            </div>
-            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineCoversSwitch"><span class="switch-slider round"></span></label></div>
-          </div>
-          <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label">
-              <label for="onlineGenresSwitch" data-en="Find song genres online" data-ru="Искать жанры песен в интернете">Искать жанры песен в интернете</label>
-              <span class="fluid-row-hint" data-en="File tags first, then Wikipedia, MusicBrainz, Apple Music and Deezer. Searches run in the background; saved results remain when disabled." data-ru="Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.">Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.</span>
-            </div>
-            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineGenresSwitch"><span class="switch-slider round"></span></label></div>
-          </div>
-          <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label">
               <label for="showTrackGenresSwitch" data-en="Show song genres and tags" data-ru="Показывать жанры и теги трека">Показывать жанры и теги трека</label>
               <span class="fluid-row-hint" data-en="Show or hide the genre and tag block in the song sidebar." data-ru="Показать или скрыть блок жанров и тегов в боковой карточке песни.">Показать или скрыть блок жанров и тегов в боковой карточке песни.</span>
             </div>
             <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="showTrackGenresSwitch" checked><span class="switch-slider round"></span></label></div>
-          </div>
-          <div class="fluid-setting-row bpm-row">
-            <div class="fluid-row-label">
-              <label for="onlineArtistInfoSwitch" data-en="Find artist details online" data-ru="Искать сведения об артистах в сети">Искать сведения об артистах в сети</label>
-              <span class="fluid-row-hint" data-en="Biography, avatar, and related artists from Wikipedia and Deezer. When off, the artist card shows only name and tracks from your library." data-ru="Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.">Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.</span>
-            </div>
-            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineArtistInfoSwitch" checked><span class="switch-slider round"></span></label></div>
           </div>
           <div class="fluid-setting-row bpm-row">
             <div class="fluid-row-label">
@@ -1055,6 +1023,80 @@
             <label class="switch-label"><input type="checkbox" id="homeArtistsSwitch" checked><span class="switch-slider round"></span></label>
           </div>
         </div>
+        <section class="settings-section network-settings" aria-labelledby="networkSettingsTitle">
+          <div class="settings-section-head">
+            <div id="networkSettingsTitle" class="settings-section-title" data-en="Network" data-ru="Сеть">Сеть</div>
+            <div class="settings-section-desc" data-en="Choose what PAIN looks up online and how often it syncs with your phone." data-ru="Выберите, что PAIN ищет в интернете и как часто обменивается данными с телефоном.">Выберите, что PAIN ищет в интернете и как часто обменивается данными с телефоном.</div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkSyncMode" data-en="Wi-Fi sync" data-ru="Синхронизация по Wi-Fi">Синхронизация по Wi-Fi</label>
+              <span class="fluid-row-hint" data-en="Manual sync is available in Devices." data-ru="Ручной обмен доступен в разделе «Устройства».">Ручной обмен доступен в разделе «Устройства».</span></div>
+            <select id="networkSyncMode" class="performance-mode-select" disabled><option value="auto" data-en="Automatically" data-ru="Автоматически">Автоматически</option><option value="sparse" data-en="Every 15 minutes" data-ru="Раз в 15 минут">Раз в 15 минут</option><option value="manual" data-en="Manually" data-ru="Вручную">Вручную</option></select>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="onlineCoversSwitch" data-en="Find track covers online" data-ru="Искать обложки в интернете">Искать обложки в интернете</label>
+              <span class="fluid-row-hint" data-en="Embedded artwork first, then iTunes and MusicBrainz. Disabling stops internet searches; saved covers remain." data-ru="Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.">Сначала обложка из файла, затем iTunes и MusicBrainz. Выключение останавливает поиск в интернете; сохранённые обложки остаются.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineCoversSwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkCoverScope" data-en="Online cover lookup" data-ru="Где искать обложки">Где искать обложки</label>
+              <span class="fluid-row-hint" data-en="File artwork and saved covers are always available." data-ru="Обложки из файлов и сохранённые картинки доступны в любом режиме.">Обложки из файлов и сохранённые картинки доступны в любом режиме.</span></div>
+            <select id="networkCoverScope" class="performance-mode-select" disabled><option value="current" data-en="Current song only" data-ru="Только текущий трек">Только текущий трек</option><option value="visible" data-en="Visible covers" data-ru="Видимые обложки">Видимые обложки</option></select>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="onlineGenresSwitch" data-en="Find song genres online" data-ru="Искать жанры песен в интернете">Искать жанры песен в интернете</label>
+              <span class="fluid-row-hint" data-en="File tags first, then Wikipedia, MusicBrainz, Apple Music and Deezer. Searches run in the background; saved results remain when disabled." data-ru="Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.">Сначала теги файла, затем жанры записи и её издания из Википедии, MusicBrainz, Apple Music и Deezer. Поиск идёт в фоне; при выключении найденное сохраняется.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineGenresSwitch"><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkGenreProfile" data-en="Enrich the genre profile" data-ru="Дополнять профиль жанров">Дополнять профиль жанров</label>
+              <span class="fluid-row-hint" data-en="Look up small batches of played tracks while viewing the profile." data-ru="При открытии профиля искать жанры небольшими партиями среди прослушанных треков.">При открытии профиля искать жанры небольшими партиями среди прослушанных треков.</span></div>
+            <label class="switch-label"><input type="checkbox" id="networkGenreProfile" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="onlineLyricsSwitch" data-en="Find karaoke lyrics automatically" data-ru="Автоматически искать текст и караоке">Автоматически искать текст и караоке</label>
+              <span class="fluid-row-hint" data-en="LRCLIB, KuGou, NetEase and a plain-text fallback. Source timing when available; saved locally. Your edits take priority." data-ru="LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.">LRCLIB, KuGou, NetEase и запасной источник обычного текста. Тайминги из источника, если они есть; результат сохраняется локально. Ваши правки имеют приоритет.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineLyricsSwitch" checked disabled><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="lyricsSourceMode" data-en="Lyrics sources" data-ru="Источники текста">Источники текста</label><span class="fluid-row-hint" data-en="If the main source is unreachable without a VPN, try the backup first. Availability depends on your network." data-ru="Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.">Если основной источник недоступен без VPN, поставьте запасной первым. Доступность зависит от сети.</span></div>
+            <select id="lyricsSourceMode" class="sort-select" disabled><option value="auto" data-ru="Автоматически" data-en="Automatic">Автоматически</option><option value="regional" data-ru="Сначала запасные источники" data-en="Backup sources first">Сначала запасные источники</option><option value="primary" data-ru="Только LRCLIB" data-en="LRCLIB only">Только LRCLIB</option></select>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkLyricsAhead" data-en="Prefetch lyrics" data-ru="Загружать тексты заранее">Загружать тексты заранее</label>
+              <span class="fluid-row-hint" data-en="Look up lyrics while the karaoke panel is closed." data-ru="Искать текст текущего трека при закрытой панели караоке.">Искать текст текущего трека при закрытой панели караоке.</span></div>
+            <label class="switch-label"><input type="checkbox" id="networkLyricsAhead" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label">
+              <label for="onlineArtistInfoSwitch" data-en="Find artist details online" data-ru="Искать сведения об артистах в сети">Искать сведения об артистах в сети</label>
+              <span class="fluid-row-hint" data-en="Biography, avatar, and related artists from Wikipedia and Deezer. When off, the artist card shows only name and tracks from your library." data-ru="Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.">Биография, аватар и похожие исполнители из Википедии и Deezer. При выключении карточка артиста показывает только название и треки из фонотеки.</span>
+            </div>
+            <div class="bpm-toggle-control"><label class="switch-label"><input type="checkbox" id="onlineArtistInfoSwitch" checked><span class="switch-slider round"></span></label></div>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkTrackInfoAuto" data-en="Load track details automatically" data-ru="Загружать справку о треке автоматически">Загружать справку о треке автоматически</label>
+              <span class="fluid-row-hint" data-en="Fetch articles and ratings as the open track panel follows playback." data-ru="Подгружать статьи и оценки при смене трека в открытой карточке.">Подгружать статьи и оценки при смене трека в открытой карточке.</span></div>
+            <label class="switch-label"><input type="checkbox" id="networkTrackInfoAuto" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkUpdateChecks" data-en="Check for updates automatically" data-ru="Проверять обновления автоматически">Проверять обновления автоматически</label>
+              <span class="fluid-row-hint" data-en="Check at startup and periodically while PAIN is open." data-ru="Проверять новую версию при запуске и время от времени в фоне.">Проверять новую версию при запуске и время от времени в фоне.</span></div>
+            <label class="switch-label"><input type="checkbox" id="networkUpdateChecks" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <div class="fluid-setting-row bpm-row">
+            <div class="fluid-row-label"><label for="networkUpdateDownloads" data-en="Download updates automatically" data-ru="Скачивать обновления автоматически">Скачивать обновления автоматически</label>
+              <span class="fluid-row-hint" data-en="Allow the full update package to download in the background." data-ru="Разрешить фоновую загрузку полного пакета обновления.">Разрешить фоновую загрузку полного пакета обновления.</span></div>
+            <label class="switch-label"><input type="checkbox" id="networkUpdateDownloads" disabled><span class="switch-slider round"></span></label>
+          </div>
+          <p id="networkSettingsStatus" class="settings-section-desc" role="status" hidden></p>
+        </section>
         <section class="settings-section">
           <div class="settings-section-title" data-en="Application" data-ru="Приложение">Приложение</div>
           <div class="fluid-setting-row bpm-row">
@@ -1231,7 +1273,7 @@
         <div class="settings-section update-settings-section">
           <div class="settings-section-head">
             <div class="settings-section-title" data-en="Application updates" data-ru="Обновления приложения">Обновления приложения</div>
-            <div class="settings-section-desc" data-en="Installed Windows and AppImage builds download verified updates in the background and install them when you quit PAIN. Playback keeps going." data-ru="Установленные сборки Windows и AppImage скачивают проверенные обновления в фоне и устанавливают при выходе из PAIN. Музыка продолжает играть.">Установленные сборки Windows и AppImage скачивают проверенные обновления в фоне и устанавливают при выходе из PAIN. Музыка продолжает играть.</div>
+            <div class="settings-section-desc" data-en="Installed Windows and AppImage builds verify updates before installing them. Automatic downloads are optional in Network." data-ru="Сборки Windows и AppImage проверяют пакет перед установкой. Фоновое скачивание можно включить в разделе «Сеть».">Сборки Windows и AppImage проверяют пакет перед установкой. Фоновое скачивание можно включить в разделе «Сеть».</div>
           </div>
           <div class="update-setting-row">
             <div class="update-status-copy">

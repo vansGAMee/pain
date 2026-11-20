@@ -83,7 +83,7 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
       record(id,null);return response;
     }catch(error){if(!signal?.aborted)record(id,error,base);throw error;}
   }
-  function ensureAudio(id, { signal } = {}) {
+  function ensureAudio(id, { signal, base } = {}) {
     if (signal?.aborted) return Promise.reject(new Error('Download cancelled'));
     const existing = resolveAudio(id); if (existing) {if(issues[id])record(id,null);return Promise.resolve(existing);}
     if (pending.has(id)) return waitFor(pending.get(id),signal);
@@ -91,9 +91,9 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
       const target = path.join(cacheDir, id.replace(/[/\\?%*:|"<>]/g, '_') + '.mp3');
       const temp = target + '.' + require('node:crypto').randomUUID() + '.tmp';
       const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 120000);
-      const base=phoneBase();
+      const remoteBase=base||phoneBase();
       try {
-        const response=await openRemote(id,{signal:controller.signal,base});
+        const response=await openRemote(id,{signal:controller.signal,base:remoteBase});
         if (response.statusCode !== 200) { const status=response.statusCode;response.resume();throw failure(status===404?'AUDIO_NOT_ON_PHONE':'PHONE_UNAVAILABLE','Phone returned HTTP '+status); }
         await fs.promises.mkdir(cacheDir, { recursive: true });
         await pipeline(response, fs.createWriteStream(temp, { flags: 'wx' }), { signal: controller.signal });
@@ -102,7 +102,7 @@ module.exports = function audioDownload({ cacheDir, resolveAudio, phoneBase, get
         await fs.promises.rename(temp, target);
         record(id,null);
         return target;
-      } catch(error) {record(id,error,base);throw error;}
+      } catch(error) {record(id,error,remoteBase);throw error;}
       finally { clearTimeout(timer); await fs.promises.unlink(temp).catch(() => {}); }
     })();
     const completion = job.finally(() => pending.delete(id));
