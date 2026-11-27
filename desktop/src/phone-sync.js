@@ -6,6 +6,8 @@ const { safeWrite, createSnapshot } = require('./data-guard');
 const CompanionStore=require('./companion-store'),CompanionModel=require('./companion-model');
 const LibraryRemovals=require('./library-removals');
 const flag=value=>value===true||value===1?1:0;
+const validLibrary=library=>Array.isArray(library?.tracks)&&library.tracks.every(track=>
+ (typeof track?.id==='string'&&track.id.trim().length>0)||Number.isSafeInteger(track?.id));
 function request(base,route,body,timeout=5000,maxBytes=32*1024*1024){
  return new Promise((resolve,reject)=>{
   const url=new URL(route,base);if(url.protocol!=='http:')return reject(new Error('Invalid phone URL'));
@@ -94,11 +96,16 @@ class PhoneSync{
   return sentFavorites;
  }
  mergeRemovals(entries){this.removals.merge(entries);this.pending={favorites:this.pending.favorites.filter(p=>!this.removals.ids.has(String(p.trackId))),plays:this.pending.plays.filter(p=>!this.removals.ids.has(String(p.track)))};this.persist();this.onRemovals?.();}
+ acceptRemovals(entries){
+  if(!entries||typeof entries!=='object'||Array.isArray(entries))throw Error('Invalid removals snapshot');
+  if(Object.keys(entries).some(key=>!Object.hasOwn(this.removals.entries,key)))this.mergeRemovals(entries);
+ }
  removeTrack(track){this.removals.remove(track);this.mergeRemovals(this.removals.entries);}
  flush(base){return this.serial(()=>this.sendPending(base));}
  refreshLibrary(base){return this.serial(async()=>{
   const library=await request(base,'/api/library',undefined,15000);
-  if(!Array.isArray(library?.tracks))throw Error('Invalid phone snapshot');
+  if(!validLibrary(library))throw Error('Invalid phone snapshot');
+  if(library.capabilities?.libraryRemovals===1&&Object.hasOwn(library,'libraryRemovals'))this.acceptRemovals(library.libraryRemovals);
   const result=this.saveLibrary(library);
   await this.sendPending(base);
   return result;
@@ -117,11 +124,10 @@ class PhoneSync{
  }
  synchronize(base){return this.serial(async()=>{
   const initial=await request(base,'/api/library',undefined,15000);
-  if(!Array.isArray(initial?.tracks))throw Error('Invalid phone snapshot');
+  if(!validLibrary(initial))throw Error('Invalid phone snapshot');
   if(initial.capabilities?.libraryRemovals===1){
    const remote=await request(base,'/api/library-removals');
-   if(!remote?.entries||typeof remote.entries!=='object'||Array.isArray(remote.entries))throw Error('Invalid removals snapshot');
-   if(Object.keys(remote.entries).some(key=>!Object.hasOwn(this.removals.entries,key)))this.mergeRemovals(remote.entries);
+   this.acceptRemovals(remote?.entries);
    // A local deletion made while awaiting HTTP must be included as well.
    if(Object.keys(this.removals.entries).some(key=>!Object.hasOwn(remote.entries,key))){
     const ack=await request(base,'/api/library-removals',{entries:this.removals.entries},15000);
@@ -135,7 +141,7 @@ class PhoneSync{
   const [library,remote]=await Promise.all([sentFavorites?request(base,'/api/library',undefined,15000):initial,request(base,'/api/stats',undefined,20000)]);
   let stats=remote;
   // Reject an incomplete response before saving this final exchange.
-  if(!Array.isArray(library?.tracks)||!Array.isArray(stats?.plays))throw new Error('Invalid phone snapshot');
+  if(!validLibrary(library)||!Array.isArray(stats?.plays))throw new Error('Invalid phone snapshot');
   // Recover PC listening saved by older versions, which had no durable outbox.
   const identity=p=>JSON.stringify([p.track,Number(p.started)]);
   const known=new Set(stats.plays.map(identity));

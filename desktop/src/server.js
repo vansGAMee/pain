@@ -167,7 +167,7 @@ let lastDjStatePostHash = '', lastDjStateResponseJson = null;
 // 1. MEGA-SMART DISCOVERY & AUTO-SYNC ENGINE
 // ==========================================
 
-function registerDevice(base,info,{automatic=true}={}) {
+function registerDevice(base,info) {
   const address=new URL(base);
   const device={url:base,ip:address.hostname,port:Number(address.port||80),name:`${info.appName} (${info.device||'Android'})`,tracks:Number(info.tracks)||0,lastSeen:Date.now()};
   const existing = discoveredDevices.find(d => d.url === base);
@@ -177,7 +177,7 @@ function registerDevice(base,info,{automatic=true}={}) {
     discoveredDevices.push(device);
     console.log(`[Discovery] Found Android device: ${device.name} at http://${device.ip}:${device.port} (${device.tracks} tracks)`);
   }
-  if(automatic)triggerBackgroundAutoSync();
+  triggerBackgroundAutoSync();
   return device;
 }
 
@@ -451,7 +451,11 @@ function startDiscovery(){
   checkLastKnownIp();
   scanArpTable();
   const broadcastTimer=setInterval(broadcastDiscovery,5000);
-  const arpTimer=setInterval(scanArpTable,20000);
+  const arpTimer=setInterval(()=>{
+    // A paired phone can be reachable over HTTP even when Wi-Fi blocks broadcasts.
+    if(network.state().sync!=='manual')checkLastKnownIp();
+    scanArpTable();
+  },20000);
   const subnetTimer=setTimeout(scanSubnetsSmart,2000);
   server.once('close',()=>{clearInterval(broadcastTimer);clearInterval(arpTimer);clearTimeout(subnetTimer);clearTimeout(autoSyncTimeout);});
 }
@@ -1121,7 +1125,9 @@ const server = http.createServer((req, res) => {
       let base;try{base=phoneBase(JSON.parse(body).phoneUrl);}catch(_){return send(400,{code:'address'});}
       try{
         const info=await verifyPhone(base,6000);
-        rememberPhone(base);registerDevice(base,info,{automatic:false});
+        rememberPhone(base);
+        nextAutoSyncAt=0;
+        registerDevice(base,info);
         return send(200,{...info,url:base});
       }catch(error){return send(502,{code:error.message==='Not a PAIN device'?'device':'connection'});}
     });return;

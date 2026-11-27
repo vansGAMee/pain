@@ -72,3 +72,59 @@ test('proxy honors seek ranges; complete cache supports suffix ranges; snapshots
  assert.equal(JSON.parse(fs.readFileSync(path.join(data,'data/network-preferences.json'),'utf8')).sync,'manual');
 
 });
+
+test('a phone reached by address syncs automatically without UDP discovery', async t => {
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pain-address-sync-'));
+ const data=path.join(dir,'data');
+ fs.mkdirSync(data);
+ fs.writeFileSync(path.join(data,'performance-mode.json'),'{"mode":"maximum"}');
+ fs.writeFileSync(path.join(data,'network-preferences.json'),'{"autoUpdates":false}');
+ const track={id:'phone-track',title:'New phone track',favorite:0};
+ const phone=http.createServer((req,res)=>{
+  const responses={
+   '/api/status':{appName:'PAIN',status:'ok',device:'Test phone',tracks:1},
+   '/api/library':{tracks:[track]},
+   '/api/stats':{plays:[],slices:[]}
+  };
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify(responses[req.url]||{}));
+ });
+ await new Promise(resolve=>phone.listen(0,'127.0.0.1',resolve));
+ const phoneUrl='http://127.0.0.1:'+phone.address().port;
+ const isolatedDiscovery=`
+  const dgram=require('node:dgram'),create=dgram.createSocket;
+  dgram.createSocket=(...args)=>{
+   const socket=create(...args),bind=socket.bind.bind(socket);
+   socket.bind=(_port,ready)=>bind(0,'127.0.0.1',ready);
+   return socket;
+  };
+  require(process.argv[1]);
+ `;
+ const child=spawn(process.execPath,['-e',isolatedDiscovery,path.join(__dirname,'../src/server.js')],{
+  env:{...process.env,PAIN_DATA_DIR:dir,PAIN_DISCOVERY:'true',OPEN_BROWSER:'false',PAIN_PULSEFLOW_AUTO_INDEX:'false',PORT:'3000'},
+  stdio:['ignore','pipe','ignore']
+ });
+ t.after(async()=>{
+  if(child.exitCode===null&&child.signalCode===null)await new Promise(resolve=>{child.once('exit',resolve);child.kill();});
+  await new Promise(resolve=>phone.close(resolve));
+  fs.rmSync(dir,{recursive:true,force:true});
+ });
+ const root=await new Promise((resolve,reject)=>{
+  let output='';
+  const timer=setTimeout(()=>reject(Error('Desktop server did not start')),5000);
+  child.stdout.on('data',chunk=>{
+   output+=chunk;
+   const port=output.match(/Web UI: http:\/\/localhost:(\d+)/)?.[1];
+   if(port){clearTimeout(timer);resolve('http://127.0.0.1:'+port);}
+  });
+ });
+ const checked=await fetch(root+'/api/phone-status',{method:'POST',body:JSON.stringify({phoneUrl})});
+ assert.equal(checked.status,200);
+ let library;
+ for(let i=0;i<28;i++){
+  library=await fetch(root+'/api/saved-library').then(response=>response.json());
+  if(library.tracks.length)break;
+  await delay(80);
+ }
+ assert.deepEqual(library.tracks,[track]);
+});

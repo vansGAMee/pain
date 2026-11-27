@@ -48,7 +48,10 @@
   const ru=data.lang==='ru',t=(a,b)=>ru?a:b,locale=ru?'ru-RU':'en-US',now=Date.now();
   const plays=data.stats?.plays||[],slices=data.stats?.slices||[],last=plays[plays.length-1],slice=slices[slices.length-1];
   const key=[data.tracks,data.stats,data.revision,plays.length,last?.started,last?.heard,last?.media_heard,slices.length,slice?.at,slice?.ms,Math.floor(now/60000)];
-  if(!modelCache||key.some((value,i)=>value!==modelKey[i])){modelCache=HomeModel.build(data.tracks,data.stats,now);modelKey=key;}
+  if(!modelCache||key.some((value,i)=>value!==modelKey[i])){
+   modelCache=HomeModel.build(data.tracks,data.stats,now,handlers.listeningDetails?.(now));
+   modelKey=key;
+  }
   const m=modelCache,d=m.details;
   const time=ms=>{const minutes=Math.floor(ms/60000);return ms>0&&minutes===0?t('< 1 мин','< 1 min'):minutes>=60?`${Math.floor(minutes/60)} ${t('ч','h')} ${minutes%60} ${t('мин','min')}`:`${minutes} ${t('мин','min')}`;};
   const duration=ms=>{const seconds=Math.floor(Math.max(0,Number(ms)||0)/1000);return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;};

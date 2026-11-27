@@ -109,6 +109,25 @@ test('incremental pulls receive new phone tracks without rewriting an unchanged 
  assert.equal(sync.read('library.json',{}).tracks.length,3,'a temporary empty phone scan cannot remove files');
 });
 
+test('incremental pulls apply explicit phone deletions and reject malformed catalogs before touching the PC library',async t=>{
+ const sync=new Sync(temp(t)),Model=require('../src/companion-model');
+ const local={id:'pc',title:'Local track'},removed={id:'media:1',title:'Removed on phone',artist:'Test artist',duration:32000,bytes:130000};
+ sync.saveLibrary({tracks:[local,removed]});
+ sync.favorite(removed.id,1);
+ const entry=Model.pack(removed),libraryRemovals={[Model.trackKey(entry)]:entry};
+ const snapshot={capabilities:{libraryRemovals:1},libraryRemovals};
+ let remote={...snapshot,tracks:[{}]};
+ const base=await phone(t,(req,res)=>reply(res,remote));
+ await assert.rejects(sync.refreshLibrary(base),/Invalid phone snapshot/);
+ assert.equal(sync.read('library.json',{}).tracks.length,2);
+ assert.equal(sync.pending.favorites.length,1);
+ remote={...snapshot,tracks:[removed,{id:42,title:'Legacy phone track'}]};
+ const {tracks}=await sync.refreshLibrary(base);
+ assert.deepEqual(tracks,[local,{id:42,title:'Legacy phone track'}]);
+ assert.equal(sync.pending.favorites.length,0);
+ assert.ok(sync.removals.ids.has(removed.id));
+});
+
 test('a history failure does not hide successfully received new phone tracks',async t=>{
  const sync=new Sync(temp(t));sync.saveStats({plays:[play]});
  const base=await phone(t,(req,res)=>req.url==='/api/stats'?reply(res,{error:'busy'},503):reply(res,{tracks:[{id:'new-phone-track',title:'New phone song'}]}));

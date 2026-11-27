@@ -652,6 +652,16 @@
   // --- TIME-OF-DAY GREETING ---
   let greetingKey = null;
   let greetingUpdatedAt = 0;
+  let greetingPending = false;
+  function scheduleGreeting() {
+    if (greetingPending || state.currentView !== 'library' || document.hidden) return;
+    greetingPending = true;
+    requestAnimationFrame(() => setTimeout(() => {
+      greetingPending = false;
+      updateGreeting();
+    }, 0));
+  }
+
   function updateGreeting() {
     const greetingEl = document.getElementById('viewGreeting');
     if (!greetingEl || state.currentView !== 'library' || document.hidden) return;
@@ -800,8 +810,8 @@
     changes.onmessage=async event=>{if(event.data===lastRevision)return;const first=lastRevision===undefined;lastRevision=event.data;if(first)return;if(refreshing){repeat=true;return;}refreshing=true;try{do{repeat=false;await window.PainPlayer.reloadLibrary();await syncExcludedTracksFromServer();}while(repeat);}catch(_){lastRevision=null;}finally{refreshing=false;}};
     // EventSource reconnects and delivers library changes independently of focus.
     // Switching windows must not reload the catalog or reset the Home animation.
-    applyLang(state.lang);
-    applyViewMode(state.viewMode);
+    applyLang(state.lang, {render: false});
+    applyViewMode(state.viewMode, {render: false});
 
     DOM.phoneIpInput.value = state.phoneUrl;
     DOM.sortSelect.value=state.sortOption;
@@ -830,12 +840,8 @@
     setupEventListeners();
     setupNetworkSettings();
     window.addEventListener('pain:dj-changed',syncSharedAudio);
-    setInterval(() => { if (!document.hidden) { updateGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && state.currentView === 'library') {
-        requestAnimationFrame(() => setTimeout(updateGreeting, 0));
-      }
-    });
+    setInterval(() => { if (!document.hidden) { scheduleGreeting(); if(state.currentView==='home')renderHome(); } }, 60000);
+    document.addEventListener('visibilitychange', scheduleGreeting);
     setTimeout(() => checkForUpdates(false, true), 800);
     setInterval(() => {if(window.PainNetwork?.autoUpdates!==false)checkForUpdates(true,true);},6 * 60 * 60 * 1000);
     window.addEventListener('pain:show-player',()=>switchView('player'));
@@ -847,8 +853,8 @@
 
     // Check query parameters and URL Hash for deep-linking
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('mode') === 'grid') applyViewMode('grid');
-    if (urlParams.get('mode') === 'list') applyViewMode('list');
+    const requestedMode = urlParams.get('mode');
+    if (requestedMode === 'grid' || requestedMode === 'list') applyViewMode(requestedMode, {render: false});
 
     const hash = window.location.hash.replace('#', '');
     if (hash === 'profile') {
@@ -1354,8 +1360,8 @@
     if(viewName==='home'&&!isFormTheme(state.theme))viewName='library';
     if (state.currentView === viewName && state.activePlaylistId === playlistId
         && document.getElementById(`view-${viewName}`)?.classList.contains('active')) {
-      if(viewName==='library')updateGreeting();
       renderCurrentView();
+      scheduleGreeting();
       return;
     }
     if(state.currentView==='home'&&viewName!=='home')window.HomeView?.suspend();
@@ -1373,18 +1379,12 @@
 
     DOM.sidebarLikedSongsTile.classList.toggle('active', viewName === 'favorites');
 
-    DOM.viewPanes.forEach(pane => {
-      pane.classList.remove('active');
-    });
-
-    const targetPane = document.getElementById(`view-${viewName}`);
-    if (targetPane) {
-      targetPane.classList.add('active');
-    }
+    const targetId = `view-${viewName}`;
+    DOM.viewPanes.forEach(pane => pane.classList.toggle('active', pane.id === targetId));
 
     if(isFormTheme(state.theme))document.querySelector('.views-viewport').scrollTop=0;
-    if(viewName==='library')updateGreeting();
     renderCurrentView();
+    scheduleGreeting();
     if(viewName==='home')window.HomeView?.resume();
     window.location.hash = playlistId ? `playlist=${playlistId}` : viewName;
     window.dispatchEvent(new CustomEvent('pain:view',{detail:viewName}));
@@ -1424,6 +1424,7 @@
     }, {
       cover:getCoverUrl,
       title:displayTrackTitle,
+      listeningDetails,
       fallbackCover:getProceduralCoverSvg,
       navigate:switchView,
       duo:handleDuoPlaylist,
@@ -1458,7 +1459,7 @@
 
 
   // --- VIEW MODE: GRID VS LIST ---
-  function applyViewMode(mode) {
+  function applyViewMode(mode, {render = true} = {}) {
     state.viewMode = mode;
     localStorage.setItem('pain_view_mode', mode);
 
@@ -1474,7 +1475,7 @@
     }
 
     state.libraryDirty = true;
-    renderLibrary();
+    if (render) renderLibrary();
   }
 
   // --- FILTERING & SORTING LOGIC ---
@@ -2401,12 +2402,27 @@
   }
 
   // --- INSIGHTS / STATS VIEW ---
+  let listeningSnapshot;
+  function listeningDetails(now) {
+    const {tracks, stats} = state;
+    const day = ListeningInsights.dayKey(now);
+    const plays = stats.plays || [], slices = stats.slices || [];
+    const key = [tracks, stats, localSyncRevision, day, plays.length, plays.at(-1), slices.length, slices.at(-1)];
+    if (listeningSnapshot && now >= listeningSnapshot.now &&
+        key.every((value, index) => value === listeningSnapshot.key[index])) {
+      return listeningSnapshot.details;
+    }
+    const details = ListeningInsights.build(tracks, stats, now);
+    listeningSnapshot = details.timeSensitive ? null : {key, now, details};
+    return details;
+  }
+
   function renderInsights() {
     window.dispatchEvent(new Event('pain:insights'));
-    const details = ListeningInsights.build(state.tracks, state.stats);
+    const now = new Date();
+    const details = listeningDetails(now.getTime());
     const plays = details.plays;
     leaderboardPlays = plays;
-    const now = new Date();
     const isRu = state.lang === 'ru';
 
     // 1. Total Listening Time
@@ -2573,7 +2589,8 @@
       const minutes = Math.floor(ms / 60000), hours = Math.floor(minutes / 60);
       return hours ? (ru ? `${hours} ч ${minutes % 60} мин` : `${hours} h ${minutes % 60} min`) : `${minutes} ${ru ? 'мин' : 'min'}`;
     };
-    const date = key => new Date(key + 'T12:00:00').toLocaleDateString(locale, {day:'numeric', month:'long', year:'numeric'});
+    const dateFormat = new Intl.DateTimeFormat(locale, {day:'numeric', month:'long', year:'numeric'});
+    const date = key => dateFormat.format(new Date(key + 'T12:00:00'));
     const title = id => state.tracks.find(t => String(t.id) === id)?.title || (ru ? 'Трек вне фонотеки' : 'Track outside your library');
     const percent = (a,b) => b > 0 ? `${Math.round(100 * a / b)}%` : '—';
     const cards = [
@@ -4382,7 +4399,7 @@
     if(state.currentTrackId)updatePlayingRowUI();
   }
 
-  function applyLang(lang) {
+  function applyLang(lang, {render = true} = {}) {
     state.lang = lang;
     localStorage.setItem('pain_lang', lang);
     const phoneLabel=lang==='ru'?'Продолжить на телефоне':'Continue on phone';
@@ -4406,8 +4423,10 @@
       DOM.eqStateLabel.textContent = state.eq.enabled ? (lang === 'ru' ? 'ВКЛ' : 'ON') : (lang === 'ru' ? 'ВЫКЛ' : 'OFF');
     }
 
-    updateGreeting();
-    renderCurrentView();
+    if (render) {
+      renderCurrentView();
+      scheduleGreeting();
+    }
     updateFluidBpmTempo();
     updateAutoEqualizerUI();
     updateTrackTransitionUI();

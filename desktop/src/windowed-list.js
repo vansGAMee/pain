@@ -5,7 +5,7 @@
   const controls = 'button:not(:disabled),input:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]';
 
   function attach(container) {
-    const viewport = container.closest('.views-viewport');
+    const viewport = container.closest('.views-viewport'), pane = container.closest('.view-pane');
     const table = container.tagName === 'TBODY';
     const itemSelector = table ? 'tr[data-track-id]' : '.track-card[data-track-id]';
     let items = [], options, keys = [], indexByKey = new Map();
@@ -16,7 +16,7 @@
     container.classList.add('windowed-list');
     if (!table) container.setAttribute('role', 'list');
 
-    const visible = () => container.getClientRects().length > 0;
+    const visible = () => (!pane || pane.classList.contains('active')) && container.getClientRects().length > 0;
     const innerTop = () => viewport.getBoundingClientRect().top + viewport.clientTop;
     const listTop = () => container.getBoundingClientRect().top - innerTop() + viewport.scrollTop;
     const rows = () => Math.ceil(items.length / columns);

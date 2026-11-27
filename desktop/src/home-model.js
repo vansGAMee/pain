@@ -1,10 +1,10 @@
 /* Read-only home summaries and an isolated preview of the existing Smart DJ. */
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./listening-insights'),require('./queue-engine'));else root.HomeModel=factory(root.ListeningInsights,root.QueueEngine);})(globalThis,(Insights,Queue)=>{
  const DAY=86400000;
- function build(tracks=[],stats={},now=Date.now()){
+ function build(tracks=[],stats={},now=Date.now(),details=Insights.build(tracks,stats,now)){
   const library=new Map(tracks.filter(t=>t?.id!=null).map(t=>[String(t.id),t]));
   const catalog=[...library.values()];
-  const details=Insights.build(catalog,stats,now),first=new Map(),last=new Map();
+  const first=new Map(),last=new Map();
   const today=new Date(now),year=today.getFullYear()-1,month=today.getMonth(),day=today.getDate();
   const yearAgo=new Date(year,month,day);
   const anniversaryStart=yearAgo.getMonth()===month?yearAgo.getTime():Infinity;

@@ -44,6 +44,21 @@ test('malformed/future records do not inflate activity and future interval tails
  const x=Insights.build([track('a')],{plays:[play('a',0,{started:NOW-60000}),play('future',-1),play('bad',1,{heard:Infinity}),null],slices:[{play:'a-0',at:NOW-60000,ms:180000},{play:'absent',at:at(1),ms:999999},null]},NOW);
  assert.equal(x.totalMs,60000);assert.equal(x.plays.length,1);assert.equal(x.hours[11],60000);
 });
+test('a desktop snapshot can be reused only when advancing the clock leaves its totals unchanged',()=>{
+ const a=play('a',0,{started:NOW-60000,heard:120000});
+ const b=play('b',0,{started:NOW+180000,heard:30000});
+ const library=[track('a'),track('b')];
+ assert.equal(Insights.build(library,{plays:[a]},NOW).timeSensitive,true);
+ assert.equal(Insights.build(library,{plays:[a,b]},NOW+60000).timeSensitive,true);
+ const slices=[{play:a.id,at:NOW-60000,ms:30000},{play:a.id,at:NOW,ms:30000}];
+ const before=Insights.build(library,{plays:[a],slices},NOW);
+ assert.equal(before.totalMs,30000);
+ assert.equal(before.timeSensitive,true);
+ const after=Insights.build(library,{plays:[a],slices},NOW+30000);
+ assert.equal(after.totalMs,60000);
+ assert.equal(after.timeSensitive,false);
+ assert.deepEqual(Insights.build(library,{plays:[a],slices},NOW+60000),after);
+});
 test('local calendar and hourly totals survive daylight-saving fall-back',()=>{
  const previous=process.env.TZ;process.env.TZ='America/New_York';
  try{
